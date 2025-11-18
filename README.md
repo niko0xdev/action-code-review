@@ -72,7 +72,9 @@ jobs:
 
 ### Custom Review Prompt
 
-You can customize the review prompt to focus on specific aspects:
+The action now uses a strong system prompt plus a structured reviewer prompt that yields JSON (for summaries and inline comments). The `review-prompt` input is treated as an extra "focus" section inside that structured prompt, so you can still steer the model toward the concerns you care about.
+
+You can customize the review focus to highlight specific aspects:
 
 ```yaml
 - name: Run AI Code Review
@@ -81,13 +83,12 @@ You can customize the review prompt to focus on specific aspects:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
     review-prompt: |
-      Please review this code diff with a focus on:
+      Please prioritize:
       1. Security vulnerabilities
       2. Performance bottlenecks
       3. Code maintainability
       4. Adherence to coding standards
-      
-      Provide specific line-by-line feedback when applicable.
+      5. Missing tests for risky logic
 ```
 
 ### File Filtering
