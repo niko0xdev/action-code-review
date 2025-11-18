@@ -11,8 +11,17 @@ import { parseReviewResponse } from './reviewParser';
 import type { ReviewComment } from './reviewParser';
 
 interface FileData {
-	filename: string;
-	patch: string;
+  sha: string;
+  filename: string;
+  status: "added" | "removed" | "modified" | "renamed" | "copied" | "changed" | "unchanged";
+  additions: number;
+  deletions: number;
+  changes: number;
+  blob_url: string;
+  raw_url: string;
+  contents_url: string;
+  patch?: string;
+  previous_filename?: string;
 }
 
 async function processFile(

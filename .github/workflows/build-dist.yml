@@ -52,7 +52,7 @@ jobs:
         run: pnpm test
 
       - name: Build action bundle
-        run: pnpm run build
+        run: npm run build
 
       - name: Commit dist output
         uses: stefanzweifel/git-auto-commit-action@v5

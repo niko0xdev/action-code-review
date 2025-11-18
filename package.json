@@ -4,7 +4,7 @@
   "description": "GitHub Action that uses OpenAI to review pull requests and suggest improvements",
   "main": "lib/index.js",
   "scripts": {
-    "build": "rm -rf dist && ncc build src/index.ts -o dist",
+    "build": "rm -rf dist && npx ncc build src/index.ts -o dist",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
     "lint": "biome check src/",
@@ -31,6 +31,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.4.1",
+    "@octokit/types": "^12.0.0",
     "@types/node": "^20.10.0",
     "@vercel/ncc": "^0.38.1",
     "@vitest/coverage-v8": "^1.0.4",
