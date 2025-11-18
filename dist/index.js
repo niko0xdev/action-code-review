@@ -34367,7 +34367,7 @@ async function run() {
         const openaiApiKey = core.getInput('openai-api-key', { required: true });
         const openaiModel = core.getInput('openai-model') || 'gpt-4';
         const reviewFocus = core.getInput('review-prompt') || prompts_1.DEFAULT_REVIEW_FOCUS;
-        const maxFiles = parseInt(core.getInput('max-files') || '10');
+        const maxFiles = Number.parseInt(core.getInput('max-files') || '10');
         const excludePatterns = core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
         // Initialize clients
         const octokit = github.getOctokit(githubToken);
@@ -34390,13 +34390,15 @@ async function run() {
             pull_number: prNumber,
         });
         // Filter files
-        const excludeList = excludePatterns.split(',').map(p => p.trim());
-        const filteredFiles = files.filter(file => {
-            return !excludeList.some(pattern => {
+        const excludeList = excludePatterns.split(',').map((p) => p.trim());
+        const filteredFiles = files
+            .filter((file) => {
+            return !excludeList.some((pattern) => {
                 const regex = new RegExp(pattern.replace(/\*/g, '.*'));
                 return regex.test(file.filename);
             });
-        }).slice(0, maxFiles);
+        })
+            .slice(0, maxFiles);
         if (filteredFiles.length === 0) {
             core.info('No files to review after filtering');
             return;
@@ -34419,12 +34421,12 @@ async function run() {
                     messages: [
                         {
                             role: 'system',
-                            content: systemPrompt
+                            content: systemPrompt,
                         },
                         {
                             role: 'user',
-                            content: (0, prompts_1.buildUserPrompt)(file.filename, file.patch, reviewFocus)
-                        }
+                            content: (0, prompts_1.buildUserPrompt)(file.filename, file.patch, reviewFocus),
+                        },
                     ],
                     max_tokens: 1500,
                     temperature: 0.3,
@@ -34453,7 +34455,7 @@ async function run() {
                 owner,
                 repo,
                 issue_number: prNumber,
-                body: `# 🤖 AI Code Review\n\n${reviewSummary}`
+                body: `# 🤖 AI Code Review\n\n${reviewSummary}`,
             });
             core.info('Posted review summary to PR');
         }
@@ -34482,20 +34484,20 @@ async function postCommentsToPR(octokit, owner, repo, prNumber, comments) {
                 repo,
                 pull_number: prNumber,
                 comments: fileComments,
-                event: 'COMMENT'
+                event: 'COMMENT',
             });
         }
         catch (error) {
             core.error(`Failed to post comments for ${filename}: ${error}`);
             // Fallback: create a regular issue comment
             const commentBody = fileComments
-                .map(c => `**Line ${c.line}:** ${c.body}`)
+                .map((c) => `**Line ${c.line}:** ${c.body}`)
                 .join('\n\n');
             await octokit.rest.issues.createComment({
                 owner,
                 repo,
                 issue_number: prNumber,
-                body: `## 📝 Review for ${filename}\n\n${commentBody}`
+                body: `## 📝 Review for ${filename}\n\n${commentBody}`,
             });
         }
     }
@@ -34528,7 +34530,7 @@ function createSystemPrompt() {
         'You are a seasoned staff-level software engineer performing code reviews on GitHub pull requests.',
         'Your goal is to find impactful issues—logic bugs, regressions, security problems, performance pitfalls, and missing tests.',
         'Be direct, reference line numbers from the diff, and keep feedback actionable.',
-        'Always respond with STRICT JSON (no Markdown code fences) using UTF-8 characters only.'
+        'Always respond with STRICT JSON (no Markdown code fences) using UTF-8 characters only.',
     ].join(' ');
 }
 function buildUserPrompt(filename, diff, reviewFocus) {
@@ -34560,7 +34562,7 @@ function buildUserPrompt(filename, diff, reviewFocus) {
         'Diff to review:',
         '```diff',
         diff,
-        '```'
+        '```',
     ].join('\n');
 }
 
@@ -34589,16 +34591,16 @@ function parseReviewForComments(reviewText, filename) {
                 comments.push({
                     path: filename,
                     line: targetLine,
-                    body: currentComment.trim()
+                    body: currentComment.trim(),
                 });
             }
             // Start new comment
-            targetLine = parseInt(lineMatch[1]);
+            targetLine = Number.parseInt(lineMatch[1]);
             currentComment = line.replace(/(?:Line|L)\s*\d+:?/, '').trim();
         }
         else if (targetLine) {
             // Continue collecting comment text
-            currentComment += '\n' + line;
+            currentComment += `\n${line}`;
         }
     }
     // Don't forget the last comment
@@ -34606,7 +34608,7 @@ function parseReviewForComments(reviewText, filename) {
         comments.push({
             path: filename,
             line: targetLine,
-            body: currentComment.trim()
+            body: currentComment.trim(),
         });
     }
     // If no line-specific comments were found, create a general comment
@@ -34614,7 +34616,7 @@ function parseReviewForComments(reviewText, filename) {
         comments.push({
             path: filename,
             line: 1, // Default to first line
-            body: reviewText.trim()
+            body: reviewText.trim(),
         });
     }
     return comments;
@@ -34626,12 +34628,14 @@ function parseReviewResponse(reviewText, filename) {
         const comments = convertStructuredComments(structured.inline_comments, filename);
         return {
             summary,
-            comments: comments.length > 0 ? comments : parseReviewForComments(reviewText, filename)
+            comments: comments.length > 0
+                ? comments
+                : parseReviewForComments(reviewText, filename),
         };
     }
     return {
         summary: reviewText.trim(),
-        comments: parseReviewForComments(reviewText, filename)
+        comments: parseReviewForComments(reviewText, filename),
     };
 }
 function tryParseStructuredReview(reviewText) {
@@ -34663,24 +34667,24 @@ function buildStructuredSummary(structured) {
     }
     if ((_b = structured.summary_points) === null || _b === void 0 ? void 0 : _b.length) {
         const bullets = structured.summary_points
-            .filter(point => typeof point === 'string' && point.trim())
-            .map(point => `- ${point.trim()}`);
+            .filter((point) => typeof point === 'string' && point.trim())
+            .map((point) => `- ${point.trim()}`);
         if (bullets.length) {
             sections.push(bullets.join('\n'));
         }
     }
     if ((_c = structured.positive_insights) === null || _c === void 0 ? void 0 : _c.length) {
         const positives = structured.positive_insights
-            .filter(point => typeof point === 'string' && point.trim())
-            .map(point => `- ${point.trim()}`);
+            .filter((point) => typeof point === 'string' && point.trim())
+            .map((point) => `- ${point.trim()}`);
         if (positives.length) {
             sections.push(`**Positive notes**\n${positives.join('\n')}`);
         }
     }
     if ((_d = structured.risks) === null || _d === void 0 ? void 0 : _d.length) {
         const risks = structured.risks
-            .filter(risk => typeof risk === 'string' && risk.trim())
-            .map(risk => `- ${risk.trim()}`);
+            .filter((risk) => typeof risk === 'string' && risk.trim())
+            .map((risk) => `- ${risk.trim()}`);
         if (risks.length) {
             sections.push(`**Risks & regressions**\n${risks.join('\n')}`);
         }
@@ -34692,8 +34696,8 @@ function convertStructuredComments(inlineComments, filename) {
         return [];
     }
     return inlineComments
-        .filter(comment => typeof comment.line === 'number' && comment.line > 0 && comment.comment)
-        .map(comment => {
+        .filter((comment) => typeof comment.line === 'number' && comment.line > 0 && comment.comment)
+        .map((comment) => {
         var _a, _b, _c, _d;
         const parts = [];
         const title = (_a = comment.title) === null || _a === void 0 ? void 0 : _a.trim();
@@ -34715,10 +34719,10 @@ function convertStructuredComments(inlineComments, filename) {
         return {
             path: filename,
             line: comment.line,
-            body: parts.join('\n\n').trim()
+            body: parts.join('\n\n').trim(),
         };
     })
-        .filter(comment => Boolean(comment.body));
+        .filter((comment) => Boolean(comment.body));
 }
 
 
