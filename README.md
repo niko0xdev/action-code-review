@@ -54,11 +54,12 @@ jobs:
 ## Inputs
 
 | Input | Description | Required | Default |
-|-------|-------------|----------|---------|
+|------|-------------|----------|---------|
 | `github-token` | GitHub token for API access | Yes | - |
 | `openai-api-key` | OpenAI API key for code review | Yes | - |
+| `openai-base-url` | Custom OpenAI API base URL (optional) | No | - |
 | `openai-model` | OpenAI model to use for review | No | `gpt-4` |
-| `review-prompt` | Custom prompt for OpenAI review | No | Default review prompt |
+| `review-prompt` | Custom prompt for OpenAI review | No | Focus on correctness, code quality, security, performance, test coverage, and best practices. Provide actionable, line-specific feedback whenever possible. |
 | `max-files` | Maximum number of files to review | No | `10` |
 | `exclude-patterns` | Comma-separated list of file patterns to exclude | No | `*.md,*.txt,*.json,*.yml,*.yaml` |
 

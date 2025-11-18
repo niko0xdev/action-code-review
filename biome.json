@@ -20,7 +20,8 @@
         "useShorthandFunctionType": "error"
       },
       "suspicious": {
-        "noExplicitAny": "off"
+        "noExplicitAny": "off",
+        "noArrayIndexKey": "warn"
       }
     }
   },
@@ -31,7 +32,8 @@
       "semicolons": "always",
       "arrowParentheses": "always",
       "bracketSpacing": true,
-      "lineWidth": 80
+      "lineWidth": 80,
+      "ignore": ["src/index.ts"]
     }
   },
   "files": {

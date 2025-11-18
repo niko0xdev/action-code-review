@@ -4,7 +4,7 @@
   "description": "GitHub Action that uses OpenAI to review pull requests and suggest improvements",
   "main": "lib/index.js",
   "scripts": {
-    "build": "rm -rf dist && npx ncc build src/index.ts -o dist",
+    "build": "rm -rf dist && npx ncc build src/index.ts -o dist --minify",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
     "lint": "biome check src/",
