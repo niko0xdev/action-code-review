@@ -19,19 +19,19 @@ A GitHub Action that uses OpenAI to review pull requests and suggest improvement
 2. Click "New repository secret"
 3. Add a secret named `OPENAI_API_KEY` with your OpenAI API key
 
-### 2. Create Workflow File
+### Usage
 
-Create a file at `.github/workflows/pr-review.yml` in your repository:
+Create a workflow file at `.github/workflows/pr-review.yml`:
 
 ```yaml
-name: AI Code Review
+name: AI PR Review
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  code-review:
+  review:
     runs-on: ubuntu-latest
     name: AI Code Review
     
@@ -39,16 +39,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch full history for better diff context
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Run AI Code Review
-        uses: niko0xdev/action-code-review@v1
+        uses: ./
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          openai-model: 'gpt-4'
-          max-files: '10'
-          exclude-patterns: '*.md,*.txt,*.json,*.yml,*.yaml,*.lock'
+          openai-base-url: ${{ inputs.openai-base-url }}
+          openai-model: ${{ inputs.openai-model }}
+          review-prompt: ${{ inputs.review-prompt }}
+          max-files: ${{ inputs.max-files }}
+          exclude-patterns: ${{ inputs.exclude-patterns }}
 ```
 
 ## Inputs
