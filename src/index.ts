@@ -1,18 +1,9 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import OpenAI from 'openai';
-
-interface FileDiff {
-  filename: string;
-  patch: string;
-  status: string;
-}
-
-interface ReviewComment {
-  path: string;
-  line: number;
-  body: string;
-}
+import { DEFAULT_REVIEW_FOCUS, buildUserPrompt, createSystemPrompt } from './prompts';
+import { parseReviewResponse } from './reviewParser';
+import type { ReviewComment } from './reviewParser';
 
 async function run(): Promise<void> {
   try {
@@ -20,8 +11,7 @@ async function run(): Promise<void> {
     const githubToken = core.getInput('github-token', { required: true });
     const openaiApiKey = core.getInput('openai-api-key', { required: true });
     const openaiModel = core.getInput('openai-model') || 'gpt-4';
-    const reviewPrompt = core.getInput('review-prompt') || 
-      'Please review this code diff and suggest improvements. Focus on code quality, security, performance, and best practices. Provide specific line-by-line feedback when applicable.';
+    const reviewFocus = core.getInput('review-prompt') || DEFAULT_REVIEW_FOCUS;
     const maxFiles = parseInt(core.getInput('max-files') || '10');
     const excludePatterns = core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
 
@@ -70,6 +60,8 @@ async function run(): Promise<void> {
     const allComments: ReviewComment[] = [];
     let reviewSummary = '';
 
+    const systemPrompt = createSystemPrompt();
+
     for (const file of filteredFiles) {
       core.info(`Reviewing file: ${file.filename}`);
       
@@ -85,11 +77,11 @@ async function run(): Promise<void> {
           messages: [
             {
               role: 'system',
-              content: reviewPrompt
+              content: systemPrompt
             },
             {
               role: 'user',
-              content: `File: ${file.filename}\n\nDiff:\n\`\`\`diff\n${file.patch}\n\`\`\``
+              content: buildUserPrompt(file.filename, file.patch, reviewFocus)
             }
           ],
           max_tokens: 1500,
@@ -102,12 +94,9 @@ async function run(): Promise<void> {
           continue;
         }
 
-        // Parse review for line-specific comments
-        const comments = parseReviewForComments(reviewText, file.filename);
-        allComments.push(...comments);
-
-        // Add to summary
-        reviewSummary += `## ${file.filename}\n\n${reviewText}\n\n`;
+        const parsedReview = parseReviewResponse(reviewText, file.filename);
+        allComments.push(...parsedReview.comments);
+        reviewSummary += `## ${file.filename}\n\n${parsedReview.summary}\n\n`;
 
       } catch (error) {
         core.error(`Error reviewing ${file.filename}: ${error}`);
@@ -137,57 +126,6 @@ async function run(): Promise<void> {
   } catch (error) {
     core.setFailed(`Action failed: ${error}`);
   }
-}
-
-export function parseReviewForComments(reviewText: string, filename: string): ReviewComment[] {
-  const comments: ReviewComment[] = [];
-  const lines = reviewText.split('\n');
-  
-  let currentComment = '';
-  let targetLine: number | null = null;
-  
-  for (const line of lines) {
-    // Look for line number patterns like "Line 42:" or "L42:"
-    const lineMatch = line.match(/(?:Line|L)(\d+):?/);
-    
-    if (lineMatch) {
-      // If we have a pending comment, save it
-      if (currentComment && targetLine) {
-        comments.push({
-          path: filename,
-          line: targetLine,
-          body: currentComment.trim()
-        });
-      }
-      
-      // Start new comment
-      targetLine = parseInt(lineMatch[1]);
-      currentComment = line.replace(/(?:Line|L)\d+:?/, '').trim();
-    } else if (targetLine) {
-      // Continue collecting comment text
-      currentComment += '\n' + line;
-    }
-  }
-  
-  // Don't forget the last comment
-  if (currentComment && targetLine) {
-    comments.push({
-      path: filename,
-      line: targetLine,
-      body: currentComment.trim()
-    });
-  }
-  
-  // If no line-specific comments were found, create a general comment
-  if (comments.length === 0 && reviewText.trim()) {
-    comments.push({
-      path: filename,
-      line: 1, // Default to first line
-      body: reviewText.trim()
-    });
-  }
-  
-  return comments;
 }
 
 async function postCommentsToPR(
@@ -239,3 +177,6 @@ async function postCommentsToPR(
 if (require.main === module) {
   run();
 }
+
+// Helper re-exports for compatibility
+export { parseReviewForComments, parseReviewResponse } from './reviewParser';

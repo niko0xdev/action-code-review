@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseReviewForComments } from '../src/index';
+import { parseReviewForComments, parseReviewResponse } from '../src/index';
 
 describe('parseReviewForComments', () => {
   it('should parse line-specific comments correctly', () => {
@@ -74,5 +74,49 @@ Line 20: This is another comment.
     expect(comments[0].body).toContain('This is a multiline comment.');
     expect(comments[0].body).toContain('It continues on this line.');
     expect(comments[0].body).toContain('And also on this line.');
+  });
+
+  it('should parse structured JSON responses', () => {
+    const reviewText = `
+{
+  "file_overview": "File looks mostly good but needs stronger error handling.",
+  "summary_points": [
+    "Consider expanding validation to avoid runtime errors."
+  ],
+  "inline_comments": [
+    {
+      "line": 32,
+      "title": "Missing null check",
+      "comment": "userInput may be undefined leading to a crash.",
+      "recommendation": "Guard the value before using it.",
+      "severity": "high"
+    }
+  ]
+}
+    `;
+
+    const filename = 'example.js';
+    const parsed = parseReviewResponse(reviewText, filename);
+
+    expect(parsed.summary).toContain('validation');
+    expect(parsed.comments).toHaveLength(1);
+    expect(parsed.comments[0]).toEqual({
+      path: filename,
+      line: 32,
+      body: '**Missing null check**\n\nuserInput may be undefined leading to a crash.\n\n_Recommendation:_ Guard the value before using it.\n\n_Severity:_ high'
+    });
+  });
+
+  it('should fall back to text parsing when JSON is invalid', () => {
+    const reviewText = `
+Line 5: You can memoize this selector to avoid re-renders.
+Line 12: Consider extracting this logic into a helper.
+    `;
+
+    const filename = 'example.ts';
+    const parsed = parseReviewResponse(reviewText, filename);
+
+    expect(parsed.comments).toHaveLength(2);
+    expect(parsed.summary).toContain('Line 5');
   });
 });
