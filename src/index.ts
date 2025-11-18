@@ -10,17 +10,37 @@ import { parseReviewResponse } from './reviewParser';
 import type { ReviewComment } from './reviewParser';
 
 interface FileData {
-  sha: string;
-  filename: string;
-  status: "added" | "removed" | "modified" | "renamed" | "copied" | "changed" | "unchanged";
-  additions: number;
-  deletions: number;
-  changes: number;
-  blob_url: string;
-  raw_url: string;
-  contents_url: string;
-  patch?: string;
-  previous_filename?: string;
+	sha: string;
+	filename: string;
+	status:
+		| 'added'
+		| 'removed'
+		| 'modified'
+		| 'renamed'
+		| 'copied'
+		| 'changed'
+		| 'unchanged';
+	additions: number;
+	deletions: number;
+	changes: number;
+	blob_url: string;
+	raw_url: string;
+	contents_url: string;
+	patch?: string;
+	previous_filename?: string;
+}
+
+interface OctokitType {
+	rest: {
+		pulls: {
+			list: (params: any) => Promise<any>;
+			listFiles: (params: any) => Promise<any>;
+			createReview: (params: any) => Promise<any>;
+		};
+		issues: {
+			createComment: (params: any) => Promise<any>;
+		};
+	};
 }
 
 async function processFile(
@@ -169,11 +189,11 @@ async function run(): Promise<void> {
 }
 
 async function postCommentsToPR(
-  octokit: any,
-  owner: string,
-  repo: string,
-  prNumber: number,
-  comments: ReviewComment[]
+	octokit: OctokitType,
+	owner: string,
+	repo: string,
+	prNumber: number,
+	comments: ReviewComment[]
 ): Promise<void> {
 	// Group comments by file to avoid rate limiting
 	const commentsByFile = comments.reduce(
