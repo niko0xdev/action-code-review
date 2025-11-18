@@ -32,8 +32,7 @@
       "semicolons": "always",
       "arrowParentheses": "always",
       "bracketSpacing": true,
-      "lineWidth": 80,
-      "ignore": ["src/index.ts"]
+      "lineWidth": 80
     }
   },
   "files": {
