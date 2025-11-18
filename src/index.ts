@@ -1,5 +1,6 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
+import type { Octokit } from '@octokit/types';
 import OpenAI from 'openai';
 import {
 	DEFAULT_REVIEW_FOCUS,
@@ -8,6 +9,58 @@ import {
 } from './prompts';
 import { parseReviewResponse } from './reviewParser';
 import type { ReviewComment } from './reviewParser';
+
+interface FileData {
+	filename: string;
+	patch: string;
+}
+
+async function processFile(
+	file: FileData,
+	openai: OpenAI,
+	openaiModel: string,
+	systemPrompt: string,
+	reviewFocus: string
+): Promise<{ comments: ReviewComment[]; summary: string }> {
+	if (!file.patch) {
+		return { comments: [], summary: '' };
+	}
+
+	try {
+		// Send to OpenAI for review
+		const completion = await openai.chat.completions.create({
+			model: openaiModel,
+			messages: [
+				{
+					role: 'system',
+					content: systemPrompt,
+				},
+				{
+					role: 'user',
+					content: buildUserPrompt(file.filename, file.patch, reviewFocus),
+				},
+			],
+			max_tokens: 1500,
+			temperature: 0.3,
+		});
+
+		const reviewText = completion.choices[0]?.message?.content;
+		if (!reviewText) {
+			return { comments: [], summary: '' };
+		}
+
+		// Parse review for line-specific comments
+		const parsed = parseReviewResponse(reviewText, file.filename);
+
+		return {
+			comments: parsed.comments,
+			summary: `## ${file.filename}\n\n${reviewText}\n\n`,
+		};
+	} catch (error) {
+		core.error(`Error reviewing ${file.filename}: ${error}`);
+		return { comments: [], summary: '' };
+	}
+}
 
 async function run(): Promise<void> {
 	try {
@@ -64,49 +117,23 @@ async function run(): Promise<void> {
 		core.info(`Reviewing ${filteredFiles.length} files`);
 
 		// Process each file
+		const systemPrompt = createSystemPrompt();
 		const allComments: ReviewComment[] = [];
 		let reviewSummary = '';
-
-		const systemPrompt = createSystemPrompt();
 
 		for (const file of filteredFiles) {
 			core.info(`Reviewing file: ${file.filename}`);
 
-			if (!file.patch) {
-				core.info(`No diff available for ${file.filename}`);
-				continue;
-			}
+			const { comments, summary } = await processFile(
+				file,
+				openai,
+				openaiModel,
+				systemPrompt,
+				reviewFocus
+			);
 
-			try {
-				// Send to OpenAI for review
-				const completion = await openai.chat.completions.create({
-					model: openaiModel,
-					messages: [
-						{
-							role: 'system',
-							content: systemPrompt,
-						},
-						{
-							role: 'user',
-							content: buildUserPrompt(file.filename, file.patch, reviewFocus),
-						},
-					],
-					max_tokens: 1500,
-					temperature: 0.3,
-				});
-
-				const reviewText = completion.choices[0]?.message?.content;
-				if (!reviewText) {
-					core.warning(`No review content received for ${file.filename}`);
-					continue;
-				}
-
-				const parsedReview = parseReviewResponse(reviewText, file.filename);
-				allComments.push(...parsedReview.comments);
-				reviewSummary += `## ${file.filename}\n\n${parsedReview.summary}\n\n`;
-			} catch (error) {
-				core.error(`Error reviewing ${file.filename}: ${error}`);
-			}
+			allComments.push(...comments);
+			reviewSummary += summary;
 		}
 
 		// Post comments to PR
@@ -134,7 +161,7 @@ async function run(): Promise<void> {
 }
 
 async function postCommentsToPR(
-	octokit: any,
+	octokit: Octokit,
 	owner: string,
 	repo: string,
 	prNumber: number,
