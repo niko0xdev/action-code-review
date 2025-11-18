@@ -103,7 +103,10 @@ async function run(): Promise<void> {
 
 		// Initialize clients
 		const octokit = github.getOctokit(githubToken);
-		const openai = new OpenAI({ apiKey: openaiApiKey });
+		const openai = new OpenAI({
+			apiKey: openaiApiKey,
+			baseURL: core.getInput('openai-base-url') || undefined
+		});
 
 		// Get PR context
 		const context = github.context;

@@ -12,6 +12,9 @@ inputs:
   openai-api-key:
     description: 'OpenAI API key for code review'
     required: true
+  openai-base-url:
+    description: 'Custom OpenAI API base URL (optional)'
+    required: false
   openai-model:
     description: 'OpenAI model to use for review'
     required: false
@@ -19,7 +22,7 @@ inputs:
   review-prompt:
     description: 'Custom prompt for OpenAI review'
     required: false
-    default: 'Please review this code diff and suggest improvements. Focus on code quality, security, performance, and best practices. Provide specific line-by-line feedback when applicable.'
+    default: 'Focus on correctness, code quality, security, performance, test coverage, and best practices. Provide actionable, line-specific feedback whenever possible.'
   max-files:
     description: 'Maximum number of files to review'
     required: false
@@ -36,3 +39,18 @@ outputs:
 runs:
   using: 'node20'
   main: 'dist/index.js'
+
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run AI Code Review
+      uses: ./
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+        openai-base-url: ${{ inputs.openai-base-url }}
+        openai-model: ${{ inputs.openai-model }}
+        review-prompt: ${{ inputs.review-prompt }}
+        max-files: ${{ inputs.max-files }}
+        exclude-patterns: ${{ inputs.exclude-patterns }}
