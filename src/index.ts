@@ -1,6 +1,5 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import type { Octokit } from '@octokit/types';
 import OpenAI from 'openai';
 import {
 	DEFAULT_REVIEW_FOCUS,
@@ -170,11 +169,11 @@ async function run(): Promise<void> {
 }
 
 async function postCommentsToPR(
-	octokit: Octokit,
-	owner: string,
-	repo: string,
-	prNumber: number,
-	comments: ReviewComment[]
+  octokit: any,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  comments: ReviewComment[]
 ): Promise<void> {
 	// Group comments by file to avoid rate limiting
 	const commentsByFile = comments.reduce(
