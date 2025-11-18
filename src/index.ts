@@ -102,11 +102,8 @@ async function run(): Promise<void> {
 			core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
 
 		// Initialize clients
-		const octokit = github.getOctokit(githubToken);
-		const openai = new OpenAI({
-			apiKey: openaiApiKey,
-			baseURL: core.getInput('openai-base-url') || undefined
-		});
+		const octokit = github.getOctokit(githubToken)
+		const openai = new OpenAI({ apiKey: openaiApiKey, baseURL: core.getInput('openai-base-url') })
 
 		// Get PR context
 		const context = github.context;

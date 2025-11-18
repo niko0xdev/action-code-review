@@ -1,62 +1,28 @@
-name: 'AI PR Review'
+name: AI PR Review
 
 on:
-  push:
-    branches:
-      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 jobs:
-  build-and-commit:
-    if: github.actor != 'github-actions[bot]'
+  review:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
+    name: AI Code Review
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      
+      - name: Run AI Code Review
+        uses: niko0xdev/action-code-review@v1
         with:
-          node-version: '20'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.22.0
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run linting
-        run: pnpm run lint
-
-      - name: Run tests
-        run: pnpm test
-
-      - name: Build action bundle
-        run: npm run build
-
-      - name: Commit dist output
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: 'chore: build dist'
-          branch: ${{ github.ref_name }}
-          file_pattern: dist/*
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-base-url: ${{ inputs.openai-base-url }}
+          openai-model: ${{ inputs.openai-model }}
+          review-prompt: ${{ inputs.review-prompt }}
+          max-files: ${{ inputs.max-files }}
+          exclude-patterns: ${{ inputs.exclude-patterns }}
