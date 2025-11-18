@@ -1,0 +1,38 @@
+name: 'AI Code Review'
+description: 'Uses OpenAI to review pull requests and suggest improvements'
+author: 'niko0xdev'
+branding:
+  icon: 'code'
+  color: 'blue'
+
+inputs:
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+  openai-api-key:
+    description: 'OpenAI API key for code review'
+    required: true
+  openai-model:
+    description: 'OpenAI model to use for review'
+    required: false
+    default: 'gpt-4'
+  review-prompt:
+    description: 'Custom prompt for OpenAI review'
+    required: false
+    default: 'Please review this code diff and suggest improvements. Focus on code quality, security, performance, and best practices. Provide specific line-by-line feedback when applicable.'
+  max-files:
+    description: 'Maximum number of files to review'
+    required: false
+    default: '10'
+  exclude-patterns:
+    description: 'Comma-separated list of file patterns to exclude from review'
+    required: false
+    default: '*.md,*.txt,*.json,*.yml,*.yaml'
+
+outputs:
+  review-summary:
+    description: 'Summary of the code review'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
