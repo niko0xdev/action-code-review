@@ -39,18 +39,3 @@ outputs:
 runs:
   using: 'node20'
   main: 'dist/index.js'
-
-  steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Run AI Code Review
-      uses: ./
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-        openai-base-url: ${{ inputs.openai-base-url }}
-        openai-model: ${{ inputs.openai-model }}
-        review-prompt: ${{ inputs.review-prompt }}
-        max-files: ${{ inputs.max-files }}
-        exclude-patterns: ${{ inputs.exclude-patterns }}
