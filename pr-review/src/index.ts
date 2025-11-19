@@ -104,6 +104,13 @@ async function run(): Promise<void> {
 
 		// Initialize clients
 		const octokit = github.getOctokit(githubToken)
+		core.debug(`OpenAI base URL: ${core.getInput('openai-base-url')}`);
+		core.debug(`OpenAI API key: ${openaiApiKey}`);
+		core.debug(`OpenAI model: ${openaiModel}`);
+		core.debug(`Review focus: ${reviewFocus}`);
+		core.debug(`Max files: ${maxFiles}`);
+		core.debug(`Exclude patterns: ${excludePatterns}`);
+
 		const openai = new OpenAI({ apiKey: openaiApiKey, baseURL: core.getInput('openai-base-url') })
 
 		// Get PR context
