@@ -2,8 +2,36 @@
 
 import { useState } from 'react';
 
+interface TodoItem {
+  id: number;
+  text: string;
+  completed: boolean;
+}
+
 export default function HomePage(): JSX.Element {
   const [repository, setRepository] = useState('niko0xdev/action-code-review');
+  const [todos, setTodos] = useState<TodoItem[]>([
+    { id: 1, text: 'Review this PR', completed: false },
+    { id: 2, text: 'Add more test cases', completed: true }
+  ]);
+  const [newTodo, setNewTodo] = useState('');
+
+  const addTodo = () => {
+    if (newTodo.trim()) {
+      setTodos([...todos, { id: Date.now(), text: newTodo, completed: false }]);
+      setNewTodo('');
+    }
+  };
+
+  const toggleTodo = (id: number) => {
+    setTodos(todos.map(todo => 
+      todo.id === id ? { ...todo, completed: !todo.completed } : todo
+    ));
+  };
+
+  const deleteTodo = (id: number) => {
+    setTodos(todos.filter(todo => todo.id !== id));
+  };
 
   return (
     <main className="container">
@@ -27,6 +55,34 @@ export default function HomePage(): JSX.Element {
           <code>.github/workflows/pr-review.yml</code> will call into the action bundled in this
           monorepo (see README).
         </p>
+      </section>
+
+      <section className="card">
+        <h2>Todo Demo</h2>
+        <div className="todo-container">
+          <div className="todo-input">
+            <input 
+              value={newTodo} 
+              onChange={event => setNewTodo(event.target.value)} 
+              placeholder="Add a new todo"
+              onKeyPress={e => e.key === 'Enter' && addTodo()}
+            />
+            <button onClick={addTodo} className="add-button">Add</button>
+          </div>
+          <ul className="todo-list">
+            {todos.map(todo => (
+              <li key={todo.id} className={`todo-item ${todo.completed ? 'completed' : ''}`}>
+                <input 
+                  type="checkbox" 
+                  checked={todo.completed} 
+                  onChange={() => toggleTodo(todo.id)} 
+                />
+                <span className="todo-text">{todo.text}</span>
+                <button onClick={() => deleteTodo(todo.id)} className="delete-button">×</button>
+              </li>
+            ))}
+          </ul>
+        </div>
       </section>
 
       <section className="card">
