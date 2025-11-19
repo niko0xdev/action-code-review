@@ -16,18 +16,13 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Load Review Prompt
-        id: load-prompt
-        run: |
-          CUSTOM_PROMPT=$(cat path/to/review-prompt.md)
-          echo "custom_prompt=$CUSTOM_PROMPT" >> $GITHUB_ENV
-        
       - name: Run AI Code Review
-        if: env.custom_prompt != ''
         uses: ./pr-review
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           openai-base-url: ${{ secrets.OPENAI_API_URL }}
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
-          review-prompt: ${{ env.custom_prompt }}
+          review-prompt: ${{ vars.REVIEW_PROMPT }}
+          max-files: 10
+          exclude-patterns: "*.md,*.txt,*.json,*.yml,*.yaml"
