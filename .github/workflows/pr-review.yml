@@ -23,6 +23,4 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           openai-base-url: ${{ secrets.OPENAI_API_URL }}
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
-          review-prompt: ${{ vars.REVIEW_PROMPT }}
-          max-files: 10
           exclude-patterns: "*.md,*.txt,*.json,*.yml,*.yaml"
