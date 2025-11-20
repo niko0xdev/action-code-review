@@ -1,15 +1,19 @@
+import crypto from 'crypto';
+
 export interface ReviewComment {
-	path: string;
-	line: number;
-	body: string;
+        path: string;
+        line: number;
+        body: string;
+        id: string;
 }
 
 interface StructuredInlineComment {
-	line: number;
-	title?: string;
-	comment?: string;
-	recommendation?: string;
-	severity?: string;
+        line: number;
+        title?: string;
+        comment?: string;
+        recommendation?: string;
+        severity?: string;
+        rule_id?: string;
 }
 
 interface StructuredReviewResponse {
@@ -52,12 +56,17 @@ export function parseReviewForComments(
 		if (lineMatch) {
 			// If we have a pending comment, save it
 			if (currentComment && targetLine) {
-				comments.push({
-					path: filename,
-					line: targetLine,
-					body: currentComment.trim(),
-				});
-			}
+                                comments.push({
+                                        path: filename,
+                                        line: targetLine,
+                                        body: currentComment.trim(),
+                                        id: buildCommentId({
+                                                path: filename,
+                                                line: targetLine,
+                                                body: currentComment,
+                                        }),
+                                });
+                        }
 
 			// Start new comment
 			targetLine = Number.parseInt(lineMatch[1]);
@@ -70,21 +79,31 @@ export function parseReviewForComments(
 
 	// Don't forget the last comment
 	if (currentComment && targetLine) {
-		comments.push({
-			path: filename,
-			line: targetLine,
-			body: currentComment.trim(),
-		});
-	}
+                        comments.push({
+                                path: filename,
+                                line: targetLine,
+                                body: currentComment.trim(),
+                                id: buildCommentId({
+                                        path: filename,
+                                        line: targetLine,
+                                        body: currentComment,
+                                }),
+                        });
+                }
 
 	// If no line-specific comments were found, create a general comment
 	if (comments.length === 0 && reviewText.trim()) {
 		comments.push({
-			path: filename,
-			line: 1, // Default to first line
-			body: reviewText.trim(),
-		});
-	}
+                        path: filename,
+                        line: 1, // Default to first line
+                        body: reviewText.trim(),
+                        id: buildCommentId({
+                                path: filename,
+                                line: 1,
+                                body: reviewText,
+                        }),
+                });
+        }
 
 	return comments;
 }
@@ -215,13 +234,19 @@ function convertStructuredComments(
                                 parts.push(formatSeverity(severity));
                         }
 
-			return {
-				path: filename,
-				line: comment.line,
-				body: parts.join('\n\n').trim(),
-			};
-		})
-		.filter((comment) => Boolean(comment.body));
+                        return {
+                                path: filename,
+                                line: comment.line,
+                                body: parts.join('\n\n').trim(),
+                                id: buildCommentId({
+                                        path: filename,
+                                        line: comment.line,
+                                        body: parts.join('\n\n'),
+                                        ruleId: comment.rule_id,
+                                }),
+                        };
+                })
+                .filter((comment) => Boolean(comment.body));
 }
 
 function formatSeverity(severity: string): string {
@@ -230,4 +255,21 @@ function formatSeverity(severity: string): string {
         const prefix = icon ? `${icon} ` : '';
 
         return `_Severity:_ ${prefix}${normalized} — see ${ISSUE_DOC_URL}`;
+}
+
+function buildCommentId(params: {
+        path: string;
+        line: number;
+        body: string;
+        ruleId?: string;
+}): string {
+        const hash = crypto.createHash('sha256');
+        hash.update([
+                params.path,
+                params.line.toString(),
+                params.body.trim(),
+                params.ruleId?.trim() ?? '',
+        ].join('|'));
+
+        return hash.digest('hex').slice(0, 12);
 }
