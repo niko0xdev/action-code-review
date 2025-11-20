@@ -21,9 +21,19 @@ interface StructuredReviewResponse {
 }
 
 export interface ParsedReviewData {
-	summary: string;
-	comments: ReviewComment[];
+        summary: string;
+        comments: ReviewComment[];
 }
+
+const SEVERITY_ICON_MAP: Record<string, string> = {
+        info: 'ℹ️',
+        low: '✅',
+        medium: '⚠️',
+        high: '🔥',
+};
+
+const ISSUE_DOC_URL =
+        'https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels';
 
 export function parseReviewForComments(
 	reviewText: string,
@@ -170,10 +180,10 @@ function buildStructuredSummary(structured: StructuredReviewResponse): string {
 }
 
 function convertStructuredComments(
-	inlineComments: StructuredInlineComment[] | undefined,
-	filename: string
+        inlineComments: StructuredInlineComment[] | undefined,
+        filename: string
 ): ReviewComment[] {
-	if (!Array.isArray(inlineComments)) {
+        if (!Array.isArray(inlineComments)) {
 		return [];
 	}
 
@@ -185,9 +195,9 @@ function convertStructuredComments(
 		.map((comment) => {
 			const parts: string[] = [];
 			const title = comment.title?.trim();
-			const explanation = comment.comment?.trim();
-			const recommendation = comment.recommendation?.trim();
-			const severity = comment.severity?.trim();
+                        const explanation = comment.comment?.trim();
+                        const recommendation = comment.recommendation?.trim();
+                        const severity = comment.severity?.trim();
 
 			if (title) {
 				parts.push(`**${title}**`);
@@ -201,9 +211,9 @@ function convertStructuredComments(
 				parts.push(`_Recommendation:_ ${recommendation}`);
 			}
 
-			if (severity) {
-				parts.push(`_Severity:_ ${severity}`);
-			}
+                        if (severity) {
+                                parts.push(formatSeverity(severity));
+                        }
 
 			return {
 				path: filename,
@@ -212,4 +222,12 @@ function convertStructuredComments(
 			};
 		})
 		.filter((comment) => Boolean(comment.body));
+}
+
+function formatSeverity(severity: string): string {
+        const normalized = severity.toLowerCase();
+        const icon = SEVERITY_ICON_MAP[normalized];
+        const prefix = icon ? `${icon} ` : '';
+
+        return `_Severity:_ ${prefix}${normalized} — see ${ISSUE_DOC_URL}`;
 }
