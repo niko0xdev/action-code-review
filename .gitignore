@@ -26,3 +26,4 @@ coverage/
 # Temporary files
 *.tmp
 *.temp
+examples/nextjs/.next/
