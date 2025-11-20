@@ -78,16 +78,16 @@ async function processFile(
 		}
 
 		// Parse review for line-specific comments
-		const parsed = parseReviewResponse(reviewText, file.filename);
+                const parsed = parseReviewResponse(reviewText, file.filename);
 
-		return {
-			comments: parsed.comments,
-			summary: `## ${file.filename}\n\n${reviewText}\n\n`,
-		};
-	} catch (error) {
-		core.error(`Error reviewing ${file.filename}: ${error}`);
-		return { comments: [], summary: '' };
-	}
+                return {
+                        comments: parsed.comments,
+                        summary: `## ${file.filename}\n\n${parsed.summary}\n\n`,
+                };
+        } catch (error) {
+                core.error(`Error reviewing ${file.filename}: ${error}`);
+                return { comments: [], summary: '' };
+        }
 }
 
 async function run(): Promise<void> {
