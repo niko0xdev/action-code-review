@@ -2,10 +2,11 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import OpenAI from 'openai';
 import {
-	DEFAULT_REVIEW_FOCUS,
-	buildUserPrompt,
-	createSystemPrompt,
+        DEFAULT_REVIEW_FOCUS,
+        buildUserPrompt,
+        createSystemPrompt,
 } from './prompts';
+import { createGlobMatcher } from './utils/globMatcher';
 import { parseReviewResponse } from './reviewParser';
 import type { ReviewComment } from './reviewParser';
 
@@ -90,29 +91,19 @@ async function processFile(
         }
 }
 
-function matchesGlob(filename: string, pattern: string): boolean {
-        const escapedPattern = pattern
-                .replace(/([.+^=!:${}()|[\]\\])/g, '\\$1')
-                .replace(/\*/g, '.*')
-                .replace(/\?/g, '.');
-
-        const regex = new RegExp(`^${escapedPattern}$`);
-
-        return regex.test(filename);
-}
-
 function filterFiles(
         files: FileData[],
         excludePatterns: string,
         maxFiles: number
 ): FileData[] {
-        const patterns = excludePatterns
+        const matchers = excludePatterns
                 .split(',')
                 .map((p) => p.trim())
-                .filter(Boolean);
+                .filter(Boolean)
+                .map((pattern) => createGlobMatcher(pattern));
 
         return files
-                .filter((file) => !patterns.some((pattern) => matchesGlob(file.filename, pattern)))
+                .filter((file) => !matchers.some((matcher) => matcher(file.filename)))
                 .slice(0, maxFiles);
 }
 
