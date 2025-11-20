@@ -44,11 +44,11 @@ interface OctokitType {
 }
 
 async function processFile(
-	file: FileData,
-	openai: OpenAI,
-	openaiModel: string,
-	systemPrompt: string,
-	reviewFocus: string
+        file: FileData,
+        openai: OpenAI,
+        openaiModel: string,
+        systemPrompt: string,
+        reviewFocus: string
 ): Promise<{ comments: ReviewComment[]; summary: string }> {
 	if (!file.patch) {
 		return { comments: [], summary: '' };
@@ -87,15 +87,41 @@ async function processFile(
 	} catch (error) {
 		core.error(`Error reviewing ${file.filename}: ${error}`);
 		return { comments: [], summary: '' };
-	}
+        }
+}
+
+function matchesGlob(filename: string, pattern: string): boolean {
+        const escapedPattern = pattern
+                .replace(/([.+^=!:${}()|[\]\\])/g, '\\$1')
+                .replace(/\*/g, '.*')
+                .replace(/\?/g, '.');
+
+        const regex = new RegExp(`^${escapedPattern}$`);
+
+        return regex.test(filename);
+}
+
+function filterFiles(
+        files: FileData[],
+        excludePatterns: string,
+        maxFiles: number
+): FileData[] {
+        const patterns = excludePatterns
+                .split(',')
+                .map((p) => p.trim())
+                .filter(Boolean);
+
+        return files
+                .filter((file) => !patterns.some((pattern) => matchesGlob(file.filename, pattern)))
+                .slice(0, maxFiles);
 }
 
 async function run(): Promise<void> {
-	try {
-		// Get inputs
-		const githubToken = core.getInput('github-token', { required: true });
-		const openaiApiKey = core.getInput('openai-api-key', { required: true });
-		const openaiModel = core.getInput('openai-model') || 'gpt-4';
+        try {
+                // Get inputs
+                const githubToken = core.getInput('github-token', { required: true });
+                const openaiApiKey = core.getInput('openai-api-key', { required: true });
+                const openaiModel = core.getInput('openai-model') || 'gpt-4';
 		const reviewFocus = core.getInput('review-prompt') || DEFAULT_REVIEW_FOCUS;
 		const maxFiles = Number.parseInt(core.getInput('max-files') || '10');
 		const excludePatterns =
@@ -120,22 +146,14 @@ async function run(): Promise<void> {
 		core.info(`Processing PR #${prNumber} in ${owner}/${repo}`);
 
 		// Get PR diff
-		const { data: files } = await octokit.rest.pulls.listFiles({
-			owner,
-			repo,
-			pull_number: prNumber,
-		});
+                const { data: files } = await octokit.rest.pulls.listFiles({
+                        owner,
+                        repo,
+                        pull_number: prNumber,
+                });
 
-		// Filter files
-		const excludeList = excludePatterns.split(',').map((p) => p.trim());
-		const filteredFiles = files
-			.filter((file) => {
-				return !excludeList.some((pattern) => {
-					const regex = new RegExp(pattern.replace(/\*/g, '.*'));
-					return regex.test(file.filename);
-				});
-			})
-			.slice(0, maxFiles);
+                // Filter files
+                const filteredFiles = filterFiles(files, excludePatterns, maxFiles);
 
 		if (filteredFiles.length === 0) {
 			core.info('No files to review after filtering');
@@ -238,8 +256,9 @@ async function postCommentsToPR(
 
 // Run the action
 if (require.main === module) {
-	run();
+        run();
 }
 
 // Helper re-exports for compatibility
 export { parseReviewForComments, parseReviewResponse } from './reviewParser';
+export { filterFiles };

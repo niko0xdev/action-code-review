@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseReviewForComments, parseReviewResponse } from '../src/index';
+import { filterFiles, parseReviewForComments, parseReviewResponse } from '../src/index';
 
 describe('parseReviewForComments', () => {
   it('should parse line-specific comments correctly', () => {
@@ -118,5 +118,39 @@ Line 12: Consider extracting this logic into a helper.
 
     expect(parsed.comments).toHaveLength(2);
     expect(parsed.summary).toContain('Line 5');
+  });
+});
+
+describe('filterFiles', () => {
+  const baseFiles = [
+    { filename: 'config.json' },
+    { filename: 'config.json.ts' },
+    { filename: 'README.md' },
+    { filename: 'notes.txt' },
+    { filename: 'src/index.ts' },
+    { filename: 'config.yaml' },
+  ];
+
+  it('excludes files matching glob patterns without over-matching extensions', () => {
+    const filtered = filterFiles(baseFiles as any, '*.json', 10);
+    const filenames = filtered.map((file: any) => file.filename);
+
+    expect(filenames).not.toContain('config.json');
+    expect(filenames).toContain('config.json.ts');
+  });
+
+  it('applies default exclusion patterns', () => {
+    const filtered = filterFiles(
+      baseFiles as any,
+      '*.md,*.txt,*.json,*.yml,*.yaml',
+      10,
+    );
+    const filenames = filtered.map((file: any) => file.filename);
+
+    expect(filenames).toContain('src/index.ts');
+    expect(filenames).not.toContain('README.md');
+    expect(filenames).not.toContain('notes.txt');
+    expect(filenames).not.toContain('config.json');
+    expect(filenames).not.toContain('config.yaml');
   });
 });
