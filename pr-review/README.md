@@ -65,6 +65,7 @@ jobs:
 | `review-prompt` | Custom prompt for OpenAI review | No | Focus on correctness, code quality, security, performance, test coverage, and best practices. Provide actionable, line-specific feedback whenever possible. |
 | `max-files` | Maximum number of files to review | No | `10` |
 | `exclude-patterns` | Comma-separated list of file patterns to exclude | No | `*.md,*.txt,*.json,*.yml,*.yaml` |
+| `auto-approve-when-resolved` | Approve the pull request once all AI-created review threads are resolved | No | `false` |
 
 ## Outputs
 
@@ -120,6 +121,21 @@ Exclude specific file patterns from review:
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
     exclude-patterns: '*.md,*.txt,*.json,*.yml,*.yaml,*.lock,*.test.js,*.spec.ts'
 ```
+
+### Auto-approve when AI comments are resolved
+
+Enable automatic approval after all AI-generated review threads have been marked as resolved:
+
+```yaml
+- name: Run AI Code Review
+  uses: niko0xdev/action-code-review@v1
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+    auto-approve-when-resolved: true
+```
+
+The action checks review threads authored by the authenticated token and submits an approval review when none of those threads remain unresolved.
 
 ## Development
 
