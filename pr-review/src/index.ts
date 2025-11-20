@@ -31,16 +31,17 @@ interface FileData {
 }
 
 interface OctokitType {
-	rest: {
-		pulls: {
-			list: (params: any) => Promise<any>;
-			listFiles: (params: any) => Promise<any>;
-			createReview: (params: any) => Promise<any>;
-		};
-		issues: {
-			createComment: (params: any) => Promise<any>;
-		};
-	};
+        rest: {
+                pulls: {
+                        list: (params: any) => Promise<any>;
+                        listFiles: (params: any) => Promise<any>;
+                        createReview: (params: any) => Promise<any>;
+                        createReviewComment: (params: any) => Promise<any>;
+                };
+                issues: {
+                        createComment: (params: any) => Promise<any>;
+                };
+        };
 }
 
 async function processFile(
@@ -91,7 +92,7 @@ async function processFile(
 }
 
 async function run(): Promise<void> {
-	try {
+        try {
 		// Get inputs
 		const githubToken = core.getInput('github-token', { required: true });
 		const openaiApiKey = core.getInput('openai-api-key', { required: true });
@@ -112,12 +113,13 @@ async function run(): Promise<void> {
 			return;
 		}
 
-		const pullRequest = context.payload.pull_request;
-		const owner = context.repo.owner;
-		const repo = context.repo.repo;
-		const prNumber = pullRequest.number;
+                const pullRequest = context.payload.pull_request;
+                const owner = context.repo.owner;
+                const repo = context.repo.repo;
+                const prNumber = pullRequest.number;
+                const headSha = pullRequest.head?.sha || context.sha;
 
-		core.info(`Processing PR #${prNumber} in ${owner}/${repo}`);
+                core.info(`Processing PR #${prNumber} in ${owner}/${repo}`);
 
 		// Get PR diff
 		const { data: files } = await octokit.rest.pulls.listFiles({
@@ -164,11 +166,18 @@ async function run(): Promise<void> {
 			reviewSummary += summary;
 		}
 
-		// Post comments to PR
-		if (allComments.length > 0) {
-			await postCommentsToPR(octokit, owner, repo, prNumber, allComments);
-			core.info(`Posted ${allComments.length} comments to PR`);
-		}
+                // Post comments to PR
+                if (allComments.length > 0) {
+                        await postCommentsToPR(
+                                octokit,
+                                owner,
+                                repo,
+                                prNumber,
+                                allComments,
+                                headSha
+                        );
+                        core.info(`Posted ${allComments.length} comments to PR`);
+                }
 
 		// Post review summary
 		if (reviewSummary) {
@@ -189,15 +198,16 @@ async function run(): Promise<void> {
 }
 
 async function postCommentsToPR(
-	octokit: OctokitType,
-	owner: string,
-	repo: string,
-	prNumber: number,
-	comments: ReviewComment[]
+        octokit: OctokitType,
+        owner: string,
+        repo: string,
+        prNumber: number,
+        comments: ReviewComment[],
+        commitId: string
 ): Promise<void> {
-	// Group comments by file to avoid rate limiting
-	const commentsByFile = comments.reduce(
-		(acc, comment) => {
+        // Group comments by file to avoid rate limiting
+        const commentsByFile = comments.reduce(
+                (acc, comment) => {
 			if (!acc[comment.path]) {
 				acc[comment.path] = [];
 			}
@@ -207,33 +217,56 @@ async function postCommentsToPR(
 		{} as Record<string, ReviewComment[]>
 	);
 
-	// Post comments for each file
-	for (const [filename, fileComments] of Object.entries(commentsByFile)) {
-		try {
-			// Create a review comment for each file
-			await octokit.rest.pulls.createReview({
-				owner,
-				repo,
-				pull_number: prNumber,
-				comments: fileComments,
-				event: 'COMMENT',
-			});
-		} catch (error) {
-			core.error(`Failed to post comments for ${filename}: ${error}`);
+        // Post comments for each file
+        for (const [filename, fileComments] of Object.entries(commentsByFile)) {
+                const reviewComments = fileComments.map((comment) => ({
+                        body: comment.body,
+                        path: comment.path,
+                        line: comment.line ?? 1,
+                        side: 'RIGHT' as const,
+                        commit_id: commitId,
+                }));
 
-			// Fallback: create a regular issue comment
-			const commentBody = fileComments
-				.map((c) => `**Line ${c.line}:** ${c.body}`)
-				.join('\n\n');
+                try {
+                        // Create a review comment for each file
+                        await octokit.rest.pulls.createReview({
+                                owner,
+                                repo,
+                                pull_number: prNumber,
+                                comments: reviewComments,
+                                event: 'COMMENT',
+                        });
+                } catch (error) {
+                        core.error(`Failed to post comments for ${filename}: ${error}`);
 
-			await octokit.rest.issues.createComment({
-				owner,
-				repo,
-				issue_number: prNumber,
-				body: `## 📝 Review for ${filename}\n\n${commentBody}`,
-			});
-		}
-	}
+                        for (const reviewComment of reviewComments) {
+                                try {
+                                        await octokit.rest.pulls.createReviewComment({
+                                                owner,
+                                                repo,
+                                                pull_number: prNumber,
+                                                body: reviewComment.body,
+                                                commit_id: reviewComment.commit_id,
+                                                path: reviewComment.path,
+                                                side: reviewComment.side,
+                                                line: reviewComment.line,
+                                        });
+                                } catch (commentError) {
+                                        core.error(
+                                                `Failed to post individual comment for ${filename}: ${commentError}`
+                                        );
+
+                                        // Fallback: create a regular issue comment
+                                        await octokit.rest.issues.createComment({
+                                                owner,
+                                                repo,
+                                                issue_number: prNumber,
+                                                body: `## 📝 Review for ${filename}\n\n**Line ${reviewComment.line}:** ${reviewComment.body}`,
+                                        });
+                                }
+                        }
+                }
+        }
 }
 
 // Run the action
@@ -243,3 +276,4 @@ if (require.main === module) {
 
 // Helper re-exports for compatibility
 export { parseReviewForComments, parseReviewResponse } from './reviewParser';
+export { postCommentsToPR };
