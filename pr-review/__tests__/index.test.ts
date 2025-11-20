@@ -103,7 +103,30 @@ Line 20: This is another comment.
     expect(parsed.comments[0]).toEqual({
       path: filename,
       line: 32,
-      body: '**Missing null check**\n\nuserInput may be undefined leading to a crash.\n\n_Recommendation:_ Guard the value before using it.\n\n_Severity:_ high'
+      body: '**Missing null check**\n\nuserInput may be undefined leading to a crash.\n\n_Recommendation:_ Guard the value before using it.\n\n_Severity:_ 🔥 high — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels'
+    });
+  });
+
+  it('should map severity levels to icons and include the documentation link', () => {
+    const reviewText = `
+{
+  "inline_comments": [
+    {
+      "line": 12,
+      "comment": "Optional logging suggestion.",
+      "severity": "info"
+    }
+  ]
+}
+    `;
+
+    const filename = 'example.ts';
+    const parsed = parseReviewResponse(reviewText, filename);
+
+    expect(parsed.comments[0]).toEqual({
+      path: filename,
+      line: 12,
+      body: 'Optional logging suggestion.\n\n_Severity:_ ℹ️ info — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels'
     });
   });
 

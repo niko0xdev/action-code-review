@@ -72,6 +72,19 @@ jobs:
 |--------|-------------|
 | `review-summary` | Summary of the code review |
 
+## Severity levels
+
+Inline comments can include a severity that highlights the impact of an issue. The action maps common severities to the following icons to keep feedback easy to scan:
+
+| Severity | Icon | Meaning |
+|----------|------|---------|
+| info | ℹ️ | Informational note or minor observation |
+| low | ✅ | Small improvement or non-blocking nit |
+| medium | ⚠️ | Noticeable problem that should be addressed |
+| high | 🔥 | Critical issue that needs immediate attention |
+
+Each severity link points back to this table so reviewers understand the impact level at a glance.
+
 ## Customization
 
 ### Custom Review Prompt
