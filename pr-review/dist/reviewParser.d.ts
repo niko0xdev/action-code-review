@@ -2,6 +2,7 @@ export interface ReviewComment {
     path: string;
     line: number;
     body: string;
+    id: string;
 }
 export interface ParsedReviewData {
     summary: string;
