@@ -30,19 +30,7 @@ interface FileData {
 	previous_filename?: string;
 }
 
-interface OctokitType {
-        rest: {
-                pulls: {
-                        list: (params: any) => Promise<any>;
-                        listFiles: (params: any) => Promise<any>;
-                        createReview: (params: any) => Promise<any>;
-                        createReviewComment: (params: any) => Promise<any>;
-                };
-                issues: {
-                        createComment: (params: any) => Promise<any>;
-                };
-        };
-}
+type OctokitType = ReturnType<typeof github.getOctokit>;
 
 async function processFile(
 	file: FileData,
@@ -94,17 +82,26 @@ async function processFile(
 async function run(): Promise<void> {
         try {
 		// Get inputs
-		const githubToken = core.getInput('github-token', { required: true });
-		const openaiApiKey = core.getInput('openai-api-key', { required: true });
-		const openaiModel = core.getInput('openai-model') || 'gpt-4';
-		const reviewFocus = core.getInput('review-prompt') || DEFAULT_REVIEW_FOCUS;
-		const maxFiles = Number.parseInt(core.getInput('max-files') || '10');
-		const excludePatterns =
-			core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
+        const githubToken = core.getInput('github-token', { required: true });
+        const openaiApiKey = core.getInput('openai-api-key', { required: true });
+        const openaiModel = core.getInput('openai-model') || 'gpt-4';
+        const reviewFocus = core.getInput('review-prompt') || DEFAULT_REVIEW_FOCUS;
+        const maxFiles = Number.parseInt(core.getInput('max-files') || '10');
+        const excludePatterns =
+                core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
+        const autoApproveWhenResolved = core.getBooleanInput('auto-approve-when-resolved');
 
 		// Initialize clients
 		const octokit = github.getOctokit(githubToken)
-		const openai = new OpenAI({ apiKey: openaiApiKey, baseURL: core.getInput('openai-base-url') })
+		core.debug(`OpenAI base URL: ${core.getInput('openai-base-url')}`);
+		core.debug(`OpenAI API key: ${openaiApiKey}`);
+		core.debug(`OpenAI model: ${openaiModel}`);
+                core.debug(`Review focus: ${reviewFocus}`);
+                core.debug(`Max files: ${maxFiles}`);
+                core.debug(`Exclude patterns: ${excludePatterns}`);
+                core.debug(`Auto-approve when resolved: ${autoApproveWhenResolved}`);
+
+                const openai = new OpenAI({ apiKey: openaiApiKey, baseURL: core.getInput('openai-base-url') })
 
 		// Get PR context
 		const context = github.context;
@@ -190,11 +187,33 @@ async function run(): Promise<void> {
 			core.info('Posted review summary to PR');
 		}
 
-		// Set output
-		core.setOutput('review-summary', reviewSummary);
-	} catch (error) {
-		core.setFailed(`Action failed: ${error}`);
-	}
+                // Set output
+                core.setOutput('review-summary', reviewSummary);
+
+                if (autoApproveWhenResolved) {
+                        const botLogin = await getAuthenticatedLogin(octokit);
+                        if (!botLogin) {
+                                core.info('Unable to determine authenticated user; skipping approval.');
+                                return;
+                        }
+
+                        const aiCommentsResolved = await areAiCommentsResolved(
+                                octokit,
+                                owner,
+                                repo,
+                                prNumber,
+                                botLogin
+                        );
+
+                        if (aiCommentsResolved) {
+                                await approvePullRequest(octokit, owner, repo, prNumber);
+                        } else {
+                                core.info('AI review comments are still unresolved; not approving.');
+                        }
+                }
+        } catch (error) {
+                core.setFailed(`Action failed: ${error}`);
+        }
 }
 
 async function postCommentsToPR(
@@ -220,7 +239,7 @@ async function postCommentsToPR(
         // Post comments for each file
         for (const [filename, fileComments] of Object.entries(commentsByFile)) {
                 const reviewComments = fileComments.map((comment) => ({
-                        body: comment.body,
+                        body: appendCommentId(comment),
                         path: comment.path,
                         line: comment.line ?? 1,
                         side: 'RIGHT' as const,
@@ -266,6 +285,86 @@ async function postCommentsToPR(
                                 }
                         }
                 }
+        }
+}
+
+function appendCommentId(comment: ReviewComment): string {
+        const marker = `<!-- ai-review-id:${comment.id} -->`;
+
+        if (comment.body.includes('<!-- ai-review-id:')) {
+                return comment.body;
+        }
+
+        return `${comment.body}\n\n${marker}`.trim();
+}
+
+async function getAuthenticatedLogin(octokit: OctokitType): Promise<string | null> {
+        try {
+                        const { data } = await octokit.rest.users.getAuthenticated();
+                        return data.login;
+        } catch (error) {
+                        core.error(`Failed to fetch authenticated user: ${error}`);
+                        return null;
+        }
+}
+
+async function areAiCommentsResolved(
+        octokit: OctokitType,
+        owner: string,
+        repo: string,
+        prNumber: number,
+        aiLogin: string
+): Promise<boolean> {
+        try {
+                const threads = await octokit.paginate(
+                        'GET /repos/{owner}/{repo}/pulls/{pull_number}/threads',
+                        {
+                        owner,
+                        repo,
+                        pull_number: prNumber,
+                        }
+                );
+
+                const aiThreads = threads.filter((thread: any) =>
+                        thread.comments?.some((comment: any) => comment.user?.login === aiLogin)
+                );
+
+                if (aiThreads.length === 0) {
+                        core.info('No AI-generated review threads found; skipping approval.');
+                        return false;
+                }
+
+                const unresolvedThreads = aiThreads.filter((thread: any) => !thread.resolved);
+                const allResolved = unresolvedThreads.length === 0;
+
+                if (!allResolved) {
+                        core.info(`Found ${unresolvedThreads.length} unresolved AI review threads.`);
+                }
+
+                return allResolved;
+        } catch (error) {
+                core.error(`Failed to check review thread resolution status: ${error}`);
+                return false;
+        }
+}
+
+async function approvePullRequest(
+        octokit: OctokitType,
+        owner: string,
+        repo: string,
+        prNumber: number
+): Promise<void> {
+        try {
+                await octokit.rest.pulls.createReview({
+                        owner,
+                        repo,
+                        pull_number: prNumber,
+                        event: 'APPROVE',
+                        body: 'All AI-generated review comments have been resolved. Auto-approving the PR.',
+                });
+                core.info('Submitted approval review because AI comments are resolved.');
+        } catch (error) {
+                core.error(`Failed to submit approval review: ${error}`);
         }
 }
 

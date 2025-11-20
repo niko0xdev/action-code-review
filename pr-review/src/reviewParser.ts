@@ -1,15 +1,19 @@
+import crypto from 'crypto';
+
 export interface ReviewComment {
-	path: string;
-	line: number;
-	body: string;
+        path: string;
+        line: number;
+        body: string;
+        id: string;
 }
 
 interface StructuredInlineComment {
-	line: number;
-	title?: string;
-	comment?: string;
-	recommendation?: string;
-	severity?: string;
+        line: number;
+        title?: string;
+        comment?: string;
+        recommendation?: string;
+        severity?: string;
+        rule_id?: string;
 }
 
 interface StructuredReviewResponse {
@@ -21,9 +25,19 @@ interface StructuredReviewResponse {
 }
 
 export interface ParsedReviewData {
-	summary: string;
-	comments: ReviewComment[];
+        summary: string;
+        comments: ReviewComment[];
 }
+
+const SEVERITY_ICON_MAP: Record<string, string> = {
+        info: 'ℹ️',
+        low: '✅',
+        medium: '⚠️',
+        high: '🔥',
+};
+
+const ISSUE_DOC_URL =
+        'https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels';
 
 export function parseReviewForComments(
 	reviewText: string,
@@ -42,12 +56,17 @@ export function parseReviewForComments(
 		if (lineMatch) {
 			// If we have a pending comment, save it
 			if (currentComment && targetLine) {
-				comments.push({
-					path: filename,
-					line: targetLine,
-					body: currentComment.trim(),
-				});
-			}
+                                comments.push({
+                                        path: filename,
+                                        line: targetLine,
+                                        body: currentComment.trim(),
+                                        id: buildCommentId({
+                                                path: filename,
+                                                line: targetLine,
+                                                body: currentComment,
+                                        }),
+                                });
+                        }
 
 			// Start new comment
 			targetLine = Number.parseInt(lineMatch[1]);
@@ -60,21 +79,31 @@ export function parseReviewForComments(
 
 	// Don't forget the last comment
 	if (currentComment && targetLine) {
-		comments.push({
-			path: filename,
-			line: targetLine,
-			body: currentComment.trim(),
-		});
-	}
+                        comments.push({
+                                path: filename,
+                                line: targetLine,
+                                body: currentComment.trim(),
+                                id: buildCommentId({
+                                        path: filename,
+                                        line: targetLine,
+                                        body: currentComment,
+                                }),
+                        });
+                }
 
 	// If no line-specific comments were found, create a general comment
 	if (comments.length === 0 && reviewText.trim()) {
 		comments.push({
-			path: filename,
-			line: 1, // Default to first line
-			body: reviewText.trim(),
-		});
-	}
+                        path: filename,
+                        line: 1, // Default to first line
+                        body: reviewText.trim(),
+                        id: buildCommentId({
+                                path: filename,
+                                line: 1,
+                                body: reviewText,
+                        }),
+                });
+        }
 
 	return comments;
 }
@@ -170,10 +199,10 @@ function buildStructuredSummary(structured: StructuredReviewResponse): string {
 }
 
 function convertStructuredComments(
-	inlineComments: StructuredInlineComment[] | undefined,
-	filename: string
+        inlineComments: StructuredInlineComment[] | undefined,
+        filename: string
 ): ReviewComment[] {
-	if (!Array.isArray(inlineComments)) {
+        if (!Array.isArray(inlineComments)) {
 		return [];
 	}
 
@@ -185,9 +214,9 @@ function convertStructuredComments(
 		.map((comment) => {
 			const parts: string[] = [];
 			const title = comment.title?.trim();
-			const explanation = comment.comment?.trim();
-			const recommendation = comment.recommendation?.trim();
-			const severity = comment.severity?.trim();
+                        const explanation = comment.comment?.trim();
+                        const recommendation = comment.recommendation?.trim();
+                        const severity = comment.severity?.trim();
 
 			if (title) {
 				parts.push(`**${title}**`);
@@ -201,15 +230,46 @@ function convertStructuredComments(
 				parts.push(`_Recommendation:_ ${recommendation}`);
 			}
 
-			if (severity) {
-				parts.push(`_Severity:_ ${severity}`);
-			}
+                        if (severity) {
+                                parts.push(formatSeverity(severity));
+                        }
 
-			return {
-				path: filename,
-				line: comment.line,
-				body: parts.join('\n\n').trim(),
-			};
-		})
-		.filter((comment) => Boolean(comment.body));
+                        return {
+                                path: filename,
+                                line: comment.line,
+                                body: parts.join('\n\n').trim(),
+                                id: buildCommentId({
+                                        path: filename,
+                                        line: comment.line,
+                                        body: parts.join('\n\n'),
+                                        ruleId: comment.rule_id,
+                                }),
+                        };
+                })
+                .filter((comment) => Boolean(comment.body));
+}
+
+function formatSeverity(severity: string): string {
+        const normalized = severity.toLowerCase();
+        const icon = SEVERITY_ICON_MAP[normalized];
+        const prefix = icon ? `${icon} ` : '';
+
+        return `_Severity:_ ${prefix}${normalized} — see ${ISSUE_DOC_URL}`;
+}
+
+function buildCommentId(params: {
+        path: string;
+        line: number;
+        body: string;
+        ruleId?: string;
+}): string {
+        const hash = crypto.createHash('sha256');
+        hash.update([
+                params.path,
+                params.line.toString(),
+                params.body.trim(),
+                params.ruleId?.trim() ?? '',
+        ].join('|'));
+
+        return hash.digest('hex').slice(0, 12);
 }
