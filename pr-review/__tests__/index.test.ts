@@ -13,21 +13,24 @@ Line 42: This function could be simplified by using array methods.
     const comments = parseReviewForComments(reviewText, filename);
     
     expect(comments).toHaveLength(3);
-    expect(comments[0]).toEqual({
+    expect(comments[0]).toMatchObject({
       path: filename,
       line: 10,
       body: 'This variable should be const instead of let since it\'s not reassigned.'
     });
-    expect(comments[1]).toEqual({
+    expect(comments[0].id).toMatch(/[a-f0-9]{12}/);
+    expect(comments[1]).toMatchObject({
       path: filename,
       line: 25,
       body: 'Consider adding error handling for this async operation.'
     });
-    expect(comments[2]).toEqual({
+    expect(comments[1].id).toMatch(/[a-f0-9]{12}/);
+    expect(comments[2]).toMatchObject({
       path: filename,
       line: 42,
       body: 'This function could be simplified by using array methods.'
     });
+    expect(comments[2].id).toMatch(/[a-f0-9]{12}/);
   });
 
   it('should handle alternative line format (L42:)', () => {
@@ -51,11 +54,12 @@ L25: Another comment with L format.
     const comments = parseReviewForComments(reviewText, filename);
     
     expect(comments).toHaveLength(1);
-    expect(comments[0]).toEqual({
+    expect(comments[0]).toMatchObject({
       path: filename,
       line: 1,
       body: reviewText
     });
+    expect(comments[0].id).toMatch(/[a-f0-9]{12}/);
   });
 
   it('should handle multiline comments', () => {
@@ -100,11 +104,12 @@ Line 20: This is another comment.
 
     expect(parsed.summary).toContain('validation');
     expect(parsed.comments).toHaveLength(1);
-    expect(parsed.comments[0]).toEqual({
+    expect(parsed.comments[0]).toMatchObject({
       path: filename,
       line: 32,
       body: '**Missing null check**\n\nuserInput may be undefined leading to a crash.\n\n_Recommendation:_ Guard the value before using it.\n\n_Severity:_ 🔥 high — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels'
     });
+    expect(parsed.comments[0].id).toMatch(/[a-f0-9]{12}/);
   });
 
   it('should map severity levels to icons and include the documentation link', () => {
@@ -123,11 +128,12 @@ Line 20: This is another comment.
     const filename = 'example.ts';
     const parsed = parseReviewResponse(reviewText, filename);
 
-    expect(parsed.comments[0]).toEqual({
+    expect(parsed.comments[0]).toMatchObject({
       path: filename,
       line: 12,
       body: 'Optional logging suggestion.\n\n_Severity:_ ℹ️ info — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels'
     });
+    expect(parsed.comments[0].id).toMatch(/[a-f0-9]{12}/);
   });
 
   it('should fall back to text parsing when JSON is invalid', () => {

@@ -239,7 +239,7 @@ async function postCommentsToPR(
         // Post comments for each file
         for (const [filename, fileComments] of Object.entries(commentsByFile)) {
                 const reviewComments = fileComments.map((comment) => ({
-                        body: comment.body,
+                        body: appendCommentId(comment),
                         path: comment.path,
                         line: comment.line ?? 1,
                         side: 'RIGHT' as const,
@@ -286,6 +286,16 @@ async function postCommentsToPR(
                         }
                 }
         }
+}
+
+function appendCommentId(comment: ReviewComment): string {
+        const marker = `<!-- ai-review-id:${comment.id} -->`;
+
+        if (comment.body.includes('<!-- ai-review-id:')) {
+                return comment.body;
+        }
+
+        return `${comment.body}\n\n${marker}`.trim();
 }
 
 async function getAuthenticatedLogin(octokit: OctokitType): Promise<string | null> {

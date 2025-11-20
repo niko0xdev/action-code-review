@@ -22,6 +22,7 @@ describe('postCommentsToPR', () => {
                                 path: 'src/file.ts',
                                 line: 10,
                                 body: 'Inline comment',
+                                id: 'comment-id-1',
                         },
                 ];
 
@@ -40,7 +41,7 @@ describe('postCommentsToPR', () => {
                         pull_number: 42,
                         comments: [
                                 {
-                                        body: 'Inline comment',
+                                        body: 'Inline comment\n\n<!-- ai-review-id:comment-id-1 -->',
                                         path: 'src/file.ts',
                                         line: 10,
                                         side: 'RIGHT',
@@ -69,8 +70,18 @@ describe('postCommentsToPR', () => {
                 } as any;
 
                 const comments: ReviewComment[] = [
-                        { path: 'src/file.ts', line: 5, body: 'First inline comment' },
-                        { path: 'src/file.ts', line: 7, body: 'Second inline comment' },
+                        {
+                                path: 'src/file.ts',
+                                line: 5,
+                                body: 'First inline comment',
+                                id: 'comment-id-2',
+                        },
+                        {
+                                path: 'src/file.ts',
+                                line: 7,
+                                body: 'Second inline comment',
+                                id: 'comment-id-3',
+                        },
                 ];
 
                 await postCommentsToPR(
@@ -87,7 +98,7 @@ describe('postCommentsToPR', () => {
                         owner: 'octo',
                         repo: 'hello-world',
                         pull_number: 24,
-                        body: 'First inline comment',
+                        body: 'First inline comment\n\n<!-- ai-review-id:comment-id-2 -->',
                         commit_id: 'commit-sha',
                         path: 'src/file.ts',
                         side: 'RIGHT',
