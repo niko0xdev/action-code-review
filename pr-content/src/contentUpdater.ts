@@ -1,5 +1,7 @@
-import type { Octokit } from '@octokit/rest';
+import * as github from '@actions/github';
 import * as core from '@actions/core';
+
+type OctokitType = ReturnType<typeof github.getOctokit>;
 
 interface PRContentUpdate {
 	title: string;
@@ -7,7 +9,7 @@ interface PRContentUpdate {
 }
 
 export async function updatePullRequestContent(
-	octokit: Octokit,
+	octokit: OctokitType,
 	owner: string,
 	repo: string,
 	pullNumber: number,
