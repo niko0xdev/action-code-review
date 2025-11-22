@@ -1,68 +1,71 @@
-import { Octokit } from '@octokit/rest';
+import type { Octokit } from '@octokit/rest';
 import * as core from '@actions/core';
 
 interface PRContentUpdate {
-  title: string;
-  description: string;
+	title: string;
+	description: string;
 }
 
 export async function updatePullRequestContent(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  pullNumber: number,
-  aiResponse: string
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	pullNumber: number,
+	aiResponse: string
 ): Promise<void> {
-  try {
-    // Parse AI response
-    let update: PRContentUpdate;
-    try {
-      update = JSON.parse(aiResponse);
-    } catch (parseError) {
-      // Try to extract JSON from response if it contains extra text
-      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        update = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('Failed to parse AI response as JSON');
-      }
-    }
+	try {
+		// Parse AI response
+		let update: PRContentUpdate;
+		try {
+			update = JSON.parse(aiResponse);
+		} catch (parseError) {
+			// Try to extract JSON from response if it contains extra text
+			const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+			if (jsonMatch) {
+				update = JSON.parse(jsonMatch[0]);
+			} else {
+				throw new Error('Failed to parse AI response as JSON');
+			}
+		}
 
-    // Validate response
-    if (!update.title || !update.description) {
-      throw new Error('AI response missing required fields: title and description');
-    }
+		// Validate response
+		if (!update.title || !update.description) {
+			throw new Error(
+				'AI response missing required fields: title and description'
+			);
+		}
 
-    // Get current PR to compare
-    const currentPR = await octokit.rest.pulls.get({
-      owner,
-      repo,
-      pull_number: pullNumber
-    });
+		// Get current PR to compare
+		const currentPR = await octokit.rest.pulls.get({
+			owner,
+			repo,
+			pull_number: pullNumber,
+		});
 
-    const hasChanges = 
-      currentPR.data.title !== update.title ||
-      currentPR.data.body !== update.description;
+		const hasChanges =
+			currentPR.data.title !== update.title ||
+			currentPR.data.body !== update.description;
 
-    if (!hasChanges) {
-      core.info('No changes needed - PR content is already optimal');
-      return;
-    }
+		if (!hasChanges) {
+			core.info('No changes needed - PR content is already optimal');
+			return;
+		}
 
-    // Update PR
-    await octokit.rest.pulls.update({
-      owner,
-      repo,
-      pull_number: pullNumber,
-      title: update.title,
-      body: update.description
-    });
+		// Update PR
+		await octokit.rest.pulls.update({
+			owner,
+			repo,
+			pull_number: pullNumber,
+			title: update.title,
+			body: update.description,
+		});
 
-    core.info(`Updated PR title: "${update.title}"`);
-    core.info(`Updated PR description: ${update.description.substring(0, 100)}...`);
-
-  } catch (error) {
-    core.error(`Failed to update PR content: ${error}`);
-    throw error;
-  }
+		core.info(`Updated PR title: "${update.title}"`);
+		core.info(
+			`Updated PR description: ${update.description.substring(0, 100)}...`
+		);
+	} catch (error) {
+		core.error(`Failed to update PR content: ${error}`);
+		throw error;
+	}
 }
