@@ -1,0 +1,29 @@
+name: 'Auto-update PR Content'
+description: 'Automatically update pull request title and description using AI based on code changes'
+author: 'AI Assistant'
+inputs:
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+  openai-api-key:
+    description: 'OpenAI API key for generating content'
+    required: true
+  model:
+    description: 'OpenAI model to use'
+    required: false
+    default: 'gpt-4'
+  max-tokens:
+    description: 'Maximum tokens for AI response'
+    required: false
+    default: '1000'
+  include-file-list:
+    description: 'Whether to include list of changed files in description'
+    required: false
+    default: 'true'
+  custom-instructions:
+    description: 'Additional instructions for content generation'
+    required: false
+    default: ''
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
