@@ -4,8 +4,8 @@
   "description": "GitHub Action to auto-update PR content using AI",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
-    "package": "ncc build src/index.ts -o dist",
+    "prebuild": "rm -rf dist",
+    "build": "tsc && ncc build lib/index.js -o dist",
     "test": "jest",
     "lint": "biome lint src/",
     "format": "biome format --write src/",
