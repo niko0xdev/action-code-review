@@ -39,6 +39,38 @@ const SEVERITY_ICON_MAP: Record<string, string> = {
 const ISSUE_DOC_URL =
         'https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels';
 
+export function filterCommentsBySeverity(
+	comments: ReviewComment[],
+	minSeverity: string
+): ReviewComment[] {
+	// Define severity levels in order of importance
+	const severityLevels = {
+		info: 0,
+		low: 1,
+		medium: 2,
+		high: 3,
+	};
+
+	// Normalize the minimum severity
+	const normalizedMinSeverity = minSeverity.toLowerCase();
+	const minLevel = severityLevels[normalizedMinSeverity as keyof typeof severityLevels] || 0;
+
+	// Filter comments based on severity
+	return comments.filter((comment) => {
+		// Extract severity from comment body
+		const severityMatch = comment.body.match(/_Severity:_\s*(\w+)/i);
+		if (!severityMatch) {
+			// If no severity is specified, include it if min severity is info
+			return minLevel <= 0;
+		}
+
+		const commentSeverity = severityMatch[1].toLowerCase();
+		const commentLevel = severityLevels[commentSeverity as keyof typeof severityLevels] || 0;
+
+		return commentLevel >= minLevel;
+	});
+}
+
 export function parseReviewForComments(
 	reviewText: string,
 	filename: string

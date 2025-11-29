@@ -6,7 +6,7 @@ import {
 	buildUserPrompt,
 	createSystemPrompt,
 } from './prompts';
-import { parseReviewResponse } from './reviewParser';
+import { parseReviewResponse, filterCommentsBySeverity } from './reviewParser';
 import type { ReviewComment } from './reviewParser';
 
 interface FileData {
@@ -90,6 +90,7 @@ async function run(): Promise<void> {
         const excludePatterns =
                 core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
         const autoApproveWhenResolved = core.getBooleanInput('auto-approve-when-resolved');
+        const minSeverity = core.getInput('min-severity') || 'info';
 
 		// Initialize clients
 		const octokit = github.getOctokit(githubToken)
@@ -100,6 +101,7 @@ async function run(): Promise<void> {
                 core.debug(`Max files: ${maxFiles}`);
                 core.debug(`Exclude patterns: ${excludePatterns}`);
                 core.debug(`Auto-approve when resolved: ${autoApproveWhenResolved}`);
+                core.debug(`Minimum severity: ${minSeverity}`);
 
                 const openai = new OpenAI({ apiKey: openaiApiKey, baseURL: core.getInput('openai-base-url') })
 
@@ -163,17 +165,21 @@ async function run(): Promise<void> {
 			reviewSummary += summary;
 		}
 
+		// Filter comments by minimum severity level
+		const filteredComments = filterCommentsBySeverity(allComments, minSeverity);
+		core.info(`Filtered ${allComments.length} comments to ${filteredComments.length} based on minimum severity: ${minSeverity}`);
+
                 // Post comments to PR
-                if (allComments.length > 0) {
+                if (filteredComments.length > 0) {
                         await postCommentsToPR(
                                 octokit,
                                 owner,
                                 repo,
                                 prNumber,
-                                allComments,
+                                filteredComments,
                                 headSha
                         );
-                        core.info(`Posted ${allComments.length} comments to PR`);
+                        core.info(`Posted ${filteredComments.length} comments to PR`);
                 }
 
 		// Post review summary

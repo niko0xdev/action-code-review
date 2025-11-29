@@ -35,6 +35,10 @@ inputs:
     description: 'If true, approve the pull request when all AI-generated review threads are resolved'
     required: false
     default: 'false'
+  min-severity:
+    description: 'Minimum severity level for comments (info, low, medium, high)'
+    required: false
+    default: 'info'
 
 outputs:
   review-summary:
