@@ -8,6 +8,7 @@ This GitHub Action automatically updates pull request titles and descriptions us
 |-------|-------------|----------|---------|
 | `github-token` | GitHub token for API access | Yes | - |
 | `openai-api-key` | OpenAI API key for generating content | Yes | - |
+| `openai-base-url` | Custom OpenAI API base URL (optional) | No | - |
 | `model` | OpenAI model to use | No | `gpt-4` |
 | `max-tokens` | Maximum tokens for AI response | No | `1000` |
 | `include-file-list` | Whether to include list of changed files in description | No | `true` |
@@ -34,6 +35,27 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+```
+
+### Using a Custom OpenAI Base URL
+
+```yaml
+name: Update PR Content
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  update-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Update PR Content
+        uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-base-url: ${{ secrets.OPENAI_BASE_URL }}
 ```
 
 ### Using a Custom Template

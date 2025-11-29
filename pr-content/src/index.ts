@@ -8,6 +8,7 @@ async function run(): Promise<void> {
 	try {
 		const githubToken = core.getInput('github-token', { required: true });
 		const openaiApiKey = core.getInput('openai-api-key', { required: true });
+		const openaiBaseUrl = core.getInput('openai-base-url');
 		const model = core.getInput('model') || 'gpt-4';
 		const maxTokens = Number.parseInt(core.getInput('max-tokens') || '1000');
 		const includeFileList = core.getInput('include-file-list') === 'true';
@@ -15,7 +16,13 @@ async function run(): Promise<void> {
 		const templatePath = core.getInput('template-path') || '.github/pull_request_template.md';
 
 		const octokit = github.getOctokit(githubToken);
-		const openai = new OpenAI({ apiKey: openaiApiKey });
+		
+		// Initialize OpenAI with custom base URL if provided
+		const openaiConfig: { apiKey: string; baseURL?: string } = { apiKey: openaiApiKey };
+		if (openaiBaseUrl) {
+			openaiConfig.baseURL = openaiBaseUrl;
+		}
+		const openai = new OpenAI(openaiConfig);
 
 		const context = github.context;
 		if (!context.payload.pull_request) {
