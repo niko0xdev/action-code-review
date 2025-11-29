@@ -144,3 +144,5 @@ To lint the code:
 ```bash
 npm run lint
 ```
+
+Tests are run using Vitest, a modern test framework for TypeScript/JavaScript projects.
