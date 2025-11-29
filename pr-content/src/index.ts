@@ -12,6 +12,7 @@ async function run(): Promise<void> {
 		const maxTokens = Number.parseInt(core.getInput('max-tokens') || '1000');
 		const includeFileList = core.getInput('include-file-list') === 'true';
 		const customInstructions = core.getInput('custom-instructions');
+		const templatePath = core.getInput('template-path') || '.github/pull_request_template.md';
 
 		const octokit = github.getOctokit(githubToken);
 		const openai = new OpenAI({ apiKey: openaiApiKey });
@@ -25,11 +26,19 @@ async function run(): Promise<void> {
 		const { owner, repo } = context.repo;
 		const pullNumber = context.payload.pull_request.number;
 
-		// Get PR details and diff
-		const [pr, files] = await Promise.all([
+		// Get PR details, diff, and template
+		const [pr, files, templateResponse] = await Promise.all([
 			octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber }),
 			octokit.rest.pulls.listFiles({ owner, repo, pull_number: pullNumber }),
+			// Try to get the template file
+			octokit.rest.repos.getContent({ owner, repo, path: templatePath }).catch(() => null)
 		]);
+
+		// Extract template content if available
+		let templateContent = '';
+		if (templateResponse && 'content' in templateResponse.data) {
+			templateContent = Buffer.from(templateResponse.data.content, 'base64').toString('utf8');
+		}
 
 		// Get diff for each file
 		const diffs = await Promise.all(
@@ -50,7 +59,7 @@ async function run(): Promise<void> {
 		);
 
 		// Build prompts
-		const systemPrompt = createSystemPrompt(customInstructions);
+		const systemPrompt = createSystemPrompt(customInstructions, templateContent);
 		const userPrompt = buildUserPrompt(
 			pr.data.title,
 			pr.data.body || '',
@@ -76,7 +85,7 @@ async function run(): Promise<void> {
 		}
 
 		// Parse and update PR
-		await updatePullRequestContent(octokit, owner, repo, pullNumber, response);
+		await updatePullRequestContent(octokit, owner, repo, pullNumber, response, templateContent);
 
 		core.info('Successfully updated pull request content');
 	} catch (error) {

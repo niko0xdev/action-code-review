@@ -24,6 +24,10 @@ inputs:
     description: 'Additional instructions for content generation'
     required: false
     default: ''
+  template-path:
+    description: 'Path to pull request template file in the repository'
+    required: false
+    default: '.github/pull_request_template.md'
 runs:
   using: 'node20'
   main: 'dist/index.js'
