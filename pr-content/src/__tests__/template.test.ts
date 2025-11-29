@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import { createSystemPrompt } from '../prompts';
 
 describe('Template functionality', () => {
