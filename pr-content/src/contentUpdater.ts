@@ -13,7 +13,8 @@ export async function updatePullRequestContent(
 	owner: string,
 	repo: string,
 	pullNumber: number,
-	aiResponse: string
+	aiResponse: string,
+	templateContent?: string
 ): Promise<void> {
 	try {
 		// Parse AI response
@@ -44,9 +45,36 @@ export async function updatePullRequestContent(
 			pull_number: pullNumber,
 		});
 
+		// If we have a template, use the AI-generated description to fill it in
+		let finalDescription = update.description;
+		if (templateContent) {
+			// Try to extract the description from the AI response if it's in a template format
+			// Otherwise, use the description as is
+			if (update.description.includes('## Description')) {
+				finalDescription = update.description;
+			} else {
+				// Fill the template with the AI-generated description
+				finalDescription = templateContent.replace(
+					/<!-- AI will fill this section with a description of what changed -->/,
+					update.description
+				);
+				
+				// Also fill in the testing section if the AI provided it
+				if (update.description.includes('## How Has This Been Tested')) {
+					const testingMatch = update.description.match(/## How Has This Been Tested\s*\n([\s\S]*?)(?=\n##|\n\n|$)/);
+					if (testingMatch) {
+						finalDescription = finalDescription.replace(
+							/<!-- AI will fill this section with testing information -->/,
+							testingMatch[1].trim()
+						);
+					}
+				}
+			}
+		}
+
 		const hasChanges =
 			currentPR.data.title !== update.title ||
-			currentPR.data.body !== update.description;
+			currentPR.data.body !== finalDescription;
 
 		if (!hasChanges) {
 			core.info('No changes needed - PR content is already optimal');
@@ -59,12 +87,12 @@ export async function updatePullRequestContent(
 			repo,
 			pull_number: pullNumber,
 			title: update.title,
-			body: update.description,
+			body: finalDescription,
 		});
 
 		core.info(`Updated PR title: "${update.title}"`);
 		core.info(
-			`Updated PR description: ${update.description.substring(0, 100)}...`
+			`Updated PR description: ${finalDescription.substring(0, 100)}...`
 		);
 	} catch (error) {
 		core.error(`Failed to update PR content: ${error}`);

@@ -1,4 +1,4 @@
-export function createSystemPrompt(customInstructions: string): string {
+export function createSystemPrompt(customInstructions: string, templateContent?: string): string {
 	const basePrompt = [
 		'You are an expert software engineer and technical writer.',
 		'Your task is to improve pull request titles and descriptions to be clear, concise, and informative.',
@@ -8,6 +8,15 @@ export function createSystemPrompt(customInstructions: string): string {
 		'Always respond with valid JSON containing "title" and "description" fields.',
 		'Do not include markdown code fences in your response.',
 	];
+
+	if (templateContent) {
+		basePrompt.push(
+			`Use the following pull request template as the base for the description. `,
+			`Fill in the template sections with appropriate content based on the code changes. `,
+			`Preserve the template structure and formatting, only fill in the content sections.\n\n`,
+			`Template:\n${templateContent}`
+		);
+	}
 
 	if (customInstructions) {
 		basePrompt.push(`Additional instructions: ${customInstructions}`);

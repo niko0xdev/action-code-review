@@ -1,0 +1,24 @@
+name: Example PR Content Update
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  update-pr-content:
+    runs-on: ubuntu-latest
+    name: Update PR Content
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update PR Content with Template
+        uses: ./
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: gpt-4
+          max-tokens: 2000
+          include-file-list: true
+          template-path: '.github/pull_request_template.md'
+          custom-instructions: 'Focus on the business value and technical implementation details'

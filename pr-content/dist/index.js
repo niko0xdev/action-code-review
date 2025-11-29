@@ -42,7 +42,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.updatePullRequestContent = updatePullRequestContent;
 const core = __importStar(__nccwpck_require__(6966));
-async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResponse) {
+async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResponse, templateContent) {
     try {
         // Parse AI response
         let update;
@@ -69,8 +69,28 @@ async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResp
             repo,
             pull_number: pullNumber,
         });
+        // If we have a template, use the AI-generated description to fill it in
+        let finalDescription = update.description;
+        if (templateContent) {
+            // Try to extract the description from the AI response if it's in a template format
+            // Otherwise, use the description as is
+            if (update.description.includes('## Description')) {
+                finalDescription = update.description;
+            }
+            else {
+                // Fill the template with the AI-generated description
+                finalDescription = templateContent.replace(/<!-- AI will fill this section with a description of what changed -->/, update.description);
+                // Also fill in the testing section if the AI provided it
+                if (update.description.includes('## How Has This Been Tested')) {
+                    const testingMatch = update.description.match(/## How Has This Been Tested\s*\n([\s\S]*?)(?=\n##|\n\n|$)/);
+                    if (testingMatch) {
+                        finalDescription = finalDescription.replace(/<!-- AI will fill this section with testing information -->/, testingMatch[1].trim());
+                    }
+                }
+            }
+        }
         const hasChanges = currentPR.data.title !== update.title ||
-            currentPR.data.body !== update.description;
+            currentPR.data.body !== finalDescription;
         if (!hasChanges) {
             core.info('No changes needed - PR content is already optimal');
             return;
@@ -81,10 +101,10 @@ async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResp
             repo,
             pull_number: pullNumber,
             title: update.title,
-            body: update.description,
+            body: finalDescription,
         });
         core.info(`Updated PR title: "${update.title}"`);
-        core.info(`Updated PR description: ${update.description.substring(0, 100)}...`);
+        core.info(`Updated PR description: ${finalDescription.substring(0, 100)}...`);
     }
     catch (error) {
         core.error(`Failed to update PR content: ${error}`);
@@ -147,6 +167,7 @@ async function run() {
         const maxTokens = Number.parseInt(core.getInput('max-tokens') || '1000');
         const includeFileList = core.getInput('include-file-list') === 'true';
         const customInstructions = core.getInput('custom-instructions');
+        const templatePath = core.getInput('template-path') || '.github/pull_request_template.md';
         const octokit = github.getOctokit(githubToken);
         const openai = new openai_1.OpenAI({ apiKey: openaiApiKey });
         const context = github.context;
@@ -156,11 +177,18 @@ async function run() {
         }
         const { owner, repo } = context.repo;
         const pullNumber = context.payload.pull_request.number;
-        // Get PR details and diff
-        const [pr, files] = await Promise.all([
+        // Get PR details, diff, and template
+        const [pr, files, templateResponse] = await Promise.all([
             octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber }),
             octokit.rest.pulls.listFiles({ owner, repo, pull_number: pullNumber }),
+            // Try to get the template file
+            octokit.rest.repos.getContent({ owner, repo, path: templatePath }).catch(() => null)
         ]);
+        // Extract template content if available
+        let templateContent = '';
+        if (templateResponse && 'content' in templateResponse.data) {
+            templateContent = Buffer.from(templateResponse.data.content, 'base64').toString('utf8');
+        }
         // Get diff for each file
         const diffs = await Promise.all(files.data.map(async (file) => {
             if (file.patch) {
@@ -174,7 +202,7 @@ async function run() {
         }));
         const validDiffs = diffs.filter((d) => d !== null);
         // Build prompts
-        const systemPrompt = (0, prompts_1.createSystemPrompt)(customInstructions);
+        const systemPrompt = (0, prompts_1.createSystemPrompt)(customInstructions, templateContent);
         const userPrompt = (0, prompts_1.buildUserPrompt)(pr.data.title, pr.data.body || '', validDiffs, includeFileList);
         // Generate content with AI
         const completion = await openai.chat.completions.create({
@@ -192,7 +220,7 @@ async function run() {
             return;
         }
         // Parse and update PR
-        await (0, contentUpdater_1.updatePullRequestContent)(octokit, owner, repo, pullNumber, response);
+        await (0, contentUpdater_1.updatePullRequestContent)(octokit, owner, repo, pullNumber, response, templateContent);
         core.info('Successfully updated pull request content');
     }
     catch (error) {
@@ -217,7 +245,7 @@ run();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.createSystemPrompt = createSystemPrompt;
 exports.buildUserPrompt = buildUserPrompt;
-function createSystemPrompt(customInstructions) {
+function createSystemPrompt(customInstructions, templateContent) {
     const basePrompt = [
         'You are an expert software engineer and technical writer.',
         'Your task is to improve pull request titles and descriptions to be clear, concise, and informative.',
@@ -227,6 +255,9 @@ function createSystemPrompt(customInstructions) {
         'Always respond with valid JSON containing "title" and "description" fields.',
         'Do not include markdown code fences in your response.',
     ];
+    if (templateContent) {
+        basePrompt.push(`Use the following pull request template as the base for the description. `, `Fill in the template sections with appropriate content based on the code changes. `, `Preserve the template structure and formatting, only fill in the content sections.\n\n`, `Template:\n${templateContent}`);
+    }
     if (customInstructions) {
         basePrompt.push(`Additional instructions: ${customInstructions}`);
     }
