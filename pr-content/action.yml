@@ -11,7 +11,7 @@ inputs:
   openai-base-url:
     description: 'Custom OpenAI API base URL (optional)'
     required: false
-  model:
+  openai-model:
     description: 'OpenAI model to use'
     required: false
     default: 'gpt-4'
