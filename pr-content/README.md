@@ -9,7 +9,7 @@ This GitHub Action automatically updates pull request titles and descriptions us
 | `github-token` | GitHub token for API access | Yes | - |
 | `openai-api-key` | OpenAI API key for generating content | Yes | - |
 | `openai-base-url` | Custom OpenAI API base URL (optional) | No | - |
-| `model` | OpenAI model to use | No | `gpt-4` |
+| `openai-model` | OpenAI model to use | No | `gpt-4` |
 | `max-tokens` | Maximum tokens for AI response | No | `1000` |
 | `include-file-list` | Whether to include list of changed files in description | No | `true` |
 | `custom-instructions` | Additional instructions for content generation | No | `''` |
