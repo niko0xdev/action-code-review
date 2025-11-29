@@ -8,6 +8,9 @@ inputs:
   openai-api-key:
     description: 'OpenAI API key for generating content'
     required: true
+  openai-base-url:
+    description: 'Custom OpenAI API base URL (optional)'
+    required: false
   model:
     description: 'OpenAI model to use'
     required: false

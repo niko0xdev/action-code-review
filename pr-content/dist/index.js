@@ -163,13 +163,19 @@ async function run() {
     try {
         const githubToken = core.getInput('github-token', { required: true });
         const openaiApiKey = core.getInput('openai-api-key', { required: true });
+        const openaiBaseUrl = core.getInput('openai-base-url');
         const model = core.getInput('model') || 'gpt-4';
         const maxTokens = Number.parseInt(core.getInput('max-tokens') || '1000');
         const includeFileList = core.getInput('include-file-list') === 'true';
         const customInstructions = core.getInput('custom-instructions');
         const templatePath = core.getInput('template-path') || '.github/pull_request_template.md';
         const octokit = github.getOctokit(githubToken);
-        const openai = new openai_1.OpenAI({ apiKey: openaiApiKey });
+        // Initialize OpenAI with custom base URL if provided
+        const openaiConfig = { apiKey: openaiApiKey };
+        if (openaiBaseUrl) {
+            openaiConfig.baseURL = openaiBaseUrl;
+        }
+        const openai = new openai_1.OpenAI(openaiConfig);
         const context = github.context;
         if (!context.payload.pull_request) {
             core.setFailed('This action can only be run on pull requests');
