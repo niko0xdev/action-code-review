@@ -58,7 +58,7 @@ export function filterCommentsBySeverity(
 	// Filter comments based on severity
 	return comments.filter((comment) => {
 		// Extract severity from comment body
-		const severityMatch = comment.body.match(/_Severity:_\s*(\w+)/i);
+		const severityMatch = comment.body.match(/_Severity:_\s*(?:[^\s]*\s+)?(\w+)/i);
 		if (!severityMatch) {
 			// If no severity is specified, include it if min severity is info
 			return minLevel <= 0;
