@@ -67,45 +67,50 @@ async function processFile(
 		}
 
 		// Parse review for line-specific comments
-                const parsed = parseReviewResponse(reviewText, file.filename);
+		const parsed = parseReviewResponse(reviewText, file.filename);
 
-                return {
-                        comments: parsed.comments,
-                        summary: `## ${file.filename}\n\n${parsed.summary}\n\n`,
-                };
-        } catch (error) {
-                core.error(`Error reviewing ${file.filename}: ${error}`);
-                return { comments: [], summary: '' };
-        }
+		return {
+			comments: parsed.comments,
+			summary: `## ${file.filename}\n\n${parsed.summary}\n\n`,
+		};
+	} catch (error) {
+		core.error(`Error reviewing ${file.filename}: ${error}`);
+		return { comments: [], summary: '' };
+	}
 }
 
 async function run(): Promise<void> {
-        try {
+	try {
 		// Get inputs
-        const githubToken = core.getInput('github-token', { required: true });
-        const openaiApiKey = core.getInput('openai-api-key', { required: true });
-        const openaiModel = core.getInput('openai-model') || 'gpt-4';
-        const reviewFocus = core.getInput('review-prompt') || DEFAULT_REVIEW_FOCUS;
-        const maxFiles = Number.parseInt(core.getInput('max-files') || '10');
-        const excludePatterns =
-                core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
-        const autoApproveWhenResolved = core.getBooleanInput('auto-approve-when-resolved');
-        const minSeverity = core.getInput('min-severity') || 'critical';
-        const blockOnIssues = core.getBooleanInput('block-on-issues');
+		const githubToken = core.getInput('github-token', { required: true });
+		const openaiApiKey = core.getInput('openai-api-key', { required: true });
+		const openaiModel = core.getInput('openai-model') || 'gpt-4';
+		const reviewFocus = core.getInput('review-prompt') || DEFAULT_REVIEW_FOCUS;
+		const maxFiles = Number.parseInt(core.getInput('max-files') || '10');
+		const excludePatterns =
+			core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
+		const autoApproveWhenResolved = core.getBooleanInput(
+			'auto-approve-when-resolved'
+		);
+		const minSeverity = core.getInput('min-severity') || 'critical';
+		const blockOnIssues = core.getBooleanInput('block-on-issues');
 
 		// Initialize clients
-		const octokit = github.getOctokit(githubToken)
+		const octokit = github.getOctokit(githubToken);
 		core.debug(`OpenAI base URL: ${core.getInput('openai-base-url')}`);
 		core.debug(`OpenAI API key: ${openaiApiKey}`);
 		core.debug(`OpenAI model: ${openaiModel}`);
-                core.debug(`Review focus: ${reviewFocus}`);
-                core.debug(`Max files: ${maxFiles}`);
-                core.debug(`Exclude patterns: ${excludePatterns}`);
-                core.debug(`Auto-approve when resolved: ${autoApproveWhenResolved}`);
-                core.debug(`Minimum severity: ${minSeverity}`);
-                core.debug(`Block on issues: ${blockOnIssues}`);
+		core.debug(`Review focus: ${reviewFocus}`);
+		core.debug(`Max files: ${maxFiles}`);
+		core.debug(`Exclude patterns: ${excludePatterns}`);
+		core.debug(`Auto-approve when resolved: ${autoApproveWhenResolved}`);
+		core.debug(`Minimum severity: ${minSeverity}`);
+		core.debug(`Block on issues: ${blockOnIssues}`);
 
-                const openai = new OpenAI({ apiKey: openaiApiKey, baseURL: core.getInput('openai-base-url') })
+		const openai = new OpenAI({
+			apiKey: openaiApiKey,
+			baseURL: core.getInput('openai-base-url'),
+		});
 
 		// Get PR context
 		const context = github.context;
@@ -114,13 +119,13 @@ async function run(): Promise<void> {
 			return;
 		}
 
-                const pullRequest = context.payload.pull_request;
-                const owner = context.repo.owner;
-                const repo = context.repo.repo;
-                const prNumber = pullRequest.number;
-                const headSha = pullRequest.head?.sha || context.sha;
+		const pullRequest = context.payload.pull_request;
+		const owner = context.repo.owner;
+		const repo = context.repo.repo;
+		const prNumber = pullRequest.number;
+		const headSha = pullRequest.head?.sha || context.sha;
 
-                core.info(`Processing PR #${prNumber} in ${owner}/${repo}`);
+		core.info(`Processing PR #${prNumber} in ${owner}/${repo}`);
 
 		// Get PR diff
 		const { data: files } = await octokit.rest.pulls.listFiles({
@@ -169,24 +174,28 @@ async function run(): Promise<void> {
 
 		// Filter comments by minimum severity level
 		const filteredComments = filterCommentsBySeverity(allComments, minSeverity);
-		core.info(`Filtered ${allComments.length} comments to ${filteredComments.length} based on minimum severity: ${minSeverity}`);
+		core.info(
+			`Filtered ${allComments.length} comments to ${filteredComments.length} based on minimum severity: ${minSeverity}`
+		);
 
-                // Post comments to PR
-                if (filteredComments.length > 0) {
-                        const shouldBlock = blockOnIssues && filteredComments.length > 0;
-                        const reviewEvent = shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT';
-                        
-                        await postCommentsToPR(
-                                octokit,
-                                owner,
-                                repo,
-                                prNumber,
-                                filteredComments,
-                                headSha,
-                                reviewEvent
-                        );
-                        core.info(`Posted ${filteredComments.length} comments to PR with event: ${reviewEvent}`);
-                }
+		// Post comments to PR
+		if (filteredComments.length > 0) {
+			const shouldBlock = blockOnIssues && filteredComments.length > 0;
+			const reviewEvent = shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT';
+
+			await postCommentsToPR(
+				octokit,
+				owner,
+				repo,
+				prNumber,
+				filteredComments,
+				headSha,
+				reviewEvent
+			);
+			core.info(
+				`Posted ${filteredComments.length} comments to PR with event: ${reviewEvent}`
+			);
+		}
 
 		// Post review summary
 		if (reviewSummary) {
@@ -199,96 +208,105 @@ async function run(): Promise<void> {
 			core.info('Posted review summary to PR');
 		}
 
-                // Set output
-                core.setOutput('review-summary', reviewSummary);
+		// Set output
+		core.setOutput('review-summary', reviewSummary);
 
-                if (autoApproveWhenResolved) {
-                        const botLogin = await getAuthenticatedLogin(octokit);
-                        if (!botLogin) {
-                                core.info('Unable to determine authenticated user; skipping approval.');
-                                return;
-                        }
+		if (autoApproveWhenResolved) {
+			const botLogin = await getAuthenticatedLogin(octokit);
+			if (!botLogin) {
+				core.info('Unable to determine authenticated user; skipping approval.');
+				return;
+			}
 
-                        const aiCommentsResolved = await areAiCommentsResolved(
-                                octokit,
-                                owner,
-                                repo,
-                                prNumber,
-                                botLogin
-                        );
+			const aiCommentsResolved = await areAiCommentsResolved(
+				octokit,
+				owner,
+				repo,
+				prNumber,
+				botLogin
+			);
 
-                        if (aiCommentsResolved) {
-                                await approvePullRequest(octokit, owner, repo, prNumber);
-                        } else {
-                                core.info('AI review comments are still unresolved; not approving.');
-                        }
-                }
-        } catch (error) {
-                core.setFailed(`Action failed: ${error}`);
-        }
+			if (aiCommentsResolved) {
+				await approvePullRequest(octokit, owner, repo, prNumber);
+			} else {
+				core.info('AI review comments are still unresolved; not approving.');
+			}
+		}
+	} catch (error) {
+		core.setFailed(`Action failed: ${error}`);
+	}
 }
 
 async function postCommentsToPR(
-        octokit: OctokitType,
-        owner: string,
-        repo: string,
-        prNumber: number,
-        comments: ReviewComment[],
-        commitId: string,
-        reviewEvent: 'COMMENT' | 'REQUEST_CHANGES' = 'COMMENT'
+	octokit: OctokitType,
+	owner: string,
+	repo: string,
+	prNumber: number,
+	comments: ReviewComment[],
+	commitId: string,
+	reviewEvent: 'COMMENT' | 'REQUEST_CHANGES' = 'COMMENT'
 ): Promise<void> {
-        // Fetch existing review comments to check for duplicates
-        const existingCommentIds = new Set<string>();
-        try {
-                const authenticatedLogin = await getAuthenticatedLogin(octokit);
-                if (!authenticatedLogin) {
-                        core.info('Unable to determine authenticated user; skipping duplicate check.');
-                } else {
-                        const { data: reviews } = await octokit.rest.pulls.listReviews({
-                                owner,
-                                repo,
-                                pull_number: prNumber,
-                        });
-                        
-                        for (const review of reviews) {
-                                if (review.user?.login === authenticatedLogin) {
-                                        const { data: reviewComments } = await octokit.rest.pulls.listCommentsForReview({
-                                                owner,
-                                                repo,
-                                                pull_number: prNumber,
-                                                review_id: review.id,
-                                        });
-                                        
-                                        for (const comment of reviewComments) {
-                                                const idMatch = comment.body?.match(/<!-- ai-review-id:([a-f0-9]{12}) -->/);
-                                                if (idMatch) {
-                                                        existingCommentIds.add(idMatch[1]);
-                                                }
-                                        }
-                                }
-                        }
-                        core.info(`Found ${existingCommentIds.size} existing AI review comments`);
-                }
-        } catch (error) {
-                core.warning(`Failed to fetch existing comments: ${error}`);
-        }
+	// Fetch existing review comments to check for duplicates
+	const existingCommentIds = new Set<string>();
+	try {
+		const authenticatedLogin = await getAuthenticatedLogin(octokit);
+		if (!authenticatedLogin) {
+			core.info(
+				'Unable to determine authenticated user; skipping duplicate check.'
+			);
+		} else {
+			const { data: reviews } = await octokit.rest.pulls.listReviews({
+				owner,
+				repo,
+				pull_number: prNumber,
+			});
 
-        // Filter out duplicate comments
-        const newComments = comments.filter(comment => !existingCommentIds.has(comment.id));
-        const duplicateCount = comments.length - newComments.length;
-        
-        if (duplicateCount > 0) {
-                core.info(`Skipping ${duplicateCount} duplicate comment(s) that already exist`);
-        }
+			for (const review of reviews) {
+				if (review.user?.login === authenticatedLogin) {
+					const { data: reviewComments } =
+						await octokit.rest.pulls.listCommentsForReview({
+							owner,
+							repo,
+							pull_number: prNumber,
+							review_id: review.id,
+						});
 
-        if (newComments.length === 0) {
-                core.info('No new comments to post (all are duplicates)');
-                return;
-        }
+					for (const comment of reviewComments) {
+						const idMatch = comment.body?.match(
+							/<!-- ai-review-id:([a-f0-9]{12}) -->/
+						);
+						if (idMatch) {
+							existingCommentIds.add(idMatch[1]);
+						}
+					}
+				}
+			}
+			core.info(`Found ${existingCommentIds.size} existing AI review comments`);
+		}
+	} catch (error) {
+		core.warning(`Failed to fetch existing comments: ${error}`);
+	}
 
-        // Group comments by file to avoid rate limiting
-        const commentsByFile = newComments.reduce(
-                (acc, comment) => {
+	// Filter out duplicate comments
+	const newComments = comments.filter(
+		(comment) => !existingCommentIds.has(comment.id)
+	);
+	const duplicateCount = comments.length - newComments.length;
+
+	if (duplicateCount > 0) {
+		core.info(
+			`Skipping ${duplicateCount} duplicate comment(s) that already exist`
+		);
+	}
+
+	if (newComments.length === 0) {
+		core.info('No new comments to post (all are duplicates)');
+		return;
+	}
+
+	// Group comments by file to avoid rate limiting
+	const commentsByFile = newComments.reduce(
+		(acc, comment) => {
 			if (!acc[comment.path]) {
 				acc[comment.path] = [];
 			}
@@ -298,136 +316,142 @@ async function postCommentsToPR(
 		{} as Record<string, ReviewComment[]>
 	);
 
-        // Post comments for each file
-        for (const [filename, fileComments] of Object.entries(commentsByFile)) {
-                const reviewComments = fileComments.map((comment) => ({
-                        body: appendCommentId(comment),
-                        path: comment.path,
-                        line: comment.line ?? 1,
-                        side: 'RIGHT' as const,
-                        commit_id: commitId,
-                }));
+	// Post comments for each file
+	for (const [filename, fileComments] of Object.entries(commentsByFile)) {
+		const reviewComments = fileComments.map((comment) => ({
+			body: appendCommentId(comment),
+			path: comment.path,
+			line: comment.line ?? 1,
+			side: 'RIGHT' as const,
+			commit_id: commitId,
+		}));
 
-                try {
-                        // Create a review comment for each file
-                        await octokit.rest.pulls.createReview({
-                                owner,
-                                repo,
-                                pull_number: prNumber,
-                                comments: reviewComments,
-                                event: reviewEvent,
-                        });
-                } catch (error) {
-                        core.error(`Failed to post comments for ${filename}: ${error}`);
+		try {
+			// Create a review comment for each file
+			await octokit.rest.pulls.createReview({
+				owner,
+				repo,
+				pull_number: prNumber,
+				comments: reviewComments,
+				event: reviewEvent,
+			});
+		} catch (error) {
+			core.error(`Failed to post comments for ${filename}: ${error}`);
 
-                        for (const reviewComment of reviewComments) {
-                                try {
-                                        await octokit.rest.pulls.createReviewComment({
-                                                owner,
-                                                repo,
-                                                pull_number: prNumber,
-                                                body: reviewComment.body,
-                                                commit_id: reviewComment.commit_id,
-                                                path: reviewComment.path,
-                                                side: reviewComment.side,
-                                                line: reviewComment.line,
-                                        });
-                                } catch (commentError) {
-                                        core.error(
-                                                `Failed to post individual comment for ${filename}: ${commentError}`
-                                        );
+			for (const reviewComment of reviewComments) {
+				try {
+					await octokit.rest.pulls.createReviewComment({
+						owner,
+						repo,
+						pull_number: prNumber,
+						body: reviewComment.body,
+						commit_id: reviewComment.commit_id,
+						path: reviewComment.path,
+						side: reviewComment.side,
+						line: reviewComment.line,
+					});
+				} catch (commentError) {
+					core.error(
+						`Failed to post individual comment for ${filename}: ${commentError}`
+					);
 
-                                        // Fallback: create a regular issue comment
-                                        await octokit.rest.issues.createComment({
-                                                owner,
-                                                repo,
-                                                issue_number: prNumber,
-                                                body: `## 📝 Review for ${filename}\n\n**Line ${reviewComment.line}:** ${reviewComment.body}`,
-                                        });
-                                }
-                        }
-                }
-        }
+					// Fallback: create a regular issue comment
+					await octokit.rest.issues.createComment({
+						owner,
+						repo,
+						issue_number: prNumber,
+						body: `## 📝 Review for ${filename}\n\n**Line ${reviewComment.line}:** ${reviewComment.body}`,
+					});
+				}
+			}
+		}
+	}
 }
 
 function appendCommentId(comment: ReviewComment): string {
-        const marker = `<!-- ai-review-id:${comment.id} -->`;
+	const marker = `<!-- ai-review-id:${comment.id} -->`;
 
-        if (comment.body.includes('<!-- ai-review-id:')) {
-                return comment.body;
-        }
+	if (comment.body.includes('<!-- ai-review-id:')) {
+		return comment.body;
+	}
 
-        return `${comment.body}\n\n${marker}`.trim();
+	return `${comment.body}\n\n${marker}`.trim();
 }
 
-async function getAuthenticatedLogin(octokit: OctokitType): Promise<string | null> {
-        try {
-                        const { data } = await octokit.rest.users.getAuthenticated();
-                        return data.login;
-        } catch (error) {
-                        core.error(`Failed to fetch authenticated user: ${error}`);
-                        return null;
-        }
+async function getAuthenticatedLogin(
+	octokit: OctokitType
+): Promise<string | null> {
+	try {
+		const { data } = await octokit.rest.users.getAuthenticated();
+		return data.login;
+	} catch (error) {
+		core.error(`Failed to fetch authenticated user: ${error}`);
+		return null;
+	}
 }
 
 async function areAiCommentsResolved(
-        octokit: OctokitType,
-        owner: string,
-        repo: string,
-        prNumber: number,
-        aiLogin: string
+	octokit: OctokitType,
+	owner: string,
+	repo: string,
+	prNumber: number,
+	aiLogin: string
 ): Promise<boolean> {
-        try {
-                const threads = await octokit.paginate(
-                        'GET /repos/{owner}/{repo}/pulls/{pull_number}/threads',
-                        {
-                        owner,
-                        repo,
-                        pull_number: prNumber,
-                        }
-                );
+	try {
+		const threads = await octokit.paginate(
+			'GET /repos/{owner}/{repo}/pulls/{pull_number}/threads',
+			{
+				owner,
+				repo,
+				pull_number: prNumber,
+			}
+		);
 
-                const aiThreads = threads.filter((thread: any) =>
-                        thread.comments?.some((comment: any) => comment.user?.login === aiLogin)
-                );
+		const aiThreads = threads.filter((thread: any) =>
+			thread.comments?.some((comment: any) => comment.user?.login === aiLogin)
+		);
 
-                if (aiThreads.length === 0) {
-                        core.info('No AI-generated review threads found; skipping approval.');
-                        return false;
-                }
+		if (aiThreads.length === 0) {
+			core.info('No AI-generated review threads found; skipping approval.');
+			return false;
+		}
 
-                const unresolvedThreads = aiThreads.filter((thread: any) => !thread.resolved);
-                const allResolved = unresolvedThreads.length === 0;
+		const unresolvedThreads = aiThreads.filter(
+			(thread: any) => !thread.resolved
+		);
+		const allResolved = unresolvedThreads.length === 0;
 
-                if (!allResolved) {
-                        core.info(`Found ${unresolvedThreads.length} unresolved AI review threads.`);
-                }
+		if (!allResolved) {
+			core.info(
+				`Found ${unresolvedThreads.length} unresolved AI review threads.`
+			);
+		}
 
-                return allResolved;
-        } catch (error) {
-                core.error(`Failed to check review thread resolution status: ${error}`);
-                return false;
-        }
+		return allResolved;
+	} catch (error) {
+		core.error(`Failed to check review thread resolution status: ${error}`);
+		return false;
+	}
 }
 
 async function approvePullRequest(
-        octokit: OctokitType,
-        owner: string,
-        repo: string,
-        prNumber: number
+	octokit: OctokitType,
+	owner: string,
+	repo: string,
+	prNumber: number
 ): Promise<void> {
-        try {
-                await octokit.rest.pulls.createReview({
-                        owner,
-                        repo,
-                        pull_number: prNumber,
-                        event: 'APPROVE',
-                        body: 'All AI-generated review comments have been resolved. Auto-approving the PR.',
-                });
-                core.info('Submitted approval review because AI comments are resolved.');
-        } catch (error) {
-                core.error(`Failed to submit approval review: ${error}`);
-        }
+	try {
+		await octokit.rest.pulls.createReview({
+			owner,
+			repo,
+			pull_number: prNumber,
+			event: 'APPROVE',
+			body: 'All AI-generated review comments have been resolved. Auto-approving the PR.',
+		});
+		core.info('Submitted approval review because AI comments are resolved.');
+	} catch (error) {
+		core.error(`Failed to submit approval review: ${error}`);
+	}
 }
 
 // Run the action
