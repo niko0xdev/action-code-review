@@ -36,9 +36,13 @@ inputs:
     required: false
     default: 'false'
   min-severity:
-    description: 'Minimum severity level for comments (info, low, medium, high)'
+    description: 'Minimum severity level for comments (low, high, critical)'
     required: false
-    default: 'info'
+    default: 'critical'
+  block-on-issues:
+    description: 'If true, block PR merge when issues at or above min-severity are found'
+    required: false
+    default: 'true'
 
 outputs:
   review-summary:

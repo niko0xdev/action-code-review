@@ -8,56 +8,50 @@ describe('filterCommentsBySeverity', () => {
 			{
 				path: 'file1.js',
 				line: 1,
-				body: 'Info comment\n\n_Severity:_ ℹ️ info — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels',
+				body: 'Low severity comment\n\n_Severity:_ ✅ low — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels',
 				id: '1',
 			},
 			{
 				path: 'file1.js',
 				line: 2,
-				body: 'Low severity comment\n\n_Severity:_ ✅ low — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels',
+				body: 'High severity comment\n\n_Severity:_ 🔥 high — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels',
 				id: '2',
 			},
 			{
 				path: 'file1.js',
 				line: 3,
-				body: 'Medium severity comment\n\n_Severity:_ ⚠️ medium — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels',
+				body: 'Critical severity comment\n\n_Severity:_ 🚨 critical — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels',
 				id: '3',
 			},
 			{
 				path: 'file1.js',
 				line: 4,
-				body: 'High severity comment\n\n_Severity:_ 🔥 high — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels',
-				id: '4',
-			},
-			{
-				path: 'file1.js',
-				line: 5,
 				body: 'Comment without severity',
-				id: '5',
+				id: '4',
 			},
 		];
 
+		// Test with 'critical' minimum severity (default)
+		const criticalSeverityComments = filterCommentsBySeverity(comments, 'critical');
+		expect(criticalSeverityComments).toHaveLength(1);
+		expect(criticalSeverityComments[0].id).toBe('3');
+
 		// Test with 'high' minimum severity
 		const highSeverityComments = filterCommentsBySeverity(comments, 'high');
-		expect(highSeverityComments).toHaveLength(1);
-		expect(highSeverityComments[0].id).toBe('4');
-
-		// Test with 'medium' minimum severity
-		const mediumSeverityComments = filterCommentsBySeverity(comments, 'medium');
-		expect(mediumSeverityComments).toHaveLength(2);
-		expect(mediumSeverityComments.map(c => c.id)).toEqual(['3', '4']);
+		expect(highSeverityComments).toHaveLength(2);
+		expect(highSeverityComments.map(c => c.id)).toEqual(['2', '3']);
 
 		// Test with 'low' minimum severity
 		const lowSeverityComments = filterCommentsBySeverity(comments, 'low');
 		expect(lowSeverityComments).toHaveLength(3);
-		expect(lowSeverityComments.map(c => c.id)).toEqual(['2', '3', '4']);
+		expect(lowSeverityComments.map(c => c.id)).toEqual(['1', '2', '3']);
 
-		// Test with 'info' minimum severity (default)
-		const infoSeverityComments = filterCommentsBySeverity(comments, 'info');
-		expect(infoSeverityComments).toHaveLength(5); // All comments including those without severity
-
-		// Test with invalid minimum severity (should default to info)
+		// Test with invalid minimum severity (should default to critical)
 		const invalidSeverityComments = filterCommentsBySeverity(comments, 'invalid');
-		expect(invalidSeverityComments).toHaveLength(5);
+		expect(invalidSeverityComments).toHaveLength(1);
+		expect(invalidSeverityComments[0].id).toBe('3');
+
+		// Test that comments without severity are filtered out
+		expect(filterCommentsBySeverity(comments, 'critical')).toHaveLength(1);
 	});
 });
