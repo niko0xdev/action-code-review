@@ -194,7 +194,7 @@ describe('postCommentsToPR', () => {
                 const listCommentsForReview = vi.fn().mockResolvedValue({
                         data: [
                                 {
-                                        body: 'Duplicate comment\n\n<!-- ai-review-id:comment-id-1 -->',
+                                        body: 'Duplicate comment\n\n<!-- ai-review-id:abc123def456 -->',
                                 },
                         ],
                 });
@@ -223,7 +223,7 @@ describe('postCommentsToPR', () => {
                                 path: 'src/file.ts',
                                 line: 10,
                                 body: 'Duplicate comment',
-                                id: 'comment-id-1',
+                                id: 'abc123def456',
                         },
                 ];
 
