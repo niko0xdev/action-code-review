@@ -66,6 +66,8 @@ jobs:
 | `max-files` | Maximum number of files to review | No | `10` |
 | `exclude-patterns` | Comma-separated list of file patterns to exclude | No | `*.md,*.txt,*.json,*.yml,*.yaml` |
 | `auto-approve-when-resolved` | Approve the pull request once all AI-created review threads are resolved | No | `false` |
+| `min-severity` | Minimum severity level for comments (low, high, critical) | No | `critical` |
+| `block-on-issues` | Block PR merge when issues at or above min-severity are found | No | `true` |
 
 ## Outputs
 
@@ -75,16 +77,15 @@ jobs:
 
 ## Severity levels
 
-Inline comments can include a severity that highlights the impact of an issue. The action maps common severities to the following icons to keep feedback easy to scan:
+Inline comments can include a severity that highlights the impact of an issue. The action uses a 3-level severity system with the following icons to keep feedback easy to scan:
 
 | Severity | Icon | Meaning |
 |----------|------|---------|
-| info | ℹ️ | Informational note or minor observation |
-| low | ✅ | Small improvement or non-blocking nit |
-| medium | ⚠️ | Noticeable problem that should be addressed |
-| high | 🔥 | Critical issue that needs immediate attention |
+| low | ✅ | Minor improvements, style suggestions, best practices |
+| high | 🔥 | Significant bugs, performance issues, major code smells |
+| critical | 🚨 | Security vulnerabilities, data loss, production breakage |
 
-Each severity link points back to this table so reviewers understand the impact level at a glance.
+The default minimum severity is `critical`, which means only critical issues are reported by default. You can adjust this to `high` or `low` to see more issues. Each severity link points back to this table so reviewers understand the impact level at a glance.
 
 ## Customization
 
@@ -136,6 +137,36 @@ Enable automatic approval after all AI-generated review threads have been marked
 ```
 
 The action checks review threads authored by the authenticated token and submits an approval review when none of those threads remain unresolved.
+
+### Blocking PR merge on issues
+
+By default, the action will block PR merge when issues at or above the `min-severity` threshold are found. It uses GitHub's `REQUEST_CHANGES` review event, which prevents the PR from being merged until the issues are addressed.
+
+```yaml
+- name: Run AI Code Review
+  uses: niko0xdev/action-code-review@v1
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+    min-severity: high  # Block on HIGH or CRITICAL issues
+    block-on-issues: true  # Enable blocking (default)
+```
+
+To disable blocking and only post comments:
+
+```yaml
+- name: Run AI Code Review
+  uses: niko0xdev/action-code-review@v1
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+    block-on-issues: false  # Don't block merge
+```
+
+The blocking behavior works with any `min-severity` setting:
+- `min-severity: critical` - Blocks only on CRITICAL issues (default)
+- `min-severity: high` - Blocks on HIGH or CRITICAL issues
+- `min-severity: low` - Blocks on all issues (LOW, HIGH, CRITICAL)
 
 ## Development
 

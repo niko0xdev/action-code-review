@@ -30,10 +30,9 @@ export interface ParsedReviewData {
 }
 
 const SEVERITY_ICON_MAP: Record<string, string> = {
-        info: 'ℹ️',
         low: '✅',
-        medium: '⚠️',
         high: '🔥',
+        critical: '🚨',
 };
 
 const ISSUE_DOC_URL =
@@ -45,27 +44,26 @@ export function filterCommentsBySeverity(
 ): ReviewComment[] {
 	// Define severity levels in order of importance
 	const severityLevels = {
-		info: 0,
-		low: 1,
-		medium: 2,
-		high: 3,
+		low: 0,
+		high: 1,
+		critical: 2,
 	};
 
 	// Normalize the minimum severity
 	const normalizedMinSeverity = minSeverity.toLowerCase();
-	const minLevel = severityLevels[normalizedMinSeverity as keyof typeof severityLevels] || 0;
+	const minLevel = severityLevels[normalizedMinSeverity as keyof typeof severityLevels] ?? 2;
 
 	// Filter comments based on severity
 	return comments.filter((comment) => {
 		// Extract severity from comment body
 		const severityMatch = comment.body.match(/_Severity:_\s*(?:[^\s]*\s+)?(\w+)/i);
 		if (!severityMatch) {
-			// If no severity is specified, include it if min severity is info
-			return minLevel <= 0;
+			// If no severity is specified, exclude it
+			return false;
 		}
 
 		const commentSeverity = severityMatch[1].toLowerCase();
-		const commentLevel = severityLevels[commentSeverity as keyof typeof severityLevels] || 0;
+		const commentLevel = severityLevels[commentSeverity as keyof typeof severityLevels] ?? 0;
 
 		return commentLevel >= minLevel;
 	});

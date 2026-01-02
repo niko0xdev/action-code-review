@@ -90,7 +90,8 @@ async function run(): Promise<void> {
         const excludePatterns =
                 core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
         const autoApproveWhenResolved = core.getBooleanInput('auto-approve-when-resolved');
-        const minSeverity = core.getInput('min-severity') || 'info';
+        const minSeverity = core.getInput('min-severity') || 'critical';
+        const blockOnIssues = core.getBooleanInput('block-on-issues');
 
 		// Initialize clients
 		const octokit = github.getOctokit(githubToken)
@@ -102,6 +103,7 @@ async function run(): Promise<void> {
                 core.debug(`Exclude patterns: ${excludePatterns}`);
                 core.debug(`Auto-approve when resolved: ${autoApproveWhenResolved}`);
                 core.debug(`Minimum severity: ${minSeverity}`);
+                core.debug(`Block on issues: ${blockOnIssues}`);
 
                 const openai = new OpenAI({ apiKey: openaiApiKey, baseURL: core.getInput('openai-base-url') })
 
@@ -171,15 +173,19 @@ async function run(): Promise<void> {
 
                 // Post comments to PR
                 if (filteredComments.length > 0) {
+                        const shouldBlock = blockOnIssues && filteredComments.length > 0;
+                        const reviewEvent = shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT';
+                        
                         await postCommentsToPR(
                                 octokit,
                                 owner,
                                 repo,
                                 prNumber,
                                 filteredComments,
-                                headSha
+                                headSha,
+                                reviewEvent
                         );
-                        core.info(`Posted ${filteredComments.length} comments to PR`);
+                        core.info(`Posted ${filteredComments.length} comments to PR with event: ${reviewEvent}`);
                 }
 
 		// Post review summary
@@ -228,10 +234,60 @@ async function postCommentsToPR(
         repo: string,
         prNumber: number,
         comments: ReviewComment[],
-        commitId: string
+        commitId: string,
+        reviewEvent: 'COMMENT' | 'REQUEST_CHANGES' = 'COMMENT'
 ): Promise<void> {
+        // Fetch existing review comments to check for duplicates
+        const existingCommentIds = new Set<string>();
+        try {
+                const authenticatedLogin = await getAuthenticatedLogin(octokit);
+                if (!authenticatedLogin) {
+                        core.info('Unable to determine authenticated user; skipping duplicate check.');
+                } else {
+                        const { data: reviews } = await octokit.rest.pulls.listReviews({
+                                owner,
+                                repo,
+                                pull_number: prNumber,
+                        });
+                        
+                        for (const review of reviews) {
+                                if (review.user?.login === authenticatedLogin) {
+                                        const { data: reviewComments } = await octokit.rest.pulls.listCommentsForReview({
+                                                owner,
+                                                repo,
+                                                pull_number: prNumber,
+                                                review_id: review.id,
+                                        });
+                                        
+                                        for (const comment of reviewComments) {
+                                                const idMatch = comment.body?.match(/<!-- ai-review-id:([a-f0-9]{12}) -->/);
+                                                if (idMatch) {
+                                                        existingCommentIds.add(idMatch[1]);
+                                                }
+                                        }
+                                }
+                        }
+                        core.info(`Found ${existingCommentIds.size} existing AI review comments`);
+                }
+        } catch (error) {
+                core.warning(`Failed to fetch existing comments: ${error}`);
+        }
+
+        // Filter out duplicate comments
+        const newComments = comments.filter(comment => !existingCommentIds.has(comment.id));
+        const duplicateCount = comments.length - newComments.length;
+        
+        if (duplicateCount > 0) {
+                core.info(`Skipping ${duplicateCount} duplicate comment(s) that already exist`);
+        }
+
+        if (newComments.length === 0) {
+                core.info('No new comments to post (all are duplicates)');
+                return;
+        }
+
         // Group comments by file to avoid rate limiting
-        const commentsByFile = comments.reduce(
+        const commentsByFile = newComments.reduce(
                 (acc, comment) => {
 			if (!acc[comment.path]) {
 				acc[comment.path] = [];
@@ -259,7 +315,7 @@ async function postCommentsToPR(
                                 repo,
                                 pull_number: prNumber,
                                 comments: reviewComments,
-                                event: 'COMMENT',
+                                event: reviewEvent,
                         });
                 } catch (error) {
                         core.error(`Failed to post comments for ${filename}: ${error}`);
