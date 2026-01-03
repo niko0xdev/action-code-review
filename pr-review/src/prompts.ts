@@ -13,9 +13,10 @@ function createSystemPrompt(): string {
 function buildUserPrompt(
 	filename: string,
 	diff: string,
-	reviewFocus: string
+	reviewFocus: string,
+	fullContent?: string
 ): string {
-	return [
+	const promptParts = [
 		`You are reviewing changes in the file: ${filename}.`,
 		'Assess the diff and respond with the following JSON shape:',
 		'{',
@@ -46,11 +47,22 @@ function buildUserPrompt(
 		'- Keep the JSON valid—do not wrap it in Markdown fences or add commentary outside of the JSON.',
 		`Custom focus areas from the user: ${reviewFocus}`,
 		'',
-		'Diff to review:',
-		'```diff',
-		diff,
-		'```',
-	].join('\n');
+	];
+
+	if (fullContent) {
+		promptParts.push('Full file content:');
+		promptParts.push('```');
+		promptParts.push(fullContent);
+		promptParts.push('```');
+		promptParts.push('');
+	}
+
+	promptParts.push('Diff to review:');
+	promptParts.push('```diff');
+	promptParts.push(diff);
+	promptParts.push('```');
+
+	return promptParts.join('\n');
 }
 
 export { DEFAULT_REVIEW_FOCUS, buildUserPrompt, createSystemPrompt };

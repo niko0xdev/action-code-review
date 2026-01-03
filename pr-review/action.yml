@@ -46,6 +46,10 @@ inputs:
     description: 'If true, block PR merge when issues at or above min-severity are found'
     required: false
     default: 'true'
+  include-full-content:
+    description: 'Include full source code content in review (better context, higher cost)'
+    required: false
+    default: 'false'
 
 outputs:
   review-summary:

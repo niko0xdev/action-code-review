@@ -29,6 +29,7 @@ async function run(): Promise<void> {
 		const autoApproveWhenResolved = core.getBooleanInput('auto-approve-when-resolved');
 		const minSeverity = core.getInput('min-severity') || 'critical';
 		const blockOnIssues = core.getBooleanInput('block-on-issues');
+		const includeFullContent = core.getBooleanInput('include-full-content');
 
 		logConfig();
 		
@@ -69,7 +70,6 @@ async function run(): Promise<void> {
 
 		const systemPrompt = createSystemPrompt();
 		const allComments: ReviewComment[] = [];
-		let reviewSummary = '';
 
 		for (const file of filteredFiles) {
 			core.info(`Reviewing file: ${file.filename}`);
@@ -79,14 +79,19 @@ async function run(): Promise<void> {
 				openai,
 				openaiModel,
 				systemPrompt,
-				reviewFocus
+				reviewFocus,
+				octokit,
+				owner,
+				repo,
+				includeFullContent
 			);
 
 			allComments.push(...comments);
-			reviewSummary += summary;
 		}
 
 		const filteredComments = filterCommentsBySeverity(allComments, minSeverity);
+		const reviewedFilesCount = filteredFiles.length;
+		const totalIssueCount = filteredComments.length;
 		core.info(
 			`Filtered ${allComments.length} comments to ${filteredComments.length} based on minimum severity: ${minSeverity}`
 		);
@@ -111,17 +116,22 @@ async function run(): Promise<void> {
                         );
                 }
 
-		if (reviewSummary) {
+		if (reviewedFilesCount > 0) {
+			const summaryBody = `# 🤖 AI Code Review
+
+**Reviewed files:** ${reviewedFilesCount}
+**Total issues found:** ${totalIssueCount}`;
+
 			await octokit.rest.issues.createComment({
 				owner,
 				repo,
 				issue_number: prNumber,
-				body: `# 🤖 AI Code Review\n\n${reviewSummary}`,
+				body: summaryBody,
 			});
 			core.info('Posted review summary to PR');
 		}
 
-                core.setOutput('review-summary', reviewSummary);
+                core.setOutput('review-summary', `${reviewedFilesCount} files reviewed, ${totalIssueCount} issues found`);
 
                 if (autoApproveWhenResolved) {
                         const botLogin = await getAuthenticatedLogin(octokit);
@@ -160,6 +170,7 @@ function logConfig(): void {
 	core.debug(`Auto-approve when resolved: ${core.getBooleanInput('auto-approve-when-resolved')}`);
 	core.debug(`Minimum severity: ${core.getInput('min-severity')}`);
 	core.debug(`Block on issues: ${core.getBooleanInput('block-on-issues')}`);
+	core.debug(`Include full content: ${core.getBooleanInput('include-full-content')}`);
 }
 
 // ============================================================================
