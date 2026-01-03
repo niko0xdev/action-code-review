@@ -34,6 +34,8 @@ export interface ReviewOptions {
 export interface ReviewComment {
 	path: string;
 	line: number;
+	startLine: number;
+	endLine: number;
 	body: string;
 	id: string;
 }

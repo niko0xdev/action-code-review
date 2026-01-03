@@ -1,8 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-	postReplyToComment,
-	postReplyWithFallback,
-} from '../replyPoster';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { postReplyToComment, postReplyWithFallback } from '../replyPoster';
 import type { OctokitType } from '../types';
 
 describe('replyPoster', () => {
@@ -63,7 +60,8 @@ describe('replyPoster', () => {
 			);
 
 			const callArgs = mockCreateCommentReply.mock.calls[0][0];
-			const markerCount = (callArgs.body.match(/<!-- ai-reply -->/g) || []).length;
+			const markerCount = (callArgs.body.match(/<!-- ai-reply -->/g) || [])
+				.length;
 			expect(markerCount).toBe(1);
 		});
 
@@ -96,10 +94,9 @@ describe('replyPoster', () => {
 		};
 
 		it('should post reply successfully', async () => {
-			vi.spyOn(
-				mockOctokit.rest.issues,
-				'createCommentReply'
-			).mockResolvedValue({ data: {} });
+			vi.spyOn(mockOctokit.rest.issues, 'createCommentReply').mockResolvedValue(
+				{ data: {} }
+			);
 
 			await postReplyWithFallback(mockOctokit, options, 'Test reply');
 
@@ -107,10 +104,9 @@ describe('replyPoster', () => {
 		});
 
 		it('should use fallback if thread reply fails', async () => {
-			vi.spyOn(
-				mockOctokit.rest.issues,
-				'createCommentReply'
-			).mockRejectedValue(new Error('Thread error'));
+			vi.spyOn(mockOctokit.rest.issues, 'createCommentReply').mockRejectedValue(
+				new Error('Thread error')
+			);
 			vi.spyOn(mockOctokit.rest.issues, 'createComment').mockResolvedValue({
 				data: {},
 			});
@@ -126,10 +122,9 @@ describe('replyPoster', () => {
 		});
 
 		it('should throw if both methods fail', async () => {
-			vi.spyOn(
-				mockOctokit.rest.issues,
-				'createCommentReply'
-			).mockRejectedValue(new Error('Thread error'));
+			vi.spyOn(mockOctokit.rest.issues, 'createCommentReply').mockRejectedValue(
+				new Error('Thread error')
+			);
 			vi.spyOn(mockOctokit.rest.issues, 'createComment').mockRejectedValue(
 				new Error('Fallback error')
 			);
@@ -140,4 +135,3 @@ describe('replyPoster', () => {
 		});
 	});
 });
-

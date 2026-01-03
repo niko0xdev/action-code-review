@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
+import { addReplyMarker } from './prompts';
 import type { OctokitType } from './types';
 import type { ReplyOptions } from './types';
-import { addReplyMarker } from './prompts';
 
 // ============================================================================
 // Constants
@@ -33,11 +33,10 @@ export async function postReplyToComment(
 		);
 
 		try {
-			await octokit.rest.issues.createCommentReply({
+			await octokit.rest.issues.createComment({
 				owner,
 				repo,
 				issue_number: prNumber,
-				comment_id: parentCommentId,
 				body: markedReply,
 			});
 
@@ -52,7 +51,7 @@ export async function postReplyToComment(
 			}
 
 			// Wait before retry (exponential backoff)
-			const waitTime = Math.pow(2, attempt) * 1000;
+			const waitTime = 2 ** attempt * 1000;
 			core.info(`Waiting ${waitTime}ms before retry...`);
 			await new Promise((resolve) => setTimeout(resolve, waitTime));
 		}
@@ -91,4 +90,3 @@ export async function postReplyWithFallback(
 		}
 	}
 }
-

@@ -1,7 +1,7 @@
 import * as core from '@actions/core';
-import OpenAI from 'openai';
+import type OpenAI from 'openai';
+import { buildUserPrompt, createSystemPrompt } from './prompts';
 import type { CommentContext } from './types';
-import { createSystemPrompt, buildUserPrompt } from './prompts';
 
 // ============================================================================
 // Reply Generation Functions
@@ -69,4 +69,3 @@ export function validateReply(replyBody: string): boolean {
 
 	return true;
 }
-

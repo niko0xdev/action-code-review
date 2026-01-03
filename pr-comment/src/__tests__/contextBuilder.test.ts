@@ -1,5 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { buildContextForReply, createDefaultContextOptions } from '../contextBuilder';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	buildContextForReply,
+	createDefaultContextOptions,
+} from '../contextBuilder';
 import type { OctokitType } from '../types';
 
 describe('contextBuilder', () => {
@@ -202,4 +205,3 @@ describe('contextBuilder', () => {
 		});
 	});
 });
-

@@ -1,14 +1,19 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ReviewComment } from '../src/reviewParser';
-import { postCommentsToPR } from '../src/commentPoster';
+import { postCommentsToPR, checkLineOverlap } from '../src/commentPoster';
 
 describe('postCommentsToPR', () => {
 	describe('comment posting', () => {
 		it('ends review with COMMENT event', async () => {
 			const createReview = vi.fn().mockResolvedValue({});
+			const listReviews = vi.fn().mockResolvedValue({ data: [] });
 			const octokitMock = {
 				rest: {
+					users: {
+						getAuthenticated: vi.fn().mockResolvedValue({ data: { login: 'bot-user' } }),
+					},
 					pulls: {
+						listReviews,
 						createReview,
 					},
 				},
@@ -18,6 +23,8 @@ describe('postCommentsToPR', () => {
 				{
 					path: 'src/file.ts',
 					line: 10,
+					startLine: 10,
+					endLine: 10,
 					body: 'Inline comment',
 					id: 'comment-id-1',
 				},
@@ -42,7 +49,7 @@ describe('postCommentsToPR', () => {
 				pull_number: 42,
 				comments: [
 					{
-						body: 'Inline comment\n\n<!-- ai-review-id:comment-id-1 -->',
+						body: 'Inline comment\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:comment-id-1 -->',
 						path: 'src/file.ts',
 						line: 10,
 						side: 'RIGHT',
@@ -53,11 +60,16 @@ describe('postCommentsToPR', () => {
 			});
 		});
 
-		it('sends REQUEST_CHANGES event when specified', async () => {
+		it('supports multi-line ranges', async () => {
 			const createReview = vi.fn().mockResolvedValue({});
+			const listReviews = vi.fn().mockResolvedValue({ data: [] });
 			const octokitMock = {
 				rest: {
+					users: {
+						getAuthenticated: vi.fn().mockResolvedValue({ data: { login: 'bot-user' } }),
+					},
 					pulls: {
+						listReviews,
 						createReview,
 					},
 				},
@@ -66,8 +78,10 @@ describe('postCommentsToPR', () => {
 			const comments: ReviewComment[] = [
 				{
 					path: 'src/file.ts',
-					line: 10,
-					body: 'Critical issue',
+					line: 15,
+					startLine: 15,
+					endLine: 20,
+					body: 'Multi-line issue',
 					id: 'comment-id-1',
 				},
 			];
@@ -81,7 +95,7 @@ describe('postCommentsToPR', () => {
 					repo: 'hello-world',
 					prNumber: 42,
 					headSha: 'commit-sha',
-					reviewEvent: 'REQUEST_CHANGES',
+					reviewEvent: 'COMMENT',
 				} as any
 			);
 
@@ -91,15 +105,101 @@ describe('postCommentsToPR', () => {
 				pull_number: 42,
 				comments: [
 					{
-						body: 'Critical issue\n\n<!-- ai-review-id:comment-id-1 -->',
+						body: 'Multi-line issue\n\n<!-- ai-review-range:15-20 -->\n<!-- ai-review-id:comment-id-1 -->',
 						path: 'src/file.ts',
-						line: 10,
+						line: 15,
 						side: 'RIGHT',
 						commit_id: 'commit-sha',
 					},
 				],
-				event: 'REQUEST_CHANGES',
+				event: 'COMMENT',
 			});
 		});
+
+		it('updates existing comments instead of creating duplicates', async () => {
+			const updateReviewComment = vi.fn().mockResolvedValue({});
+			const listReviews = vi.fn().mockResolvedValue({
+				data: [
+					{
+						user: { login: 'bot-user' },
+						id: 123,
+					},
+				],
+			});
+			const listCommentsForReview = vi.fn().mockResolvedValue({
+				data: [
+					{
+						id: 456,
+						path: 'src/file.ts',
+						line: 10,
+						body: 'Old comment body\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:comment-id-1 -->',
+					},
+				],
+			});
+			const octokitMock = {
+				rest: {
+					users: {
+						getAuthenticated: vi.fn().mockResolvedValue({ data: { login: 'bot-user' } }),
+					},
+					pulls: {
+						listReviews,
+						listCommentsForReview,
+						updateReviewComment,
+						createReviewComment: vi.fn().mockRejectedValue(new Error('Test error')),
+					},
+					issues: {
+						createComment: vi.fn().mockResolvedValue({ data: { id: 999 } }),
+					},
+				},
+			} as any;
+
+			const comments: ReviewComment[] = [
+				{
+					path: 'src/file.ts',
+					line: 10,
+					startLine: 10,
+					endLine: 10,
+					body: 'Updated comment body',
+					id: 'comment-id-1',
+				},
+			];
+
+			await postCommentsToPR(
+				octokitMock,
+				comments,
+				'commit-sha',
+				{
+					owner: 'octo',
+					repo: 'hello-world',
+					prNumber: 42,
+					headSha: 'commit-sha',
+					reviewEvent: 'COMMENT',
+				} as any
+			);
+
+			expect(updateReviewComment).toHaveBeenCalledWith({
+				comment_id: 456,
+				body: 'Updated comment body\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:comment-id-1 -->',
+			});
+		});
+	});
+});
+
+describe('checkLineOverlap', () => {
+	it('detects overlapping ranges', () => {
+		expect(checkLineOverlap(15, 20, 14, 21)).toBe(true); // Example from requirements
+		expect(checkLineOverlap(10, 20, 15, 25)).toBe(true);
+		expect(checkLineOverlap(15, 25, 10, 20)).toBe(true);
+	});
+
+	it('detects non-overlapping ranges', () => {
+		expect(checkLineOverlap(10, 20, 21, 30)).toBe(false);
+		expect(checkLineOverlap(21, 30, 10, 20)).toBe(false);
+	});
+
+	it('handles edge cases', () => {
+		expect(checkLineOverlap(10, 10, 10, 10)).toBe(true); // Same line
+		expect(checkLineOverlap(10, 20, 20, 30)).toBe(true); // Adjacent lines
+		expect(checkLineOverlap(10, 19, 20, 30)).toBe(false); // Non-adjacent
 	});
 });

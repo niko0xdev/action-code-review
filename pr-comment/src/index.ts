@@ -1,11 +1,9 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import OpenAI from 'openai';
-import type { OctokitType } from './types';
-import type { CommentContext, ContextOptions } from './types';
 import {
-	shouldTriggerReply,
 	createDefaultQuestionDetectionConfig,
+	shouldTriggerReply,
 } from './commentListener';
 import {
 	buildContextForReply,
@@ -13,6 +11,8 @@ import {
 } from './contextBuilder';
 import { generateReply, validateReply } from './replyGenerator';
 import { postReplyWithFallback } from './replyPoster';
+import type { CommentContext, ContextOptions } from './types';
+import type { OctokitType } from './types';
 
 // ============================================================================
 // Main Action
@@ -25,10 +25,10 @@ async function run(): Promise<void> {
 		const openaiApiKey = core.getInput('openai-api-key', { required: true });
 		const openaiModel = core.getInput('openai-model') || 'gpt-4';
 		const customPrompt = core.getInput('reply-prompt');
-		const enableQuestionDetection =
-			core.getBooleanInput('enable-question-detection');
-		const includeFullContent =
-			core.getBooleanInput('include-full-content');
+		const enableQuestionDetection = core.getBooleanInput(
+			'enable-question-detection'
+		);
+		const includeFullContent = core.getBooleanInput('include-full-content');
 		const maxContextChars = Number.parseInt(
 			core.getInput('max-context-chars') || '10000'
 		);
@@ -84,9 +84,16 @@ async function run(): Promise<void> {
 		);
 
 		// Check if we should trigger a reply
-		const questionDetectionConfig =
-			createDefaultQuestionDetectionConfig(enableQuestionDetection);
-		if (!shouldTriggerReply(commentBody, commentAuthorType, questionDetectionConfig)) {
+		const questionDetectionConfig = createDefaultQuestionDetectionConfig(
+			enableQuestionDetection
+		);
+		if (
+			!shouldTriggerReply(
+				commentBody,
+				commentAuthorType,
+				questionDetectionConfig
+			)
+		) {
 			core.info('Comment does not meet trigger criteria, skipping');
 			return;
 		}
@@ -132,12 +139,16 @@ async function run(): Promise<void> {
 		}
 
 		// Post reply
-		await postReplyWithFallback(octokit, {
-			owner,
-			repo,
-			prNumber,
-			parentCommentId: replyContext.parentComment.id,
-		}, replyBody);
+		await postReplyWithFallback(
+			octokit,
+			{
+				owner,
+				repo,
+				prNumber,
+				parentCommentId: replyContext.parentComment.id,
+			},
+			replyBody
+		);
 
 		core.setOutput('reply-generated', 'true');
 		core.info('AI reply posted successfully');
@@ -182,4 +193,3 @@ export * from './replyGenerator';
 export * from './replyPoster';
 export * from './prompts';
 export * from './types';
-

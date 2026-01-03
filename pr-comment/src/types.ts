@@ -1,10 +1,6 @@
-import type { Octokit } from '@octokit/rest';
+import type * as github from '@actions/github';
 
-// ============================================================================
-// Type Definitions
-// ============================================================================
-
-export type OctokitType = ReturnType<Octokit.prototype.rest>;
+export type OctokitType = ReturnType<typeof github.getOctokit>;
 
 export interface CommentContext {
 	/** The parent AI review comment that started the thread */
@@ -64,4 +60,3 @@ export interface ContextOptions {
 	/** Maximum context length in characters */
 	maxContextChars: number;
 }
-

@@ -1,8 +1,5 @@
 import * as core from '@actions/core';
-import type {
-	CommentContext,
-	QuestionDetectionConfig,
-} from './types';
+import type { CommentContext, QuestionDetectionConfig } from './types';
 
 // ============================================================================
 // Constants
@@ -127,11 +124,10 @@ export function shouldTriggerReply(
  * Create default question detection config
  */
 export function createDefaultQuestionDetectionConfig(
-	enabled: boolean = true
+	enabled = true
 ): QuestionDetectionConfig {
 	return {
 		enabled,
 		keywords: DEFAULT_QUESTION_KEYWORDS,
 	};
 }
-

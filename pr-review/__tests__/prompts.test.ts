@@ -22,7 +22,7 @@ describe('buildUserPrompt', () => {
 		const prompt = buildUserPrompt(filename, diff, reviewFocus, fullContent);
 
 		expect(prompt).toContain(`You are reviewing changes in the file: ${filename}.`);
-		expect(prompt).toContain('Full file content:');
+		expect(prompt).toContain('Changed file content:');
 		expect(prompt).toContain('```');
 		expect(prompt).toContain(fullContent);
 		expect(prompt).toContain('Diff to review:');

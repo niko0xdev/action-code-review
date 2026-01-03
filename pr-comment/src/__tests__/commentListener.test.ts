@@ -1,12 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-	isQuestionComment,
-	isAiComment,
+	createDefaultQuestionDetectionConfig,
 	extractAiReviewId,
+	isAiComment,
 	isAiReply,
 	isBotComment,
+	isQuestionComment,
 	shouldTriggerReply,
-	createDefaultQuestionDetectionConfig,
 } from '../commentListener';
 
 describe('commentListener', () => {
@@ -98,7 +98,11 @@ describe('commentListener', () => {
 
 		it('should not trigger for AI replies', () => {
 			expect(
-				shouldTriggerReply('This is an AI reply\n\n<!-- ai-reply -->', 'User', config)
+				shouldTriggerReply(
+					'This is an AI reply\n\n<!-- ai-reply -->',
+					'User',
+					config
+				)
 			).toBe(false);
 		});
 
@@ -107,4 +111,3 @@ describe('commentListener', () => {
 		});
 	});
 });
-

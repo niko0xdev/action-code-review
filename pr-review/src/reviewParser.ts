@@ -1,14 +1,9 @@
 import crypto from 'crypto';
-
-export interface ReviewComment {
-	path: string;
-	line: number;
-	body: string;
-	id: string;
-}
+import type { ReviewComment } from './types';
 
 interface StructuredInlineComment {
 	line: number;
+	endLine?: number;
 	title?: string;
 	comment?: string;
 	recommendation?: string;
@@ -86,11 +81,13 @@ export function parseReviewForComments(
 				comments.push({
 					path: filename,
 					line: targetLine,
+					startLine: targetLine,
+					endLine: targetLine,
 					body: currentComment.trim(),
 					id: buildCommentId({
 						path: filename,
-						line: targetLine,
-						body: currentComment,
+						startLine: targetLine,
+						endLine: targetLine,
 					}),
 				});
 			}
@@ -109,11 +106,13 @@ export function parseReviewForComments(
 		comments.push({
 			path: filename,
 			line: targetLine,
+			startLine: targetLine,
+			endLine: targetLine,
 			body: currentComment.trim(),
 			id: buildCommentId({
 				path: filename,
-				line: targetLine,
-				body: currentComment,
+				startLine: targetLine,
+				endLine: targetLine,
 			}),
 		});
 	}
@@ -123,11 +122,13 @@ export function parseReviewForComments(
 		comments.push({
 			path: filename,
 			line: 1, // Default to first line
+			startLine: 1,
+			endLine: 1,
 			body: reviewText.trim(),
 			id: buildCommentId({
 				path: filename,
-				line: 1,
-				body: reviewText,
+				startLine: 1,
+				endLine: 1,
 			}),
 		});
 	}
@@ -274,15 +275,19 @@ function convertStructuredComments(
 				parts.push(`<!-- _Severity:_ ${comment.severity} -->`);
 			}
 
+			const startLine = comment.line;
+			const endLine = comment.endLine ?? comment.line;
+
 			return {
 				path: filename,
-				line: comment.line,
+				line: startLine,
+				startLine,
+				endLine,
 				body: parts.join('\n\n').trim(),
 				id: buildCommentId({
 					path: filename,
-					line: comment.line,
-					body: parts.join('\n\n'),
-					ruleId: comment.rule_id,
+					startLine,
+					endLine,
 				}),
 			};
 		})
@@ -291,18 +296,12 @@ function convertStructuredComments(
 
 function buildCommentId(params: {
 	path: string;
-	line: number;
-	body: string;
-	ruleId?: string;
+	startLine: number;
+	endLine: number;
 }): string {
 	const hash = crypto.createHash('sha256');
 	hash.update(
-		[
-			params.path,
-			params.line.toString(),
-			params.body.trim(),
-			params.ruleId?.trim() ?? '',
-		].join('|')
+		[params.path, params.startLine.toString(), params.endLine.toString()].join('|')
 	);
 
 	return hash.digest('hex').slice(0, 12);

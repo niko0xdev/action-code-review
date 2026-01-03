@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as core from '@actions/core';
 import * as github from '@actions/github';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../index';
 
 // Mock dependencies
@@ -139,7 +139,11 @@ describe('index', () => {
 	});
 
 	it('should skip bot comments', async () => {
-		vi.mocked(github.context).payload.comment!.user!.type = 'Bot';
+		if (vi.mocked(github.context).payload.comment) {
+			vi.mocked(github.context).payload.comment.user = {
+				type: 'Bot',
+			};
+		}
 
 		await run();
 
@@ -147,8 +151,10 @@ describe('index', () => {
 	});
 
 	it('should skip AI reply comments', async () => {
-		vi.mocked(github.context).payload.comment!.body =
-			'This is an AI reply\n\n<!-- ai-reply -->';
+		if (vi.mocked(github.context).payload.comment) {
+			vi.mocked(github.context).payload.comment.body =
+				'This is an AI reply\n\n<!-- ai-reply -->';
+		}
 
 		await run();
 
@@ -156,7 +162,9 @@ describe('index', () => {
 	});
 
 	it('should skip non-question comments when detection enabled', async () => {
-		vi.mocked(github.context).payload.comment!.body = 'This looks good';
+		if (vi.mocked(github.context).payload.comment) {
+			vi.mocked(github.context).payload.comment.body = 'This looks good';
+		}
 
 		await run();
 
@@ -173,4 +181,3 @@ describe('index', () => {
 		expect(core.setFailed).toHaveBeenCalled();
 	});
 });
-

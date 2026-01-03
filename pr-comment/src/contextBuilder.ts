@@ -1,10 +1,7 @@
 import * as core from '@actions/core';
+import { extractAiReviewId, isAiComment } from './commentListener';
 import type { OctokitType } from './types';
 import type { CommentContext, ContextOptions } from './types';
-import {
-	extractAiReviewId,
-	isAiComment,
-} from './commentListener';
 
 // ============================================================================
 // Context Building Functions
@@ -17,7 +14,7 @@ async function fetchParentComment(
 	octokit: OctokitType,
 	owner: string,
 	repo: string,
-	prNumber: number,
+	_prNumber: number,
 	commentId: number
 ): Promise<{ id: number; body: string; userLogin: string } | null> {
 	try {
@@ -55,7 +52,12 @@ async function fetchReviewThreadComments(
 			pull_number: prNumber,
 		});
 
-		const comments: Array<{ id: number; body: string; path?: string; line?: number }> = [];
+		const comments: Array<{
+			id: number;
+			body: string;
+			path?: string;
+			line?: number;
+		}> = [];
 
 		for (const review of reviews) {
 			const { data: reviewComments } =
@@ -108,14 +110,15 @@ async function findParentAiComment(
 			comment_id: questionCommentId,
 		});
 
-		// Check if this comment has a parent comment
-		if (questionComment.in_reply_to_id) {
+	// Check if this comment has a parent comment
+	if ('in_reply_to_id' in questionComment && questionComment.in_reply_to_id) {
+			const parentId = questionComment.in_reply_to_id as number;
 			const parentComment = await fetchParentComment(
 				octokit,
 				owner,
 				repo,
 				prNumber,
-				questionComment.in_reply_to_id
+				parentId
 			);
 
 			if (parentComment && isAiComment(parentComment.body)) {
@@ -192,7 +195,7 @@ async function fetchFileContent(
 function extractCodeSnippet(
 	content: string,
 	lineNumber: number,
-	contextLines: number = 5
+	contextLines = 5
 ): string {
 	const lines = content.split('\n');
 	const start = Math.max(0, lineNumber - contextLines - 1);
@@ -236,7 +239,13 @@ export async function buildContextForReply(
 	);
 
 	// Build file context if available
-	let fileContext;
+	let fileContext:
+		| {
+				path: string;
+				line: number;
+				content?: string;
+		  }
+		| undefined;
 	if (parentAiComment.filePath && parentAiComment.line) {
 		if (options.includeFullContent) {
 			const fileContent = await fetchFileContent(
@@ -310,12 +319,11 @@ export async function buildContextForReply(
  * Create default context options
  */
 export function createDefaultContextOptions(
-	includeFullContent: boolean = false,
-	maxContextChars: number = 10000
+	includeFullContent = false,
+	maxContextChars = 10000
 ): ContextOptions {
 	return {
 		includeFullContent,
 		maxContextChars,
 	};
 }
-

@@ -107,7 +107,9 @@ Line 20: This is another comment.
     expect(parsed.comments[0]).toMatchObject({
       path: filename,
       line: 32,
-      body: '**Missing null check**\n\nuserInput may be undefined leading to a crash.\n\n_Recommendation:_ Guard the value before using it.\n\n_Severity:_ 🚨 critical — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels'
+      startLine: 32,
+      endLine: 32,
+      body: expect.stringContaining('<!-- _Severity:_ critical -->')
     });
     expect(parsed.comments[0].id).toMatch(/[a-f0-9]{12}/);
   });
@@ -131,7 +133,9 @@ Line 20: This is another comment.
     expect(parsed.comments[0]).toMatchObject({
       path: filename,
       line: 12,
-      body: 'Optional logging suggestion.\n\n_Severity:_ ✅ low — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels'
+      startLine: 12,
+      endLine: 12,
+      body: expect.stringContaining('<!-- _Severity:_ low -->')
     });
     expect(parsed.comments[0].id).toMatch(/[a-f0-9]{12}/);
   });

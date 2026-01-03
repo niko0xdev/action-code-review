@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import OpenAI from 'openai';
+import type OpenAI from 'openai';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateReply, validateReply } from '../replyGenerator';
 import type { CommentContext } from '../types';
 
@@ -44,7 +44,8 @@ describe('replyGenerator', () => {
 				choices: [
 					{
 						message: {
-							content: 'Async/await is better for readability and error handling.',
+							content:
+								'Async/await is better for readability and error handling.',
 						},
 					},
 				],
@@ -56,7 +57,9 @@ describe('replyGenerator', () => {
 
 			const result = await generateReply(mockOpenai, mockContext, 'gpt-4');
 
-			expect(result).toBe('Async/await is better for readability and error handling.');
+			expect(result).toBe(
+				'Async/await is better for readability and error handling.'
+			);
 			expect(mockOpenai.chat.completions.create).toHaveBeenCalledWith(
 				expect.objectContaining({
 					model: 'gpt-4',
@@ -84,7 +87,8 @@ describe('replyGenerator', () => {
 			const customPrompt = 'Be very concise';
 			await generateReply(mockOpenai, mockContext, 'gpt-4', customPrompt);
 
-			const callArgs = vi.mocked(mockOpenai.chat.completions.create).mock.calls[0];
+			const callArgs = vi.mocked(mockOpenai.chat.completions.create).mock
+				.calls[0];
 			expect(callArgs[0].messages[0].content).toContain(customPrompt);
 		});
 
@@ -140,4 +144,3 @@ describe('replyGenerator', () => {
 		});
 	});
 });
-
