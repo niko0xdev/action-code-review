@@ -1,3 +1,5 @@
+import type { ContextFile } from './types';
+
 const DEFAULT_REVIEW_FOCUS =
 	'Focus on correctness, code quality, security, performance, test coverage, and best practices. Provide actionable, line-specific feedback whenever possible.';
 
@@ -13,9 +15,11 @@ function createSystemPrompt(): string {
 function buildUserPrompt(
 	filename: string,
 	diff: string,
-	reviewFocus: string
+	reviewFocus: string,
+	changedFileContent?: string,
+	contextFiles: ContextFile[] = []
 ): string {
-	return [
+	const promptParts = [
 		`You are reviewing changes in the file: ${filename}.`,
 		'Assess the diff and respond with the following JSON shape:',
 		'{',
@@ -46,11 +50,37 @@ function buildUserPrompt(
 		'- Keep the JSON valid—do not wrap it in Markdown fences or add commentary outside of the JSON.',
 		`Custom focus areas from the user: ${reviewFocus}`,
 		'',
-		'Diff to review:',
-		'```diff',
-		diff,
-		'```',
-	].join('\n');
+	];
+
+	// Add changed file content if provided
+	if (changedFileContent) {
+		promptParts.push('Changed file content:');
+		promptParts.push('```');
+		promptParts.push(changedFileContent);
+		promptParts.push('```');
+		promptParts.push('');
+	}
+
+	// Add context files (dependencies) if any
+	if (contextFiles.length > 0) {
+		promptParts.push('Related context files (dependencies):');
+		promptParts.push('');
+
+		for (const ctxFile of contextFiles) {
+			promptParts.push(`File: ${ctxFile.path} (${ctxFile.type})`);
+			promptParts.push('```');
+			promptParts.push(ctxFile.content);
+			promptParts.push('```');
+			promptParts.push('');
+		}
+	}
+
+	promptParts.push('Diff to review:');
+	promptParts.push('```diff');
+	promptParts.push(diff);
+	promptParts.push('```');
+
+	return promptParts.join('\n');
 }
 
 export { DEFAULT_REVIEW_FOCUS, buildUserPrompt, createSystemPrompt };
