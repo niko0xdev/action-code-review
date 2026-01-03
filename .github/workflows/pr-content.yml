@@ -1,4 +1,4 @@
-name: AI PR Review
+name: AI PR Auto Description
 
 on:
   pull_request:
@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  review:
+  auto-description:
     runs-on: ubuntu-latest
-    name: AI Code Review
+    name: AI PR Auto Description
 
     permissions:
       contents: read
@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Run AI Code Review
+      - name: Run AI PR Auto Description
         uses: ./pr-content
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
