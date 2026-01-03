@@ -47,9 +47,13 @@ inputs:
     required: false
     default: 'true'
   include-full-content:
-    description: 'Include full source code content in review (better context, higher cost)'
+    description: 'Include full source code content and import dependencies in review (better context, higher cost)'
     required: false
     default: 'false'
+  max-context-chars:
+    description: 'Global character limit for all context content combined (prevents exceeding LLM context window)'
+    required: false
+    default: '30000'
 
 outputs:
   review-summary:

@@ -8,7 +8,7 @@ import {
 import { filterCommentsBySeverity } from './reviewParser';
 import type { ReviewComment } from './reviewParser';
 import type { FileData, ReviewOptions } from './types';
-import { processFile, filterFiles } from './fileProcessor';
+import { processFile, filterFiles, buildContextFiles } from './fileProcessor';
 import { getAuthenticatedLogin, postCommentsToPR } from './commentPoster';
 import { areAiCommentsResolved, approvePullRequest } from './approvalManager';
 
@@ -30,6 +30,7 @@ async function run(): Promise<void> {
 		const minSeverity = core.getInput('min-severity') || 'critical';
 		const blockOnIssues = core.getBooleanInput('block-on-issues');
 		const includeFullContent = core.getBooleanInput('include-full-content');
+		const maxContextChars = Number.parseInt(core.getInput('max-context-chars') || '30000');
 
 		logConfig();
 		
@@ -71,6 +72,20 @@ async function run(): Promise<void> {
 		const systemPrompt = createSystemPrompt();
 		const allComments: ReviewComment[] = [];
 
+		// Build context files from imports
+		const knownFiles = filteredFiles.map((f) => f.filename);
+		const contextFiles = await buildContextFiles(
+			filteredFiles,
+			knownFiles,
+			octokit,
+			owner,
+			repo,
+			includeFullContent,
+			maxContextChars
+		);
+
+		core.info(`Built context from ${contextFiles.length} files (imports)`);
+
 		for (const file of filteredFiles) {
 			core.info(`Reviewing file: ${file.filename}`);
 
@@ -83,7 +98,7 @@ async function run(): Promise<void> {
 				octokit,
 				owner,
 				repo,
-				includeFullContent
+				contextFiles
 			);
 
 			allComments.push(...comments);
@@ -171,6 +186,7 @@ function logConfig(): void {
 	core.debug(`Minimum severity: ${core.getInput('min-severity')}`);
 	core.debug(`Block on issues: ${core.getBooleanInput('block-on-issues')}`);
 	core.debug(`Include full content: ${core.getBooleanInput('include-full-content')}`);
+	core.debug(`Max context chars: ${core.getInput('max-context-chars')}`);
 }
 
 // ============================================================================

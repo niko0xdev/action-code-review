@@ -1,3 +1,5 @@
+import type { ContextFile } from './types';
+
 const DEFAULT_REVIEW_FOCUS =
 	'Focus on correctness, code quality, security, performance, test coverage, and best practices. Provide actionable, line-specific feedback whenever possible.';
 
@@ -14,7 +16,8 @@ function buildUserPrompt(
 	filename: string,
 	diff: string,
 	reviewFocus: string,
-	fullContent?: string
+	changedFileContent?: string,
+	contextFiles: ContextFile[] = []
 ): string {
 	const promptParts = [
 		`You are reviewing changes in the file: ${filename}.`,
@@ -49,12 +52,27 @@ function buildUserPrompt(
 		'',
 	];
 
-	if (fullContent) {
-		promptParts.push('Full file content:');
+	// Add changed file content if provided
+	if (changedFileContent) {
+		promptParts.push('Changed file content:');
 		promptParts.push('```');
-		promptParts.push(fullContent);
+		promptParts.push(changedFileContent);
 		promptParts.push('```');
 		promptParts.push('');
+	}
+
+	// Add context files (dependencies) if any
+	if (contextFiles.length > 0) {
+		promptParts.push('Related context files (dependencies):');
+		promptParts.push('');
+
+		for (const ctxFile of contextFiles) {
+			promptParts.push(`File: ${ctxFile.path} (${ctxFile.type})`);
+			promptParts.push('```');
+			promptParts.push(ctxFile.content);
+			promptParts.push('```');
+			promptParts.push('');
+		}
 	}
 
 	promptParts.push('Diff to review:');

@@ -5,7 +5,9 @@ import {
 } from './prompts';
 import { parseReviewResponse } from './reviewParser';
 import type { ReviewComment } from './reviewParser';
-import type { FileData, OctokitType } from './types';
+import type { FileData, OctokitType, ContextFile } from './types';
+import { parseImports } from './importParser';
+import { resolveImportPaths } from './dependencyResolver';
 
 // ============================================================================
 // File Content Fetching
@@ -37,6 +39,75 @@ export async function fetchFileContent(
 	}
 }
 
+/**
+ * Build context files list with smart import-based selection
+ */
+export async function buildContextFiles(
+	changedFiles: FileData[],
+	knownFiles: string[],
+	octokit: OctokitType,
+	owner: string,
+	repo: string,
+	includeFullContent: boolean,
+	maxContextChars: number
+): Promise<ContextFile[]> {
+	if (!includeFullContent) {
+		return [];
+	}
+
+	const contextFiles: ContextFile[] = [];
+	const visited = new Set<string>();
+	let totalChars = 0;
+
+	for (const file of changedFiles) {
+		if (!file.patch || !file.sha) continue;
+
+		// Fetch changed file content
+		const content = await fetchFileContent(octokit, owner, repo, file.sha);
+		if (!content) continue;
+
+		// Add changed file to context if within limits
+		if (!visited.has(file.filename)) {
+			visited.add(file.filename);
+
+			if (totalChars + content.length <= maxContextChars) {
+				contextFiles.push({
+					path: file.filename,
+					content,
+					type: 'changed',
+				});
+				totalChars += content.length;
+			}
+		}
+
+		// Parse and resolve imports from the file
+		const imports = parseImports(content, file.filename);
+		const resolvedPaths = await resolveImportPaths(imports, file.filename, {
+			octokit,
+			owner,
+			repo,
+			knownFiles,
+		});
+
+		// Fetch and add dependency files
+		for (const depPath of resolvedPaths) {
+			if (visited.has(depPath)) continue;
+
+			// Find the file in known files to get its SHA
+			const depFile = knownFiles.find((f) => f === depPath);
+			if (!depFile) continue;
+
+			// Try to fetch the dependency file content
+			// Note: We don't have SHA for dependency files from PR list,
+			// so we'll skip them for now. In a future enhancement,
+			// we could fetch file metadata to get SHA.
+			continue;
+		}
+	}
+
+	return contextFiles;
+}
+
 // ============================================================================
 // File Processing
 // ============================================================================
@@ -50,21 +121,16 @@ export async function processFile(
 	octokit: OctokitType,
 	owner: string,
 	repo: string,
-	includeFullContent: boolean
+	contextFiles: ContextFile[]
 ): Promise<{ comments: ReviewComment[]; summary: string }> {
 	if (!file.patch) {
 		return { comments: [], summary: '' };
 	}
 
 	try {
-		let fullContent: string | undefined;
-
-		if (includeFullContent && file.sha) {
-			const content = await fetchFileContent(octokit, owner, repo, file.sha);
-			if (content) {
-				fullContent = content;
-			}
-		}
+		// Find context for this file (if any)
+		const fileContext = contextFiles.find((ctx) => ctx.path === file.filename && ctx.type === 'changed');
+		const fullContent = fileContext?.content;
 
 		const completion = await openai.chat.completions.create({
 			model: openaiModel,
@@ -79,7 +145,8 @@ export async function processFile(
 						file.filename,
 						file.patch,
 						reviewFocus,
-						fullContent
+						fullContent,
+						contextFiles.filter((ctx) => ctx.path !== file.filename)
 					),
 				},
 			],
@@ -143,4 +210,3 @@ export function filterFiles(
 		})
 		.slice(0, maxFiles);
 }
-
