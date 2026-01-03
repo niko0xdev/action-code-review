@@ -8,7 +8,7 @@ import {
 import { filterCommentsBySeverity } from './reviewParser';
 import type { ReviewComment } from './reviewParser';
 import type { FileData, ReviewOptions } from './types';
-import { processFile, filterFiles } from './fileProcessor';
+import { processFile, filterFiles, buildContextFiles } from './fileProcessor';
 import { getAuthenticatedLogin, postCommentsToPR } from './commentPoster';
 import { areAiCommentsResolved, approvePullRequest } from './approvalManager';
 
@@ -23,11 +23,14 @@ async function run(): Promise<void> {
         const openaiModel = core.getInput('openai-model') || 'gpt-4';
         const reviewFocus = core.getInput('review-prompt') || DEFAULT_REVIEW_FOCUS;
         const maxFiles = Number.parseInt(core.getInput('max-files') || '10');
-        const excludePatterns =
-                core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
-        const autoApproveWhenResolved = core.getBooleanInput('auto-approve-when-resolved');
+		const excludePatterns =
+			core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
+		const includeDir = core.getInput('include-dir');
+		const autoApproveWhenResolved = core.getBooleanInput('auto-approve-when-resolved');
 		const minSeverity = core.getInput('min-severity') || 'critical';
 		const blockOnIssues = core.getBooleanInput('block-on-issues');
+		const includeFullContent = core.getBooleanInput('include-full-content');
+		const maxContextChars = Number.parseInt(core.getInput('max-context-chars') || '30000');
 
 		logConfig();
 		
@@ -57,7 +60,7 @@ async function run(): Promise<void> {
 			pull_number: prNumber,
 		});
 
-		const filteredFiles = filterFiles(files, excludePatterns, maxFiles);
+		const filteredFiles = filterFiles(files, excludePatterns, maxFiles, includeDir);
 
 		if (filteredFiles.length === 0) {
 			core.info('No files to review after filtering');
@@ -68,7 +71,20 @@ async function run(): Promise<void> {
 
 		const systemPrompt = createSystemPrompt();
 		const allComments: ReviewComment[] = [];
-		let reviewSummary = '';
+
+		// Build context files from imports
+		const knownFiles = filteredFiles.map((f) => f.filename);
+		const contextFiles = await buildContextFiles(
+			filteredFiles,
+			knownFiles,
+			octokit,
+			owner,
+			repo,
+			includeFullContent,
+			maxContextChars
+		);
+
+		core.info(`Built context from ${contextFiles.length} files (imports)`);
 
 		for (const file of filteredFiles) {
 			core.info(`Reviewing file: ${file.filename}`);
@@ -78,14 +94,19 @@ async function run(): Promise<void> {
 				openai,
 				openaiModel,
 				systemPrompt,
-				reviewFocus
+				reviewFocus,
+				octokit,
+				owner,
+				repo,
+				contextFiles
 			);
 
 			allComments.push(...comments);
-			reviewSummary += summary;
 		}
 
 		const filteredComments = filterCommentsBySeverity(allComments, minSeverity);
+		const reviewedFilesCount = filteredFiles.length;
+		const totalIssueCount = filteredComments.length;
 		core.info(
 			`Filtered ${allComments.length} comments to ${filteredComments.length} based on minimum severity: ${minSeverity}`
 		);
@@ -110,17 +131,22 @@ async function run(): Promise<void> {
                         );
                 }
 
-		if (reviewSummary) {
+		if (reviewedFilesCount > 0) {
+			const summaryBody = `# 🤖 AI Code Review
+
+**Reviewed files:** ${reviewedFilesCount}
+**Total issues found:** ${totalIssueCount}`;
+
 			await octokit.rest.issues.createComment({
 				owner,
 				repo,
 				issue_number: prNumber,
-				body: `# 🤖 AI Code Review\n\n${reviewSummary}`,
+				body: summaryBody,
 			});
 			core.info('Posted review summary to PR');
 		}
 
-                core.setOutput('review-summary', reviewSummary);
+                core.setOutput('review-summary', `${reviewedFilesCount} files reviewed, ${totalIssueCount} issues found`);
 
                 if (autoApproveWhenResolved) {
                         const botLogin = await getAuthenticatedLogin(octokit);
@@ -155,9 +181,12 @@ function logConfig(): void {
 	core.debug(`Review focus: ${core.getInput('review-prompt')}`);
 	core.debug(`Max files: ${core.getInput('max-files')}`);
 	core.debug(`Exclude patterns: ${core.getInput('exclude-patterns')}`);
+	core.debug(`Include directories: ${core.getInput('include-dir')}`);
 	core.debug(`Auto-approve when resolved: ${core.getBooleanInput('auto-approve-when-resolved')}`);
 	core.debug(`Minimum severity: ${core.getInput('min-severity')}`);
 	core.debug(`Block on issues: ${core.getBooleanInput('block-on-issues')}`);
+	core.debug(`Include full content: ${core.getBooleanInput('include-full-content')}`);
+	core.debug(`Max context chars: ${core.getInput('max-context-chars')}`);
 }
 
 // ============================================================================

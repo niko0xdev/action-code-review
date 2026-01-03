@@ -37,3 +37,15 @@ export interface ReviewComment {
 	body: string;
 	id: string;
 }
+
+export interface ContextFile {
+	path: string;
+	content: string;
+	type: 'changed' | 'dependency';
+}
+
+export interface ImportContext {
+	imports: string[];
+	resolvedPaths: string[];
+}
+

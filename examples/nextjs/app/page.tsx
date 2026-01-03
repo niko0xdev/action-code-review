@@ -46,7 +46,7 @@ export default function HomePage(): JSX.Element {
         priority: 'medium',
         createdAt: new Date()
       };
-      
+
       // Inefficient array operation - could be optimized
       const updatedTodos = [...todos];
       updatedTodos.push(newTodoItem);
@@ -71,7 +71,7 @@ export default function HomePage(): JSX.Element {
 
   // Example of potential security issue - direct DOM manipulation
   const toggleTodo = (id: number) => {
-    setTodos(todos.map(todo => 
+    setTodos(todos.map(todo =>
       todo.id === id ? { ...todo, completed: !todo.completed } : todo
     ));
   };
@@ -97,6 +97,11 @@ export default function HomePage(): JSX.Element {
   if (isLoading) {
     return <div className="loading">Loading...</div>;
   }
+
+  // add resize window listener - should warn if window is resized to less than 760px
+  useEffect(() => {
+    window.addEventListener('resize', () => console.log('Window resized'));
+  }, []);
 
   return (
     <main className="container">
@@ -145,9 +150,9 @@ export default function HomePage(): JSX.Element {
         <h2>Todo Demo with Priority</h2>
         <div className="todo-container">
           <div className="todo-input">
-            <input 
-              value={newTodo} 
-              onChange={event => setNewTodo(event.target.value)} 
+            <input
+              value={newTodo}
+              onChange={event => setNewTodo(event.target.value)}
               placeholder="Add a new todo"
               onKeyPress={e => e.key === 'Enter' && addTodo()}
             />
@@ -156,14 +161,14 @@ export default function HomePage(): JSX.Element {
           <ul className="todo-list">
             {todos.map(todo => (
               <li key={todo.id} className={`todo-item ${todo.completed ? 'completed' : ''}`}>
-                <input 
-                  type="checkbox" 
-                  checked={todo.completed} 
-                  onChange={() => toggleTodo(todo.id)} 
+                <input
+                  type="checkbox"
+                  checked={todo.completed}
+                  onChange={() => toggleTodo(todo.id)}
                 />
                 <span className="todo-text">{todo.text}</span>
-                <span 
-                  className="priority-badge" 
+                <span
+                  className="priority-badge"
                   style={{ backgroundColor: getPriorityColor(todo.priority) }}
                 >
                   {todo.priority}

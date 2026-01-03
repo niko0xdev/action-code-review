@@ -31,6 +31,9 @@ inputs:
     description: 'Comma-separated list of file patterns to exclude from review'
     required: false
     default: '*.md,*.txt,*.json,*.yml,*.yaml'
+  include-dir:
+    description: 'Comma-separated list of directory paths to include in review. Only files in these directories will be reviewed.'
+    required: false
   auto-approve-when-resolved:
     description: 'If true, approve the pull request when all AI-generated review threads are resolved'
     required: false
@@ -43,6 +46,14 @@ inputs:
     description: 'If true, block PR merge when issues at or above min-severity are found'
     required: false
     default: 'true'
+  include-full-content:
+    description: 'Include full source code content and import dependencies in review (better context, higher cost)'
+    required: false
+    default: 'false'
+  max-context-chars:
+    description: 'Global character limit for all context content combined (prevents exceeding LLM context window)'
+    required: false
+    default: '30000'
 
 outputs:
   review-summary:
