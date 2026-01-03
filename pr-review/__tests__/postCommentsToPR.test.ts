@@ -117,8 +117,7 @@ describe('postCommentsToPR', () => {
 		});
 
 		it('updates existing comments instead of creating duplicates', async () => {
-			const updateReviewComment = vi.fn().mockResolvedValue({});
-			const listReviews = vi.fn().mockResolvedValue({
+			const mockListReviews = vi.fn().mockResolvedValue({
 				data: [
 					{
 						user: { login: 'bot-user' },
@@ -126,7 +125,7 @@ describe('postCommentsToPR', () => {
 					},
 				],
 			});
-			const listCommentsForReview = vi.fn().mockResolvedValue({
+			const mockListCommentsForReview = vi.fn().mockResolvedValue({
 				data: [
 					{
 						id: 456,
@@ -136,16 +135,18 @@ describe('postCommentsToPR', () => {
 					},
 				],
 			});
+			const mockUpdateReviewComment = vi.fn().mockResolvedValue({});
+			const mockCreateReview = vi.fn().mockRejectedValue(new Error('Test error'));
 			const octokitMock = {
 				rest: {
 					users: {
 						getAuthenticated: vi.fn().mockResolvedValue({ data: { login: 'bot-user' } }),
 					},
 					pulls: {
-						listReviews,
-						listCommentsForReview,
-						updateReviewComment,
-						createReviewComment: vi.fn().mockRejectedValue(new Error('Test error')),
+						listReviews: mockListReviews,
+						listCommentsForReview: mockListCommentsForReview,
+						updateReviewComment: mockUpdateReviewComment,
+						createReviewComment: mockCreateReview,
 					},
 					issues: {
 						createComment: vi.fn().mockResolvedValue({ data: { id: 999 } }),
@@ -177,7 +178,7 @@ describe('postCommentsToPR', () => {
 				} as any
 			);
 
-			expect(updateReviewComment).toHaveBeenCalledWith({
+			expect(mockUpdateReviewComment).toHaveBeenCalledWith({
 				comment_id: 456,
 				body: 'Updated comment body\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:comment-id-1 -->',
 			});
