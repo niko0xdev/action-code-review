@@ -31,6 +31,9 @@ inputs:
     description: 'Comma-separated list of file patterns to exclude from review'
     required: false
     default: '*.md,*.txt,*.json,*.yml,*.yaml'
+  include-dir:
+    description: 'Comma-separated list of directory paths to include in review. Only files in these directories will be reviewed.'
+    required: false
   auto-approve-when-resolved:
     description: 'If true, approve the pull request when all AI-generated review threads are resolved'
     required: false

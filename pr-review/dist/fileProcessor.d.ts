@@ -5,4 +5,4 @@ export declare function processFile(file: FileData, openai: OpenAI, openaiModel:
     comments: ReviewComment[];
     summary: string;
 }>;
-export declare function filterFiles(files: FileData[], excludePatterns: string, maxFiles: number): FileData[];
+export declare function filterFiles(files: FileData[], excludePatterns: string, maxFiles: number, includeDir?: string): FileData[];

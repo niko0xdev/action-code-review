@@ -59,15 +59,33 @@ export async function processFile(
 export function filterFiles(
 	files: FileData[],
 	excludePatterns: string,
-	maxFiles: number
+	maxFiles: number,
+	includeDir?: string
 ): FileData[] {
 	const excludeList = excludePatterns.split(',').map((p) => p.trim());
+	const includeDirs = includeDir
+		? includeDir.split(',').map((p) => p.trim())
+		: null;
+
 	return files
 		.filter((file) => {
-			return !excludeList.some((pattern) => {
+			// Apply exclude patterns filter
+			const isExcluded = excludeList.some((pattern) => {
 				const regex = new RegExp(pattern.replace(/\*/g, '.*'));
 				return regex.test(file.filename);
 			});
+
+			if (isExcluded) return false;
+
+			// Apply include directory filter if specified
+			if (includeDirs) {
+				return includeDirs.some((dir) => {
+					const normalizedDir = dir.startsWith('/') ? dir.slice(1) : dir;
+					return file.filename.startsWith(normalizedDir + '/') || file.filename === normalizedDir;
+				});
+			}
+
+			return true;
 		})
 		.slice(0, maxFiles);
 }

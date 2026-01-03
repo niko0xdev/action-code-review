@@ -23,9 +23,10 @@ async function run(): Promise<void> {
         const openaiModel = core.getInput('openai-model') || 'gpt-4';
         const reviewFocus = core.getInput('review-prompt') || DEFAULT_REVIEW_FOCUS;
         const maxFiles = Number.parseInt(core.getInput('max-files') || '10');
-        const excludePatterns =
-                core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
-        const autoApproveWhenResolved = core.getBooleanInput('auto-approve-when-resolved');
+		const excludePatterns =
+			core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
+		const includeDir = core.getInput('include-dir');
+		const autoApproveWhenResolved = core.getBooleanInput('auto-approve-when-resolved');
 		const minSeverity = core.getInput('min-severity') || 'critical';
 		const blockOnIssues = core.getBooleanInput('block-on-issues');
 
@@ -57,7 +58,7 @@ async function run(): Promise<void> {
 			pull_number: prNumber,
 		});
 
-		const filteredFiles = filterFiles(files, excludePatterns, maxFiles);
+		const filteredFiles = filterFiles(files, excludePatterns, maxFiles, includeDir);
 
 		if (filteredFiles.length === 0) {
 			core.info('No files to review after filtering');
@@ -155,6 +156,7 @@ function logConfig(): void {
 	core.debug(`Review focus: ${core.getInput('review-prompt')}`);
 	core.debug(`Max files: ${core.getInput('max-files')}`);
 	core.debug(`Exclude patterns: ${core.getInput('exclude-patterns')}`);
+	core.debug(`Include directories: ${core.getInput('include-dir')}`);
 	core.debug(`Auto-approve when resolved: ${core.getBooleanInput('auto-approve-when-resolved')}`);
 	core.debug(`Minimum severity: ${core.getInput('min-severity')}`);
 	core.debug(`Block on issues: ${core.getBooleanInput('block-on-issues')}`);

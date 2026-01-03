@@ -65,6 +65,7 @@ jobs:
 | `review-prompt` | Custom prompt for OpenAI review | No | Focus on correctness, code quality, security, performance, test coverage, and best practices. Provide actionable, line-specific feedback whenever possible. |
 | `max-files` | Maximum number of files to review | No | `10` |
 | `exclude-patterns` | Comma-separated list of file patterns to exclude | No | `*.md,*.txt,*.json,*.yml,*.yaml` |
+| `include-dir` | Comma-separated list of directory paths to include in review | No | - |
 | `auto-approve-when-resolved` | Approve the pull request once all AI-created review threads are resolved | No | `false` |
 | `min-severity` | Minimum severity level for comments (low, high, critical) | No | `critical` |
 | `block-on-issues` | Block PR merge when issues at or above min-severity are found | No | `true` |
@@ -121,6 +122,29 @@ Exclude specific file patterns from review:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
     exclude-patterns: '*.md,*.txt,*.json,*.yml,*.yaml,*.lock,*.test.js,*.spec.ts'
+```
+
+Include only specific directories in review:
+
+```yaml
+- name: Run AI Code Review
+  uses: niko0xdev/action-code-review@v1
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+    include-dir: src,lib  # Only review files in src/ and lib/ directories
+```
+
+You can combine `include-dir` with `exclude-patterns` for more precise control:
+
+```yaml
+- name: Run AI Code Review
+  uses: niko0xdev/action-code-review@v1
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+    include-dir: src
+    exclude-patterns: '*.test.ts,*.spec.ts'  # Review src/ but exclude test files
 ```
 
 ### Auto-approve when AI comments are resolved
