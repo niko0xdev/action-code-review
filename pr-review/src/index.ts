@@ -9,8 +9,7 @@ import { filterCommentsBySeverity } from './reviewParser';
 import type { ReviewComment } from './reviewParser';
 import type { FileData, ReviewOptions } from './types';
 import { processFile, filterFiles } from './fileProcessor';
-import { fetchExistingCommentIds, filterDuplicateComments, appendCommentId, groupCommentsByFile } from './duplicateDetector';
-import { postCommentsToPR } from './commentPoster';
+import { getAuthenticatedLogin, postCommentsToPR } from './commentPoster';
 import { areAiCommentsResolved, approvePullRequest } from './approvalManager';
 
 // ============================================================================

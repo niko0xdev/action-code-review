@@ -63,7 +63,7 @@ async function fetchExistingCommentIds(
 	return existingCommentIds;
 }
 
-async function getAuthenticatedLogin(
+export async function getAuthenticatedLogin(
 	octokit: OctokitType
 ): Promise<string | null> {
 	try {

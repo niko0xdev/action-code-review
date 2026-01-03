@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ReviewComment } from '../src/reviewParser';
 import { postCommentsToPR } from '../src/commentPoster';
-import { fetchExistingCommentIds } from '../src/duplicateDetector';
 
 describe('postCommentsToPR', () => {
 	describe('comment posting', () => {
