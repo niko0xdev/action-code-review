@@ -8,6 +8,7 @@ import type { OctokitType } from './types';
 // ============================================================================
 
 const REVIEW_ID_MARKER_PATTERN = /<!-- ai-review-id:([a-f0-9]{12}) -->/;
+const REVIEW_LINE_RANGE_PATTERN = /<!-- ai-review-range:(\d+)-(\d+) -->/;
 
 // ============================================================================
 // Types
@@ -159,11 +160,15 @@ export async function getAuthenticatedLogin(
  */
 async function updateCommentBody(
 	octokit: OctokitType,
+	owner: string,
+	repo: string,
 	commentId: number,
 	newBody: string
 ): Promise<void> {
 	try {
 		await octokit.rest.pulls.updateReviewComment({
+			owner,
+			repo,
 			comment_id: commentId,
 			body: newBody,
 		});
@@ -238,7 +243,13 @@ export async function postCommentsToPR(
 	for (const { existing, new: newComment } of commentsToUpdate) {
 		try {
 			const updatedBody = appendCommentId(newComment);
-			await updateCommentBody(octokit, existing.githubCommentId, updatedBody);
+			await updateCommentBody(
+				octokit,
+				options.owner,
+				options.repo,
+				existing.githubCommentId,
+				updatedBody
+			);
 			updateCount++;
 		} catch (error) {
 			core.error(`Failed to update comment, will create new one: ${error}`);

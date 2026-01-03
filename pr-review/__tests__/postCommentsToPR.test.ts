@@ -117,6 +117,7 @@ describe('postCommentsToPR', () => {
 		});
 
 		it('updates existing comments instead of creating duplicates', async () => {
+			const existingId = '123456789abc'; // 12-char hex ID
 			const mockListReviews = vi.fn().mockResolvedValue({
 				data: [
 					{
@@ -131,7 +132,7 @@ describe('postCommentsToPR', () => {
 						id: 456,
 						path: 'src/file.ts',
 						line: 10,
-						body: 'Old comment body\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:comment-id-1 -->',
+						body: 'Old comment body\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:123456789abc -->',
 					},
 				],
 			});
@@ -161,7 +162,7 @@ describe('postCommentsToPR', () => {
 					startLine: 10,
 					endLine: 10,
 					body: 'Updated comment body',
-					id: 'comment-id-1',
+					id: existingId,
 				},
 			];
 
@@ -178,10 +179,12 @@ describe('postCommentsToPR', () => {
 				} as any
 			);
 
+			expect(mockUpdateReviewComment).toHaveBeenCalled();
 			expect(mockUpdateReviewComment).toHaveBeenCalledWith({
 				comment_id: 456,
-				body: 'Updated comment body\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:comment-id-1 -->',
+				body: 'Updated comment body\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:123456789abc -->',
 			});
+			expect(mockCreateReview).not.toHaveBeenCalled();
 		});
 	});
 });

@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import type { ReviewComment } from './types';
 
+export type { ReviewComment } from './types';
+
 interface StructuredInlineComment {
 	line: number;
 	endLine?: number;
