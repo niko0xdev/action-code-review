@@ -103,6 +103,63 @@ export default function HomePage(): JSX.Element {
     window.addEventListener('resize', () => console.log('Window resized'));
   }, []);
 
+  // add resize window listener - should warn if window is resized to less than 760px
+  useEffect(() => {
+    window.addEventListener('resize', () => console.log('Window resized'));
+  }, []);
+
+  // add more test issues
+
+  // Example of type safety issue - missing return type annotation
+  const calculateTotal = (a: number, b: number) => {
+    return a + b; // Should explicitly return number
+  };
+
+  // Example of unused variable issue
+  const unusedVariable = 'This is never used';
+
+  // Example of magic number - should be constant
+  const maxRetryAttempts = 3; // Should be a named constant
+  if (maxRetryAttempts > 5) {
+    console.log('Too many retries');
+  }
+
+  // Example of inefficient operation - using filter instead of find
+  const findTodoById = (id: number) => {
+    return todos.filter(todo => todo.id === id)[0]; // Should use .find()
+  };
+
+  // Example of missing null check
+  const getTodoText = (id: number) => {
+    const todo = todos.find(t => t.id === id); // Variable name typo
+    return todo.text; // No null check - could crash
+  };
+
+  // Example of hardcoded value - should be configurable
+  const API_TIMEOUT = 5000;
+
+  // Example of inconsistent error handling - using console.error instead of proper error state
+  const handleApiError = (error: unknown) => {
+    console.error('API error:', error); // Should update error state
+  };
+
+  // Example of memory leak potential - not cleaning up event listeners
+  useEffect(() => {
+    const handler = () => console.log('Window width');
+    window.addEventListener('resize', handler); // Should return cleanup function
+  }, []);
+
+  // Example of poor variable naming - single letter
+  const a = repository;
+  const b = todos;
+
+  // Example of any type usage - should be specific
+  const processData = (data: any) => {
+    return data.map((item: any) => item.value); // Should define proper types
+  };
+
+
+
   return (
     <main className="container">
       <section>
