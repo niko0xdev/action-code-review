@@ -54,6 +54,10 @@ inputs:
     description: 'Global character limit for all context content combined (prevents exceeding LLM context window)'
     required: false
     default: '30000'
+  update-comments-on-change:
+    description: 'If true, update AI review comments when PR changes (adds notes about re-reviewing)'
+    required: false
+    default: 'false'
 
 outputs:
   review-summary:

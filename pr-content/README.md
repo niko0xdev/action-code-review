@@ -1,6 +1,6 @@
-# PR Content Auto-Update Action
+# AI-Powered PR Content Updater
 
-This GitHub Action automatically updates pull request titles and descriptions using AI based on code changes. It can optionally use a pull request template to format the description.
+Automatically update pull request titles and descriptions using AI. Analyzes code changes and generates clear, focused PR content. Supports custom templates for consistent formatting.
 
 ## Inputs
 
@@ -17,7 +17,7 @@ This GitHub Action automatically updates pull request titles and descriptions us
 
 ## Usage
 
-### Basic Usage
+### Quick Start
 
 ```yaml
 name: Update PR Content
@@ -37,115 +37,63 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
 
-### Using a Custom OpenAI Base URL
+### With Custom Template
 
-```yaml
-name: Update PR Content
-on:
-  pull_request:
-    types: [opened, synchronize]
-
-jobs:
-  update-pr:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Update PR Content
-        uses: ./
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          openai-base-url: ${{ secrets.OPENAI_BASE_URL }}
-```
-
-### Using a Custom Template
-
-1. Create a pull request template file in your repository (e.g., `.github/pull_request_template.md`):
+Create `.github/pull_request_template.md`:
 
 ```markdown
 ## Description
-<!-- AI will fill this section with a description of what changed -->
+<!-- AI will fill this section -->
 
 ## Type of Change
-<!-- Please check the relevant options -->
 - [ ] Bug fix
 - [ ] New feature
 - [ ] Breaking change
 - [ ] Documentation update
 
-## How Has This Been Tested?
-<!-- AI will fill this section with testing information -->
-
 ## Checklist
-- [ ] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
-- [ ] Any dependent changes have been merged and published in downstream modules
+- [ ] My code follows the style guidelines
+- [ ] I have performed a self-review
+- [ ] Tests pass locally with my changes
 ```
 
-2. Configure the action to use this template:
+Then reference it in your workflow:
 
 ```yaml
-name: Update PR Content
-on:
-  pull_request:
-    types: [opened, synchronize]
-
-jobs:
-  update-pr:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Update PR Content
-        uses: ./
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          template-path: '.github/pull_request_template.md'
+- name: Update PR Content
+  uses: ./
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+    template-path: '.github/pull_request_template.md'
 ```
 
-### Using Custom Instructions
+### Advanced Options
 
+**Custom OpenAI endpoint:**
 ```yaml
-name: Update PR Content
-on:
-  pull_request:
-    types: [opened, synchronize]
+openai-base-url: ${{ secrets.OPENAI_BASE_URL }}
+```
 
-jobs:
-  update-pr:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Update PR Content
-        uses: ./
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          custom-instructions: "Focus on security implications and performance improvements"
+**Custom instructions for AI:**
+```yaml
+custom-instructions: "Focus on security and performance"
 ```
 
 ## How It Works
 
-1. The action fetches the pull request details and file changes
-2. If a template file is specified, it reads the template from the repository
-3. It sends the code changes and template to OpenAI for analysis
-4. OpenAI generates an improved title and description based on the changes
-5. If a template is provided, the action fills in the template with the AI-generated content
-6. The action updates the pull request with the new title and description
+1. Fetches PR details and code changes
+2. Sends changes to OpenAI for analysis
+3. AI generates optimized title and description
+4. Updates PR with new content (fills templates if provided)
 
 ## Template Format
 
-The template should be a valid Markdown file with placeholders that the AI will fill in. The action looks for specific comments to identify where to insert content:
+Use Markdown comments to mark where AI should insert content:
 
-- `<!-- AI will fill this section with a description of what changed -->` - Replaced with the main description
-- `<!-- AI will fill this section with testing information -->` - Replaced with testing information if provided by the AI
+- `<!-- AI will fill this section -->` - Replaced with generated description
 
-The AI will preserve the template structure and formatting, only filling in the content sections.
+The AI preserves your template structure and only fills marked sections.
 
 ## Development
 

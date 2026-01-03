@@ -44,7 +44,11 @@ export async function resolveImportPaths(
 	const resolved: string[] = [];
 
 	for (const importPath of importPaths) {
-		const resolvedPath = await resolveImportPath(importPath, currentFile, options);
+		const resolvedPath = await resolveImportPath(
+			importPath,
+			currentFile,
+			options
+		);
 		if (resolvedPath && !resolved.includes(resolvedPath)) {
 			resolved.push(resolvedPath);
 		}
@@ -94,7 +98,16 @@ function getPotentialPaths(importPath: string, currentFile: string): string[] {
 		paths.push(normalizedPath);
 
 		// Try common extensions
-		const extensions = ['.ts', '.tsx', '.js', '.jsx', '.json', '.py', '.go', '.rs'];
+		const extensions = [
+			'.ts',
+			'.tsx',
+			'.js',
+			'.jsx',
+			'.json',
+			'.py',
+			'.go',
+			'.rs',
+		];
 		for (const ext of extensions) {
 			paths.push(normalizedPath + ext);
 
@@ -112,7 +125,16 @@ function getPotentialPaths(importPath: string, currentFile: string): string[] {
 		const absolutePath = importPath.substring(1); // Remove leading /
 		paths.push(absolutePath);
 
-		const extensions = ['.ts', '.tsx', '.js', '.jsx', '.json', '.py', '.go', '.rs'];
+		const extensions = [
+			'.ts',
+			'.tsx',
+			'.js',
+			'.jsx',
+			'.json',
+			'.py',
+			'.go',
+			'.rs',
+		];
 		for (const ext of extensions) {
 			paths.push(absolutePath + ext);
 
@@ -130,7 +152,16 @@ function getPotentialPaths(importPath: string, currentFile: string): string[] {
 		const fullPath = prefix + importPath;
 		paths.push(fullPath);
 
-		const extensions = ['.ts', '.tsx', '.js', '.jsx', '.json', '.py', '.go', '.rs'];
+		const extensions = [
+			'.ts',
+			'.tsx',
+			'.js',
+			'.jsx',
+			'.json',
+			'.py',
+			'.go',
+			'.rs',
+		];
 		for (const ext of extensions) {
 			paths.push(fullPath + ext);
 

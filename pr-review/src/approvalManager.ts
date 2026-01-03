@@ -68,4 +68,3 @@ export async function approvePullRequest(
 		core.error(`Failed to submit approval review: ${error}`);
 	}
 }
-

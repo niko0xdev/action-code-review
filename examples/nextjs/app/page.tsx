@@ -110,53 +110,90 @@ export default function HomePage(): JSX.Element {
 
   // add more test issues
 
-  // Example of type safety issue - missing return type annotation
+  // ISSUE 1: Missing return type annotation
   const calculateTotal = (a: number, b: number) => {
-    return a + b; // Should explicitly return number
+    return a + b; // Problem: Return type not explicitly typed
+    // How to fix it: Add explicit return type annotation
+    // Recommended fix way: const calculateTotal = (a: number, b: number): number => {
   };
 
-  // Example of unused variable issue
+  // ISSUE 2: Unused variable
   const unusedVariable = 'This is never used';
+  // Problem: Variable is declared but never referenced
+  // How to fix it: Remove the variable or use it somewhere
+  // Recommended fix way: Delete this line entirely
 
-  // Example of magic number - should be constant
-  const maxRetryAttempts = 3; // Should be a named constant
+  // ISSUE 3: Magic number - should be constant
+  const maxRetryAttempts = 3;
   if (maxRetryAttempts > 5) {
     console.log('Too many retries');
   }
+  // Problem: Magic number 3 used without explanation
+  // How to fix it: Define as a named constant at the top of the file
+  // Recommended fix way: const MAX_RETRY_ATTEMPTS = 3; (place at module level)
 
-  // Example of inefficient operation - using filter instead of find
+  // ISSUE 4: Inefficient array operation
   const findTodoById = (id: number) => {
-    return todos.filter(todo => todo.id === id)[0]; // Should use .find()
+    return todos.filter(todo => todo.id === id)[0]; // Problem: Uses filter[0] instead of find
+    // How to fix it: Use find() for single item lookup
+    // Recommended fix way: const findTodoById = (id: number) => todos.find(todo => todo.id === id);
   };
 
-  // Example of missing null check
+  // ISSUE 5: Missing null check
   const getTodoText = (id: number) => {
-    const todo = todos.find(t => t.id === id); // Variable name typo
-    return todo.text; // No null check - could crash
-  };
+    const todo = todos.find(t => t.id === id); // Problem: Variable name typo 't' instead of 'todo'
+    return todo.text; // Problem: No null check before accessing .text - could crash
+    // How to fix it: Fix variable name and add null check
+    // Recommended fix way:
+    // const getTodoText = (id: number) => {
+    //   const todo = todos.find(t => t.id === id);
+    //   return todo?.text ?? 'Todo not found';
+    // };
 
-  // Example of hardcoded value - should be configurable
+  // ISSUE 6: Hardcoded value - should be configurable
   const API_TIMEOUT = 5000;
+  // Problem: Timeout value hardcoded in code
+  // How to fix it: Move to environment variable or config file
+  // Recommended fix way: const API_TIMEOUT = Number(process.env.API_TIMEOUT) || 5000;
 
-  // Example of inconsistent error handling - using console.error instead of proper error state
+  // ISSUE 7: Inconsistent error handling
   const handleApiError = (error: unknown) => {
-    console.error('API error:', error); // Should update error state
-  };
+    console.error('API error:', error); // Problem: Only logs error, doesn't update state
+    // How to fix it: Update error state to show error to user
+    // Recommended fix way:
+    // const [apiError, setApiError] = useState<string | null>(null);
+    // const handleApiError = (error: unknown) => {
+    //   setApiError(error instanceof Error ? error.message : 'Unknown error occurred');
+    // };
 
-  // Example of memory leak potential - not cleaning up event listeners
+  // ISSUE 8: Memory leak potential - not cleaning up event listeners
   useEffect(() => {
     const handler = () => console.log('Window width');
-    window.addEventListener('resize', handler); // Should return cleanup function
-  }, []);
+    window.addEventListener('resize', handler); // Problem: No cleanup function returned
+    // How to fix it: Return cleanup function that removes the event listener
+    // Recommended fix way:
+    // useEffect(() => {
+    //   const handler = () => console.log('Window width');
+    //   window.addEventListener('resize', handler);
+    //   return () => window.removeEventListener('resize', handler);
+    // }, []);
 
-  // Example of poor variable naming - single letter
+  // ISSUE 9: Poor variable naming - single letter
   const a = repository;
   const b = todos;
+  // Problem: Single-letter variable names reduce code readability
+  // How to fix it: Use descriptive variable names
+  // Recommended fix way: const currentRepository = repository; const currentTodos = todos;
 
-  // Example of any type usage - should be specific
+  // ISSUE 10: Any type usage - should be specific
   const processData = (data: any) => {
-    return data.map((item: any) => item.value); // Should define proper types
-  };
+    return data.map((item: any) => item.value); // Problem: Using 'any' type bypasses type checking
+    // How to fix it: Define proper interface or type for the data
+    // Recommended fix way:
+    // interface ProcessedItem { value: string; }
+    // const processData = (data: ProcessedItem[]) => {
+    //   return data.map(item => item.value);
+    // };
 
 
 

@@ -77,7 +77,9 @@ function parsePythonImports(content: string): string[] {
 		}
 
 		// Match: import x from module
-		const importMatch = trimmed.match(/^import\s+\w+(?:\s*,\s*\w+)*\s+from\s+(\S+)/);
+		const importMatch = trimmed.match(
+			/^import\s+\w+(?:\s*,\s*\w+)*\s+from\s+(\S+)/
+		);
 		if (importMatch) {
 			const path = importMatch[1];
 			if (!imports.includes(path)) {

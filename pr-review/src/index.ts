@@ -1,39 +1,44 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import OpenAI from 'openai';
-import {
-	DEFAULT_REVIEW_FOCUS,
-	createSystemPrompt,
-} from './prompts';
+import { DEFAULT_REVIEW_FOCUS, createSystemPrompt } from './prompts';
 import { filterCommentsBySeverity } from './reviewParser';
 import type { ReviewComment } from './reviewParser';
 import type { FileData, ReviewOptions } from './types';
 import { processFile, filterFiles, buildContextFiles } from './fileProcessor';
 import { getAuthenticatedLogin, postCommentsToPR } from './commentPoster';
 import { areAiCommentsResolved, approvePullRequest } from './approvalManager';
+import { updateCommentsOnPrChange } from './commentUpdater';
 
 // ============================================================================
 // Main Action
 // ============================================================================
 
 async function run(): Promise<void> {
-        try {
-        const githubToken = core.getInput('github-token', { required: true });
-        const openaiApiKey = core.getInput('openai-api-key', { required: true });
-        const openaiModel = core.getInput('openai-model') || 'gpt-4';
-        const reviewFocus = core.getInput('review-prompt') || DEFAULT_REVIEW_FOCUS;
-        const maxFiles = Number.parseInt(core.getInput('max-files') || '10');
+	try {
+		const githubToken = core.getInput('github-token', { required: true });
+		const openaiApiKey = core.getInput('openai-api-key', { required: true });
+		const openaiModel = core.getInput('openai-model') || 'gpt-4';
+		const reviewFocus = core.getInput('review-prompt') || DEFAULT_REVIEW_FOCUS;
+		const maxFiles = Number.parseInt(core.getInput('max-files') || '10');
 		const excludePatterns =
 			core.getInput('exclude-patterns') || '*.md,*.txt,*.json,*.yml,*.yaml';
 		const includeDir = core.getInput('include-dir');
-		const autoApproveWhenResolved = core.getBooleanInput('auto-approve-when-resolved');
+		const autoApproveWhenResolved = core.getBooleanInput(
+			'auto-approve-when-resolved'
+		);
 		const minSeverity = core.getInput('min-severity') || 'critical';
 		const blockOnIssues = core.getBooleanInput('block-on-issues');
 		const includeFullContent = core.getBooleanInput('include-full-content');
-		const maxContextChars = Number.parseInt(core.getInput('max-context-chars') || '30000');
+		const maxContextChars = Number.parseInt(
+			core.getInput('max-context-chars') || '30000'
+		);
+		const updateCommentsOnChange = core.getBooleanInput(
+			'update-comments-on-change'
+		);
 
 		logConfig();
-		
+
 		const octokit = github.getOctokit(githubToken);
 		const openai = new OpenAI({
 			apiKey: openaiApiKey,
@@ -46,13 +51,13 @@ async function run(): Promise<void> {
 			return;
 		}
 
-                const pullRequest = context.payload.pull_request;
-                const owner = context.repo.owner;
-                const repo = context.repo.repo;
-                const prNumber = pullRequest.number;
-                const headSha = pullRequest.head?.sha || context.sha;
+		const pullRequest = context.payload.pull_request;
+		const owner = context.repo.owner;
+		const repo = context.repo.repo;
+		const prNumber = pullRequest.number;
+		const headSha = pullRequest.head?.sha || context.sha;
 
-                core.info(`Processing PR #${prNumber} in ${owner}/${repo}`);
+		core.info(`Processing PR #${prNumber} in ${owner}/${repo}`);
 
 		const { data: files } = await octokit.rest.pulls.listFiles({
 			owner,
@@ -60,7 +65,12 @@ async function run(): Promise<void> {
 			pull_number: prNumber,
 		});
 
-		const filteredFiles = filterFiles(files, excludePatterns, maxFiles, includeDir);
+		const filteredFiles = filterFiles(
+			files,
+			excludePatterns,
+			maxFiles,
+			includeDir
+		);
 
 		if (filteredFiles.length === 0) {
 			core.info('No files to review after filtering');
@@ -111,25 +121,20 @@ async function run(): Promise<void> {
 			`Filtered ${allComments.length} comments to ${filteredComments.length} based on minimum severity: ${minSeverity}`
 		);
 
-                if (filteredComments.length > 0) {
+		if (filteredComments.length > 0) {
 			const shouldBlock = blockOnIssues && filteredComments.length > 0;
 			const reviewEvent = shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT';
 
 			const reviewOptions: ReviewOptions = {
-                                owner,
-                                repo,
-                                prNumber,
+				owner,
+				repo,
+				prNumber,
 				headSha,
 				reviewEvent,
 			};
 
-			await postCommentsToPR(
-				octokit,
-                                filteredComments,
-				headSha,
-				reviewOptions
-                        );
-                }
+			await postCommentsToPR(octokit, filteredComments, headSha, reviewOptions);
+		}
 
 		if (reviewedFilesCount > 0) {
 			const summaryBody = `# 🤖 AI Code Review
@@ -146,32 +151,40 @@ async function run(): Promise<void> {
 			core.info('Posted review summary to PR');
 		}
 
-                core.setOutput('review-summary', `${reviewedFilesCount} files reviewed, ${totalIssueCount} issues found`);
+		// Update existing AI comments based on PR changes
+		if (updateCommentsOnChange) {
+			await updateCommentsOnPrChange(octokit, owner, repo, prNumber, headSha);
+		}
 
-                if (autoApproveWhenResolved) {
-                        const botLogin = await getAuthenticatedLogin(octokit);
-                        if (!botLogin) {
-                                core.info('Unable to determine authenticated user; skipping approval.');
-                                return;
-                        }
+		core.setOutput(
+			'review-summary',
+			`${reviewedFilesCount} files reviewed, ${totalIssueCount} issues found`
+		);
 
-                        const aiCommentsResolved = await areAiCommentsResolved(
-                                octokit,
-                                owner,
-                                repo,
-                                prNumber,
-                                botLogin
-                        );
+		if (autoApproveWhenResolved) {
+			const botLogin = await getAuthenticatedLogin(octokit);
+			if (!botLogin) {
+				core.info('Unable to determine authenticated user; skipping approval.');
+				return;
+			}
 
-                        if (aiCommentsResolved) {
-                                await approvePullRequest(octokit, owner, repo, prNumber);
-                        } else {
-                                core.info('AI review comments are still unresolved; not approving.');
-                        }
-                }
-        } catch (error) {
-                core.setFailed(`Action failed: ${error}`);
-        }
+			const aiCommentsResolved = await areAiCommentsResolved(
+				octokit,
+				owner,
+				repo,
+				prNumber,
+				botLogin
+			);
+
+			if (aiCommentsResolved) {
+				await approvePullRequest(octokit, owner, repo, prNumber);
+			} else {
+				core.info('AI review comments are still unresolved; not approving.');
+			}
+		}
+	} catch (error) {
+		core.setFailed(`Action failed: ${error}`);
+	}
 }
 
 function logConfig(): void {
@@ -182,10 +195,14 @@ function logConfig(): void {
 	core.debug(`Max files: ${core.getInput('max-files')}`);
 	core.debug(`Exclude patterns: ${core.getInput('exclude-patterns')}`);
 	core.debug(`Include directories: ${core.getInput('include-dir')}`);
-	core.debug(`Auto-approve when resolved: ${core.getBooleanInput('auto-approve-when-resolved')}`);
+	core.debug(
+		`Auto-approve when resolved: ${core.getBooleanInput('auto-approve-when-resolved')}`
+	);
 	core.debug(`Minimum severity: ${core.getInput('min-severity')}`);
 	core.debug(`Block on issues: ${core.getBooleanInput('block-on-issues')}`);
-	core.debug(`Include full content: ${core.getBooleanInput('include-full-content')}`);
+	core.debug(
+		`Include full content: ${core.getBooleanInput('include-full-content')}`
+	);
 	core.debug(`Max context chars: ${core.getInput('max-context-chars')}`);
 }
 

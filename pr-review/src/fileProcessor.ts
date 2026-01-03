@@ -1,8 +1,5 @@
 import OpenAI from 'openai';
-import {
-	buildUserPrompt,
-	createSystemPrompt,
-} from './prompts';
+import { buildUserPrompt, createSystemPrompt } from './prompts';
 import { parseReviewResponse } from './reviewParser';
 import type { ReviewComment } from './reviewParser';
 import type { FileData, OctokitType, ContextFile } from './types';
@@ -30,7 +27,9 @@ export async function fetchFileContent(
 			return null;
 		}
 
-		const decoded = Buffer.from(response.data.content, 'base64').toString('utf-8');
+		const decoded = Buffer.from(response.data.content, 'base64').toString(
+			'utf-8'
+		);
 		// Return empty string if content is empty (e.g., empty file)
 		return decoded;
 	} catch (error) {
@@ -129,7 +128,9 @@ export async function processFile(
 
 	try {
 		// Find context for this file (if any)
-		const fileContext = contextFiles.find((ctx) => ctx.path === file.filename && ctx.type === 'changed');
+		const fileContext = contextFiles.find(
+			(ctx) => ctx.path === file.filename && ctx.type === 'changed'
+		);
 		const fullContent = fileContext?.content;
 
 		const completion = await openai.chat.completions.create({
@@ -163,9 +164,10 @@ export async function processFile(
 
 		// Summary with just count of issues
 		const issueCount = parsed.comments.length;
-		const summary = issueCount > 0
-			? `**${issueCount} issue${issueCount > 1 ? 's' : ''} found** in ${file.filename}`
-			: '';
+		const summary =
+			issueCount > 0
+				? `**${issueCount} issue${issueCount > 1 ? 's' : ''} found** in ${file.filename}`
+				: '';
 
 		return {
 			comments: parsed.comments,
@@ -202,7 +204,10 @@ export function filterFiles(
 			if (includeDirs) {
 				return includeDirs.some((dir) => {
 					const normalizedDir = dir.startsWith('/') ? dir.slice(1) : dir;
-					return file.filename.startsWith(normalizedDir + '/') || file.filename === normalizedDir;
+					return (
+						file.filename.startsWith(normalizedDir + '/') ||
+						file.filename === normalizedDir
+					);
 				});
 			}
 

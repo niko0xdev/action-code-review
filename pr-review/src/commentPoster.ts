@@ -24,7 +24,9 @@ async function fetchExistingCommentIds(
 	try {
 		const authenticatedLogin = await getAuthenticatedLogin(octokit);
 		if (!authenticatedLogin) {
-			core.info('Unable to determine authenticated user; skipping duplicate check.');
+			core.info(
+				'Unable to determine authenticated user; skipping duplicate check.'
+			);
 			return existingCommentIds;
 		}
 
@@ -53,9 +55,7 @@ async function fetchExistingCommentIds(
 			}
 		}
 
-		core.info(
-			`Found ${existingCommentIds.size} existing AI review comments`
-		);
+		core.info(`Found ${existingCommentIds.size} existing AI review comments`);
 	} catch (error) {
 		core.warning(`Failed to fetch existing comments: ${error}`);
 	}
