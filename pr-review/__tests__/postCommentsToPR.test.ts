@@ -117,7 +117,7 @@ describe('postCommentsToPR', () => {
 		});
 
 		it('updates existing comments instead of creating duplicates', async () => {
-			const existingId = '123456789abc'; // 12-char hex ID
+			const existingId = 'ed2d6dd04774'; // ID generated from src/file.ts|10|10
 			const mockListReviews = vi.fn().mockResolvedValue({
 				data: [
 					{
@@ -132,12 +132,11 @@ describe('postCommentsToPR', () => {
 						id: 456,
 						path: 'src/file.ts',
 						line: 10,
-						body: 'Old comment body\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:123456789abc -->',
+						body: 'Old comment body\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:ed2d6dd04774 -->',
 					},
 				],
 			});
 			const mockUpdateReviewComment = vi.fn().mockResolvedValue({});
-			const mockCreateReview = vi.fn().mockRejectedValue(new Error('Test error'));
 			const octokitMock = {
 				rest: {
 					users: {
@@ -147,7 +146,7 @@ describe('postCommentsToPR', () => {
 						listReviews: mockListReviews,
 						listCommentsForReview: mockListCommentsForReview,
 						updateReviewComment: mockUpdateReviewComment,
-						createReviewComment: mockCreateReview,
+						createReviewComment: vi.fn().mockRejectedValue(new Error('Test error')),
 					},
 					issues: {
 						createComment: vi.fn().mockResolvedValue({ data: { id: 999 } }),
@@ -182,9 +181,11 @@ describe('postCommentsToPR', () => {
 			expect(mockUpdateReviewComment).toHaveBeenCalled();
 			expect(mockUpdateReviewComment).toHaveBeenCalledWith({
 				comment_id: 456,
-				body: 'Updated comment body\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:123456789abc -->',
+				body: 'Updated comment body\n\n<!-- ai-review-range:10-10 -->\n<!-- ai-review-id:ed2d6dd04774 -->',
+				owner: 'octo',
+				repo: 'hello-world',
 			});
-			expect(mockCreateReview).not.toHaveBeenCalled();
+			expect(octokitMock.rest.pulls.createReviewComment).not.toHaveBeenCalled();
 		});
 	});
 });
