@@ -8,19 +8,19 @@ describe('filterCommentsBySeverity', () => {
 			{
 				path: 'file1.js',
 				line: 1,
-				body: 'Low severity comment\n\n_Severity:_ ✅ low — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels',
+				body: 'Low severity comment\n\n<!-- _Severity:_ low -->',
 				id: '1',
 			},
 			{
 				path: 'file1.js',
 				line: 2,
-				body: 'High severity comment\n\n_Severity:_ 🔥 high — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels',
+				body: 'High severity comment\n\n<!-- _Severity:_ high -->',
 				id: '2',
 			},
 			{
 				path: 'file1.js',
 				line: 3,
-				body: 'Critical severity comment\n\n_Severity:_ 🚨 critical — see https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels',
+				body: 'Critical severity comment\n\n<!-- _Severity:_ critical -->',
 				id: '3',
 			},
 			{

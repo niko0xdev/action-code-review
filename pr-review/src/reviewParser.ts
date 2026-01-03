@@ -14,6 +14,8 @@ interface StructuredInlineComment {
 	recommendation?: string;
 	severity?: string;
 	rule_id?: string;
+	documentation_links?: string[];
+	suggested_fix?: string;
 }
 
 interface StructuredReviewResponse {
@@ -28,15 +30,6 @@ export interface ParsedReviewData {
 	summary: string;
 	comments: ReviewComment[];
 }
-
-const SEVERITY_ICON_MAP: Record<string, string> = {
-	low: '✅',
-	high: '🔥',
-	critical: '🚨',
-};
-
-const ISSUE_DOC_URL =
-	'https://github.com/niko0xdev/action-code-review/tree/main/pr-review#severity-levels';
 
 export function filterCommentsBySeverity(
 	comments: ReviewComment[],
@@ -56,9 +49,9 @@ export function filterCommentsBySeverity(
 
 	// Filter comments based on severity
 	return comments.filter((comment) => {
-		// Extract severity from comment body
+		// Extract severity from hidden HTML comment marker
 		const severityMatch = comment.body.match(
-			/_Severity:_\s*(?:[^\s]*\s+)?(\w+)/i
+			/<!--\s*_Severity:_\s*(\w+)\s*-->/i
 		);
 		if (!severityMatch) {
 			// If no severity is specified, exclude it
@@ -249,8 +242,9 @@ function convertStructuredComments(
 			const parts: string[] = [];
 			const title = comment.title?.trim();
 			const explanation = comment.comment?.trim();
+			const documentationLinks = comment.documentation_links;
 			const recommendation = comment.recommendation?.trim();
-			const severity = comment.severity?.trim();
+			const suggestedFix = comment.suggested_fix?.trim();
 
 			if (title) {
 				parts.push(`**${title}**`);
@@ -260,12 +254,24 @@ function convertStructuredComments(
 				parts.push(explanation);
 			}
 
+			if (documentationLinks && documentationLinks.length > 0) {
+				const links = documentationLinks
+					.map((link) => `- ${link}`)
+					.join('\n');
+				parts.push(`**Documentation:**\n${links}`);
+			}
+
 			if (recommendation) {
 				parts.push(`_Recommendation:_ ${recommendation}`);
 			}
 
-			if (severity) {
-				parts.push(formatSeverity(severity));
+			if (suggestedFix) {
+				parts.push(`**Suggested Fix:**\n${suggestedFix}`);
+			}
+
+			// Add hidden severity marker for filtering purposes
+			if (comment.severity) {
+				parts.push(`<!-- _Severity:_ ${comment.severity} -->`);
 			}
 
 			return {
@@ -281,14 +287,6 @@ function convertStructuredComments(
 			};
 		})
 		.filter((comment) => Boolean(comment.body));
-}
-
-function formatSeverity(severity: string): string {
-	const normalized = severity.toLowerCase();
-	const icon = SEVERITY_ICON_MAP[normalized];
-	const prefix = icon ? `${icon} ` : '';
-
-	return `_Severity:_ ${prefix}${normalized} — see ${ISSUE_DOC_URL}`;
 }
 
 function buildCommentId(params: {
