@@ -46,16 +46,42 @@ async function run(): Promise<void> {
 		const context = github.context;
 		const payload = context.payload;
 
-		// Check if this is an issue comment event on a PR
-		if (!payload.comment || !payload.issue) {
-			core.setFailed('Event payload missing comment or issue');
+		// Check if this is a comment event (either issue_comment or pull_request_review_comment)
+		if (!payload.comment) {
+			core.setFailed('Event payload missing comment');
 			return;
 		}
 
-		const issue = payload.issue;
-		if (!issue.pull_request) {
-			core.info('Comment is not on a pull request, skipping');
+		// Support both issue_comment and pull_request_review_comment events
+		const isIssueComment = !!payload.issue;
+		const isPullRequestReviewComment = !!payload.pull_request;
+
+		if (!isIssueComment && !isPullRequestReviewComment) {
+			core.setFailed('Event payload missing issue or pull_request');
 			return;
+		}
+
+		// Extract PR information based on event type
+		let prNumber: number;
+		let prTitle: string;
+
+		if (isIssueComment) {
+			const issue = payload.issue;
+			if (!issue?.pull_request) {
+				core.info('Comment is not on a pull request, skipping');
+				return;
+			}
+			prNumber = issue.number;
+			prTitle = issue.title;
+		} else {
+			// pull_request_review_comment event
+			const pr = payload.pull_request;
+			if (!pr) {
+				core.setFailed('Event payload missing pull_request');
+				return;
+			}
+			prNumber = pr.number;
+			prTitle = pr.title;
 		}
 
 		const comment = payload.comment;
@@ -67,8 +93,6 @@ async function run(): Promise<void> {
 
 		const owner = context.repo.owner;
 		const repo = context.repo.repo;
-		const prNumber = issue.number;
-		const prTitle = issue.title;
 
 		// Get pull request details
 		const { data: pullRequest } = await octokit.rest.pulls.get({
@@ -77,7 +101,7 @@ async function run(): Promise<void> {
 			pull_number: prNumber,
 		});
 
-		const headSha = pullRequest.head?.sha || context.sha;
+		const headSha = pullRequest.head?.sha || context.sha || '';
 
 		core.info(
 			`Processing comment #${commentId} on PR #${prNumber} by @${commentUser}`
