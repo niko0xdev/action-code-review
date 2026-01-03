@@ -1,0 +1,35 @@
+name: AI PR Comment Reply
+
+on:
+  issue_comment:
+    types: [created, edited]
+  workflow_dispatch:
+
+jobs:
+  reply:
+    runs-on: ubuntu-latest
+    name: AI Comment Reply
+
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run AI Comment Reply
+        uses: ./pr-comment
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-base-url: ${{ secrets.OPENAI_API_URL }}
+          openai-model: ${{ secrets.OPENAI_API_MODEL }}
+          enable-question-detection: true
+          include-full-content: false
+          max-context-chars: 10000
+

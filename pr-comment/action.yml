@@ -1,67 +1,44 @@
-name: 'AI Code Review'
-description: 'Uses OpenAI to review pull requests and suggest improvements'
+name: 'AI PR Comment Reply'
+description: 'Automatically replies to developer questions on PR review comments with AI assistance'
 author: 'niko0xdev'
 branding:
-  icon: 'code'
-  color: 'blue'
+  icon: 'message'
+  color: 'purple'
 
 inputs:
   github-token:
     description: 'GitHub token for API access'
     required: true
   openai-api-key:
-    description: 'OpenAI API key for code review'
+    description: 'OpenAI API key for generating replies'
     required: true
   openai-base-url:
     description: 'Custom OpenAI API base URL (optional)'
     required: false
   openai-model:
-    description: 'OpenAI model to use for review'
+    description: 'OpenAI model to use for replies'
     required: false
     default: 'gpt-4'
-  review-prompt:
-    description: 'Custom prompt for OpenAI review'
+  reply-prompt:
+    description: 'Custom prompt for AI replies'
     required: false
-    default: 'Focus on correctness, code quality, security, performance, test coverage, and best practices. Provide actionable, line-specific feedback whenever possible.'
-  max-files:
-    description: 'Maximum number of files to review'
-    required: false
-    default: '10'
-  exclude-patterns:
-    description: 'Comma-separated list of file patterns to exclude from review'
-    required: false
-    default: '*.md,*.txt,*.json,*.yml,*.yaml'
-  include-dir:
-    description: 'Comma-separated list of directory paths to include in review. Only files in these directories will be reviewed.'
-    required: false
-  auto-approve-when-resolved:
-    description: 'If true, approve the pull request when all AI-generated review threads are resolved'
-    required: false
-    default: 'false'
-  min-severity:
-    description: 'Minimum severity level for comments (low, high, critical)'
-    required: false
-    default: 'critical'
-  block-on-issues:
-    description: 'If true, block PR merge when issues at or above min-severity are found'
+    default: 'You are a helpful code review assistant answering developer questions about code review feedback. Be concise, direct, and practical.'
+  enable-question-detection:
+    description: 'If true, only reply to comments that appear to be questions'
     required: false
     default: 'true'
   include-full-content:
-    description: 'Include full source code content and import dependencies in review (better context, higher cost)'
+    description: 'Include full source code content in AI context (better context, higher cost)'
     required: false
     default: 'false'
   max-context-chars:
-    description: 'Global character limit for all context content combined (prevents exceeding LLM context window)'
+    description: 'Maximum character limit for file content context (prevents exceeding LLM context window)'
     required: false
-    default: '30000'
-  update-comments-on-change:
-    description: 'If true, update AI review comments when PR changes (adds notes about re-reviewing)'
-    required: false
-    default: 'false'
+    default: '10000'
 
 outputs:
-  review-summary:
-    description: 'Summary of the code review'
+  reply-generated:
+    description: 'Whether a reply was generated (true/false)'
 
 runs:
   using: 'node20'
