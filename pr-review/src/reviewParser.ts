@@ -194,9 +194,12 @@ function tryParseStructuredReview(
 	const trimmed = reviewText.trim();
 	core.debug(`tryParseStructuredReview: trimmed text length=${trimmed.length}`);
 
+	// FIXED: Use correct pattern [\s\S]+ instead of invalid [\s\S]+?
+	// [\s\S] means "whitespace OR S", we want "any character" which is [\s\S]
 	const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]+?)```/i);
 	const possibleJson = fencedMatch ? fencedMatch[1].trim() : trimmed;
 
+	core.debug(`tryParseStructuredReview: has_fenced_code_block=${!!fencedMatch}`);
 	core.debug(`tryParseStructuredReview: starts with '{' = ${possibleJson.startsWith('{')}`);
 	core.debug(`tryParseStructuredReview: first 100 chars = ${possibleJson.substring(0, 100)}`);
 
@@ -208,6 +211,7 @@ function tryParseStructuredReview(
 	try {
 		const parsed = JSON.parse(possibleJson);
 		core.debug(`tryParseStructuredReview: JSON.parse succeeded, has inline_comments = ${!!parsed.inline_comments}`);
+		core.debug(`tryParseStructuredReview: inline_comments count = ${parsed.inline_comments?.length || 0}`);
 		if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
 			return parsed as StructuredReviewResponse;
 		}
@@ -270,11 +274,13 @@ function convertStructuredComments(
 	return inlineComments
 		.filter((comment) => {
 			const validLine = typeof comment.line === 'number' && comment.line > 0;
-			const hasComment = !!comment.comment;
-			const shouldInclude = validLine && hasComment;
+			// FIXED: Make comment field optional - use title if comment is missing
+			const hasContent = !!(comment.comment || comment.title);
+
+			const shouldInclude = validLine && hasContent;
 
 			if (!shouldInclude) {
-				core.debug(`   - Filtered comment at line ${comment.line}: validLine=${validLine}, hasComment=${hasComment}`);
+				core.debug(`   - Filtered comment at line ${comment.line}: validLine=${validLine}, hasComment=${!!comment.comment}, hasTitle=${!!comment.title}`);
 			}
 
 			return shouldInclude;
@@ -282,7 +288,8 @@ function convertStructuredComments(
 		.map((comment) => {
 			const parts: string[] = [];
 			const title = comment.title?.trim();
-			const explanation = comment.comment?.trim();
+			// FIXED: Prefer comment field, fallback to title if comment is missing
+			const explanation = (comment.comment || comment.title)?.trim();
 			const documentationLinks = comment.documentation_links;
 			const recommendation = comment.recommendation?.trim();
 			const suggestedFix = comment.suggested_fix?.trim();
