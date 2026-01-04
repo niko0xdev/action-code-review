@@ -137,10 +137,18 @@ async function run(): Promise<void> {
 		}
 
 		if (reviewedFilesCount > 0) {
+			const reviewedFilesList = filteredFiles
+				.map((f) => `- \`${f.filename}\``)
+				.join('\n');
+
 			const summaryBody = `# 🤖 AI Code Review
 
 **Reviewed files:** ${reviewedFilesCount}
-**Total issues found:** ${totalIssueCount}`;
+**Total issues found:** ${totalIssueCount}
+
+## Reviewed Files
+
+${reviewedFilesList}`;
 
 			await octokit.rest.issues.createComment({
 				owner,
