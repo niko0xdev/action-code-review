@@ -1,3 +1,4 @@
+import * as core from '@actions/core';
 import OpenAI from 'openai';
 import { buildUserPrompt, createSystemPrompt } from './prompts';
 import { parseReviewResponse } from './reviewParser';
@@ -126,12 +127,15 @@ export async function processFile(
 		return { comments: [], summary: '' };
 	}
 
-	try {
+		try {
 		// Find context for this file (if any)
 		const fileContext = contextFiles.find(
 			(ctx) => ctx.path === file.filename && ctx.type === 'changed'
 		);
 		const fullContent = fileContext?.content;
+
+		core.info(`Reviewing ${file.filename} with ${fullContent ? 'full content' : 'diff only'}`);
+		core.debug(`Patch length: ${file.patch?.length} characters`);
 
 		const completion = await openai.chat.completions.create({
 			model: openaiModel,
@@ -157,10 +161,18 @@ export async function processFile(
 
 		const reviewText = completion.choices[0]?.message?.content;
 		if (!reviewText) {
+			core.warning(`No review text generated for ${file.filename}`);
 			return { comments: [], summary: '' };
 		}
 
+		core.info(`AI response for ${file.filename}: ${reviewText.substring(0, 200)}...`);
+
 		const parsed = parseReviewResponse(reviewText, file.filename);
+		core.info(`Parsed ${parsed.comments.length} comments from AI response`);
+
+		if (parsed.comments.length === 0) {
+			core.warning(`No inline comments found in AI response for ${file.filename}`);
+		}
 
 		// Summary with just count of issues
 		const issueCount = parsed.comments.length;
