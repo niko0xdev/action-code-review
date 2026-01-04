@@ -194,18 +194,37 @@ function tryParseStructuredReview(
 	const trimmed = reviewText.trim();
 	core.debug(`tryParseStructuredReview: trimmed text length=${trimmed.length}`);
 
-	// FIXED: Use correct pattern [\s\S]+ instead of invalid [\s\S]+?
-	// [\s\S] means "whitespace OR S", we want "any character" which is [\s\S]
-	const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]+?)```/i);
-	const possibleJson = fencedMatch ? fencedMatch[1].trim() : trimmed;
+	// FIXED: Extract JSON object by finding opening and closing braces
+	// This handles nested markdown code fences inside JSON fields
+	let possibleJson = trimmed;
 
-	core.debug(`tryParseStructuredReview: has_fenced_code_block=${!!fencedMatch}`);
+	// Check if wrapped in markdown code fences
+	const fenceMatch = trimmed.match(/^```\w*\n?([\s\S]+?)\n```$/i);
+
+	if (fenceMatch) {
+		core.debug(`tryParseStructuredReview: has_fenced_code_block=true`);
+		possibleJson = fenceMatch[1].trim();
+	} else {
+		core.debug(`tryParseStructuredReview: no_fenced_code_block`);
+		// Not in fences, use as-is
+	}
+
 	core.debug(`tryParseStructuredReview: starts with '{' = ${possibleJson.startsWith('{')}`);
 	core.debug(`tryParseStructuredReview: first 100 chars = ${possibleJson.substring(0, 100)}`);
 
 	if (!possibleJson.startsWith('{')) {
-		core.debug(`tryParseStructuredReview: doesn't start with '{', returning null`);
-		return null;
+		// Try to find JSON object boundaries by looking for first { and last }
+		const firstBrace = trimmed.indexOf('{');
+		const lastBrace = trimmed.lastIndexOf('}');
+
+		if (firstBrace !== -1 || lastBrace === -1) {
+			core.debug(`tryParseStructuredReview: can't find JSON boundaries, returning null`);
+			return null;
+		}
+
+		possibleJson = trimmed.substring(firstBrace, lastBrace + 1);
+		core.debug(`tryParseStructuredReview: extracted JSON from braces, length=${possibleJson.length}`);
+		core.debug(`tryParseStructuredReview: starts with '{' = ${possibleJson.startsWith('{')}`);
 	}
 
 	try {
