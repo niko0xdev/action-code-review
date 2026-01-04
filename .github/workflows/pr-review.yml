@@ -31,3 +31,4 @@ jobs:
           exclude-patterns: "*.md,*.txt,*.json,*.yml,*.yaml"
           include-dir: "examples/nextjs/app"
           min-severity: "low"
+          include-full-content: true
