@@ -147,11 +147,24 @@ export function parseReviewResponse(
 ): ParsedReviewData {
 	const structured = tryParseStructuredReview(reviewText);
 	if (structured) {
+		core.info(`✅ Successfully parsed structured JSON response`);
+		core.info(`   - inline_comments count: ${structured.inline_comments?.length || 0}`);
+
 		const summary = buildStructuredSummary(structured) || reviewText.trim();
 		const comments = convertStructuredComments(
 			structured.inline_comments,
 			filename
 		);
+
+		core.info(`   - converted comments count: ${comments.length}`);
+		if (structured.inline_comments && structured.inline_comments.length > 0) {
+			core.info(`   - lost ${structured.inline_comments.length - comments.length} comments during conversion`);
+			// Log first few inline comments for debugging
+			structured.inline_comments.slice(0, 3).forEach((ic, idx) => {
+				core.info(`   - inline comment ${idx + 1}: line=${ic.line}, has_comment=${!!ic.comment}, typeof_line=${typeof ic.line}`);
+			});
+		}
+
 		return {
 			summary,
 			comments:
@@ -160,6 +173,9 @@ export function parseReviewResponse(
 					: parseReviewForComments(reviewText, filename),
 		};
 	}
+
+	core.warning(`⚠️  Structured JSON parsing failed, falling back to text parsing`);
+	core.info(`   - Review text starts with: ${reviewText.substring(0, 100)}...`);
 
 	return {
 		summary: reviewText.trim(),
@@ -171,23 +187,32 @@ function tryParseStructuredReview(
 	reviewText: string
 ): StructuredReviewResponse | null {
 	if (!reviewText) {
+		core.debug(`tryParseStructuredReview: reviewText is empty`);
 		return null;
 	}
 
 	const trimmed = reviewText.trim();
+	core.debug(`tryParseStructuredReview: trimmed text length=${trimmed.length}`);
+
 	const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]+?)```/i);
 	const possibleJson = fencedMatch ? fencedMatch[1].trim() : trimmed;
 
+	core.debug(`tryParseStructuredReview: starts with '{' = ${possibleJson.startsWith('{')}`);
+	core.debug(`tryParseStructuredReview: first 100 chars = ${possibleJson.substring(0, 100)}`);
+
 	if (!possibleJson.startsWith('{')) {
+		core.debug(`tryParseStructuredReview: doesn't start with '{', returning null`);
 		return null;
 	}
 
 	try {
 		const parsed = JSON.parse(possibleJson);
+		core.debug(`tryParseStructuredReview: JSON.parse succeeded, has inline_comments = ${!!parsed.inline_comments}`);
 		if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
 			return parsed as StructuredReviewResponse;
 		}
-	} catch {
+	} catch (error) {
+		core.debug(`tryParseStructuredReview: JSON.parse failed: ${error}`);
 		// Ignore parse errors and fall back to text parsing
 	}
 
@@ -236,14 +261,24 @@ function convertStructuredComments(
 	filename: string
 ): ReviewComment[] {
 	if (!Array.isArray(inlineComments)) {
+		core.debug(`convertStructuredComments: inlineComments is not an array, returning []`);
 		return [];
 	}
 
+	core.debug(`convertStructuredComments: input count=${inlineComments.length}`);
+
 	return inlineComments
-		.filter(
-			(comment) =>
-				typeof comment.line === 'number' && comment.line > 0 && comment.comment
-		)
+		.filter((comment) => {
+			const validLine = typeof comment.line === 'number' && comment.line > 0;
+			const hasComment = !!comment.comment;
+			const shouldInclude = validLine && hasComment;
+
+			if (!shouldInclude) {
+				core.debug(`   - Filtered comment at line ${comment.line}: validLine=${validLine}, hasComment=${hasComment}`);
+			}
+
+			return shouldInclude;
+		})
 		.map((comment) => {
 			const parts: string[] = [];
 			const title = comment.title?.trim();
