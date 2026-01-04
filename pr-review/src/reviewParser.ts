@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import * as core from '@actions/core';
 import type { ReviewComment } from './types';
 
 export type { ReviewComment } from './types';
@@ -51,8 +52,10 @@ export function filterCommentsBySeverity(
 			/<!--\s*_Severity:_\s*(\w+)\s*-->/i
 		);
 		if (!severityMatch) {
-			// If no severity is specified, exclude it
-			return false;
+			// If no severity is specified, default to 'low' instead of excluding
+			core.warning(`Comment on line ${comment.line} has no severity, defaulting to 'low': ${comment.body.substring(0, 100)}...`);
+			const commentLevel = severityLevels.low;
+			return commentLevel >= minLevel;
 		}
 
 		const commentSeverity = severityMatch[1].toLowerCase();

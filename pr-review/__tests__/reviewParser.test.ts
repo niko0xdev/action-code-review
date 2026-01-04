@@ -50,17 +50,37 @@ describe('filterCommentsBySeverity', () => {
 		expect(highSeverityComments.map(c => c.id)).toEqual(['2', '3']);
 
 		// Test with 'low' minimum severity
+		// Now includes comments without severity (defaults to 'low')
 		const lowSeverityComments = filterCommentsBySeverity(comments, 'low');
-		expect(lowSeverityComments).toHaveLength(3);
-		expect(lowSeverityComments.map(c => c.id)).toEqual(['1', '2', '3']);
+		expect(lowSeverityComments).toHaveLength(4);
+		expect(lowSeverityComments.map(c => c.id)).toEqual(['1', '2', '3', '4']);
 
 		// Test with invalid minimum severity (should default to critical)
 		const invalidSeverityComments = filterCommentsBySeverity(comments, 'invalid');
 		expect(invalidSeverityComments).toHaveLength(1);
 		expect(invalidSeverityComments[0].id).toBe('3');
+	});
 
-		// Test that comments without severity are filtered out
-		expect(filterCommentsBySeverity(comments, 'critical')).toHaveLength(1);
+	it('should default comments without severity to low', () => {
+		const comments: ReviewComment[] = [
+			{
+				path: 'file1.js',
+				line: 1,
+				startLine: 1,
+				endLine: 1,
+				body: 'Comment without severity',
+				id: '1',
+			},
+		];
+
+		// Comments without severity should be included with 'low' min severity
+		const lowSeverityComments = filterCommentsBySeverity(comments, 'low');
+		expect(lowSeverityComments).toHaveLength(1);
+		expect(lowSeverityComments[0].id).toBe('1');
+
+		// But excluded with higher severity requirements
+		const highSeverityComments = filterCommentsBySeverity(comments, 'high');
+		expect(highSeverityComments).toHaveLength(0);
 	});
 });
 

@@ -137,6 +137,16 @@ export async function processFile(
 		core.info(`Reviewing ${file.filename} with ${fullContent ? 'full content' : 'diff only'}`);
 		core.debug(`Patch length: ${file.patch?.length} characters`);
 
+		// Calculate approximate token usage
+		const promptContent = buildUserPrompt(
+			file.filename,
+			file.patch,
+			reviewFocus,
+			fullContent,
+			contextFiles.filter((ctx) => ctx.path !== file.filename)
+		);
+		core.debug(`User prompt length: ${promptContent.length} characters`);
+
 		const completion = await openai.chat.completions.create({
 			model: openaiModel,
 			messages: [
@@ -146,16 +156,10 @@ export async function processFile(
 				},
 				{
 					role: 'user',
-					content: buildUserPrompt(
-						file.filename,
-						file.patch,
-						reviewFocus,
-						fullContent,
-						contextFiles.filter((ctx) => ctx.path !== file.filename)
-					),
+					content: promptContent,
 				},
 			],
-			max_tokens: 1500,
+			max_tokens: 4000,  // Increased from 1500 to avoid truncation
 			temperature: 0.3,
 		});
 
@@ -165,7 +169,10 @@ export async function processFile(
 			return { comments: [], summary: '' };
 		}
 
-		core.info(`AI response for ${file.filename}: ${reviewText.substring(0, 200)}...`);
+		// Log raw AI response for debugging
+		core.info(`\n========== RAW AI RESPONSE for ${file.filename} ==========`);
+		core.info(reviewText);
+		core.info(`========== END RAW AI RESPONSE (${reviewText.length} chars) ==========\n`);
 
 		const parsed = parseReviewResponse(reviewText, file.filename);
 		core.info(`Parsed ${parsed.comments.length} comments from AI response`);
