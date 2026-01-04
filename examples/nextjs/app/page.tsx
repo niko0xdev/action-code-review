@@ -148,6 +148,12 @@ export default function HomePage(): JSX.Element {
     return data.map((item: any) => item.value);
   };
 
+  // REAL BUG: Division by zero will cause Infinity
+  const calculatePercentage = (value: number) => {
+    return value / 0;
+  };
+
+
 
 
   return (

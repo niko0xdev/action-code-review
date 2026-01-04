@@ -114,12 +114,25 @@ async function run(): Promise<void> {
 			allComments.push(...comments);
 		}
 
+		core.info(`Total comments before filtering: ${allComments.length}`);
+
+		// Log each comment for debugging
+		allComments.forEach((comment, idx) => {
+			core.info(`Comment ${idx + 1}: Line ${comment.line} - ${comment.body.substring(0, 100)}`);
+		});
+
+		core.info(`Filtering with minSeverity: "${minSeverity}"`);
+
 		const filteredComments = filterCommentsBySeverity(allComments, minSeverity);
 		const reviewedFilesCount = filteredFiles.length;
 		const totalIssueCount = filteredComments.length;
 		core.info(
 			`Filtered ${allComments.length} comments to ${filteredComments.length} based on minimum severity: ${minSeverity}`
 		);
+
+		if (filteredComments.length === 0 && allComments.length > 0) {
+			core.warning('All comments were filtered out! Check severity levels.');
+		}
 
 		if (filteredComments.length > 0) {
 			const shouldBlock = blockOnIssues && filteredComments.length > 0;
