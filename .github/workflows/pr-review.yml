@@ -30,4 +30,4 @@ jobs:
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
           exclude-patterns: "*.md,*.txt,*.json,*.yml,*.yaml"
           include-dir: "examples/nextjs/app"
-          min-severity: "high"
+          min-severity: "low"
