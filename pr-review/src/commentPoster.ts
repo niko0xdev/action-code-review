@@ -266,12 +266,14 @@ export async function postCommentsToPR(
 	const commentsByFile = groupCommentsByFile(commentsToCreate);
 
 	for (const [filename, fileComments] of Object.entries(commentsByFile)) {
+		// FIXED: Remove commit_id from individual comments
+		// commit_id should only be at review level, not in each comment
 		const reviewComments = fileComments.map((comment) => ({
 			body: appendCommentId(comment),
 			path: comment.path,
 			line: comment.line,
 			side: 'RIGHT' as const,
-			commit_id: commitId,
+			// ❌ REMOVED: commit_id is not valid for inline comments
 		}));
 
 		await postReviewForFile(
@@ -281,6 +283,7 @@ export async function postCommentsToPR(
 			options.prNumber,
 			filename,
 			reviewComments,
+			commitId,  // ✅ Pass commit_id at review level instead
 			options.reviewEvent
 		);
 	}
@@ -305,8 +308,8 @@ async function postReviewForFile(
 		path: string;
 		line: number;
 		side: 'RIGHT';
-		commit_id: string;
 	}>,
+	commitId: string,  // ✅ NEW PARAM: commit_id at review level
 	reviewEvent: 'COMMENT' | 'REQUEST_CHANGES'
 ): Promise<void> {
 	try {
@@ -315,6 +318,7 @@ async function postReviewForFile(
 			repo,
 			pull_number: prNumber,
 			comments: reviewComments,
+			commit_id: commitId,  // ✅ Pass commit_id at review level, not per-comment
 			event: reviewEvent,
 		});
 	} catch (error) {
@@ -341,8 +345,8 @@ async function postFallbackComments(
 		path: string;
 		line: number;
 		side: 'RIGHT';
-		commit_id: string;
-	}>
+	}>,
+	commitId?: string  // ✅ NEW PARAM: Optional commit_id for fallback
 ): Promise<void> {
 	for (const reviewComment of reviewComments) {
 		try {
@@ -351,7 +355,7 @@ async function postFallbackComments(
 				repo,
 				pull_number: prNumber,
 				body: reviewComment.body,
-				commit_id: reviewComment.commit_id,
+				commit_id: commitId,  // ✅ Pass commit_id if provided (optional)
 				path: reviewComment.path,
 				side: reviewComment.side,
 				line: reviewComment.line,
