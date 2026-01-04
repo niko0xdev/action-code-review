@@ -147,6 +147,10 @@ export async function processFile(
 		);
 		core.debug(`User prompt length: ${promptContent.length} characters`);
 
+		core.info(`Calling OpenAI API with model: ${openaiModel}`);
+		core.debug(`System prompt length: ${systemPrompt.length} chars`);
+		core.debug(`Messages count: 2 (system + user)`);
+
 		const completion = await openai.chat.completions.create({
 			model: openaiModel,
 			messages: [
@@ -163,9 +167,28 @@ export async function processFile(
 			temperature: 0.3,
 		});
 
+		core.info(`OpenAI API response received`);
+		core.debug(`Completion choices count: ${completion.choices?.length || 0}`);
+		core.debug(`Completion usage: ${JSON.stringify(completion.usage || 'N/A')}`);
+		core.debug(`Completion model: ${completion.model || 'N/A'}`);
+
+		// Log first choice details
+		if (completion.choices?.[0]) {
+			const choice = completion.choices[0];
+			core.debug(`First choice: finish_reason=${choice.finish_reason}, has_content=${!!choice.message?.content}`);
+			if (choice.message?.content) {
+				core.debug(`Content length: ${choice.message.content.length} chars`);
+				core.debug(`Content preview: ${choice.message.content.substring(0, 200)}...`);
+			}
+		} else {
+			core.warning(`No choices in completion response!`);
+		}
+
 		const reviewText = completion.choices[0]?.message?.content;
 		if (!reviewText) {
-			core.warning(`No review text generated for ${file.filename}`);
+			core.error(`❌ No review text generated for ${file.filename}`);
+			core.error(`   - choices.length: ${completion.choices?.length}`);
+			core.error(`   - first choice: ${JSON.stringify(completion.choices?.[0])}`);
 			return { comments: [], summary: '' };
 		}
 
