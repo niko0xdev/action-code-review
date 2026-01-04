@@ -147,9 +147,25 @@ export async function processFile(
 		);
 		core.debug(`User prompt length: ${promptContent.length} characters`);
 
+		// FIXED: Calculate dynamic max_tokens based on prompt length
+		// Approximate: 1 token ≈ 4 characters, leave 1000 tokens for response
+		const promptTokens = Math.ceil(promptContent.length / 4);
+		const systemPromptTokens = Math.ceil(systemPrompt.length / 4);
+		const totalInputTokens = promptTokens + systemPromptTokens;
+
+		// Use model's actual limit (e.g., GPT-4 has 128K tokens, GPT-3.5 has 4K)
+		// But reserve space for response
+		const maxTokensForResponse = 2000;
+		const calculatedMaxTokens = Math.min(
+			totalInputTokens + maxTokensForResponse,
+			16000  // Conservative limit for GPT-4
+		);
+
 		core.info(`Calling OpenAI API with model: ${openaiModel}`);
-		core.debug(`System prompt length: ${systemPrompt.length} chars`);
-		core.debug(`Messages count: 2 (system + user)`);
+		core.debug(`System prompt length: ${systemPrompt.length} chars (~${systemPromptTokens} tokens)`);
+		core.debug(`User prompt length: ${promptContent.length} chars (~${promptTokens} tokens)`);
+		core.debug(`Total input tokens: ~${totalInputTokens}`);
+		core.debug(`Setting max_tokens: ${calculatedMaxTokens} (reserving ${calculatedMaxTokens - totalInputTokens} for response)`);
 
 		const completion = await openai.chat.completions.create({
 			model: openaiModel,
@@ -163,7 +179,7 @@ export async function processFile(
 					content: promptContent,
 				},
 			],
-			max_tokens: 4000,  // Increased from 1500 to avoid truncation
+			max_tokens: calculatedMaxTokens,  // FIXED: Dynamic based on prompt length
 			temperature: 0.3,
 		});
 
