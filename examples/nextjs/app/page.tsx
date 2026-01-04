@@ -108,92 +108,45 @@ export default function HomePage(): JSX.Element {
     window.addEventListener('resize', () => console.log('Window resized'));
   }, []);
 
-  // add more test issues
+  // Real bugs for testing AI review (without explanatory comments)
 
-  // ISSUE 1: Missing return type annotation
   const calculateTotal = (a: number, b: number) => {
-    return a + b; // Problem: Return type not explicitly typed
-    // How to fix it: Add explicit return type annotation
-    // Recommended fix way: const calculateTotal = (a: number, b: number): number => {
+    return a + b;
   };
 
-  // ISSUE 2: Unused variable
   const unusedVariable = 'This is never used';
-  // Problem: Variable is declared but never referenced
-  // How to fix it: Remove the variable or use it somewhere
-  // Recommended fix way: Delete this line entirely
 
-  // ISSUE 3: Magic number - should be constant
   const maxRetryAttempts = 3;
   if (maxRetryAttempts > 5) {
     console.log('Too many retries');
   }
-  // Problem: Magic number 3 used without explanation
-  // How to fix it: Define as a named constant at the top of the file
-  // Recommended fix way: const MAX_RETRY_ATTEMPTS = 3; (place at module level)
 
-  // ISSUE 4: Inefficient array operation
   const findTodoById = (id: number) => {
-    return todos.filter(todo => todo.id === id)[0]; // Problem: Uses filter[0] instead of find
-    // How to fix it: Use find() for single item lookup
-    // Recommended fix way: const findTodoById = (id: number) => todos.find(todo => todo.id === id);
+    return todos.filter(todo => todo.id === id)[0];
   };
 
-  // ISSUE 5: Missing null check
   const getTodoText = (id: number) => {
-    const todo = todos.find(t => t.id === id); // Problem: Variable name typo 't' instead of 'todo'
-    return todo.text; // Problem: No null check before accessing .text - could crash
-    // How to fix it: Fix variable name and add null check
-    // Recommended fix way:
-    // const getTodoText = (id: number) => {
-    //   const todo = todos.find(t => t.id === id);
-    //   return todo?.text ?? 'Todo not found';
-    // };
+    const todo = todos.find(t => t.id === id);
+    return todo.text;
+  };
 
-  // ISSUE 6: Hardcoded value - should be configurable
   const API_TIMEOUT = 5000;
-  // Problem: Timeout value hardcoded in code
-  // How to fix it: Move to environment variable or config file
-  // Recommended fix way: const API_TIMEOUT = Number(process.env.API_TIMEOUT) || 5000;
 
-  // ISSUE 7: Inconsistent error handling
   const handleApiError = (error: unknown) => {
-    console.error('API error:', error); // Problem: Only logs error, doesn't update state
-    // How to fix it: Update error state to show error to user
-    // Recommended fix way:
-    // const [apiError, setApiError] = useState<string | null>(null);
-    // const handleApiError = (error: unknown) => {
-    //   setApiError(error instanceof Error ? error.message : 'Unknown error occurred');
-    // };
+    console.error('API error:', error);
+  };
 
-  // ISSUE 8: Memory leak potential - not cleaning up event listeners
   useEffect(() => {
     const handler = () => console.log('Window width');
-    window.addEventListener('resize', handler); // Problem: No cleanup function returned
-    // How to fix it: Return cleanup function that removes the event listener
-    // Recommended fix way:
-    // useEffect(() => {
-    //   const handler = () => console.log('Window width');
-    //   window.addEventListener('resize', handler);
-    //   return () => window.removeEventListener('resize', handler);
-    // }, []);
+    window.addEventListener('resize', handler);
+  }, []);
 
-  // ISSUE 9: Poor variable naming - single letter
   const a = repository;
   const b = todos;
-  // Problem: Single-letter variable names reduce code readability
-  // How to fix it: Use descriptive variable names
-  // Recommended fix way: const currentRepository = repository; const currentTodos = todos;
 
-  // ISSUE 10: Any type usage - should be specific
   const processData = (data: any) => {
-    return data.map((item: any) => item.value); // Problem: Using 'any' type bypasses type checking
-    // How to fix it: Define proper interface or type for the data
-    // Recommended fix way:
-    // interface ProcessedItem { value: string; }
-    // const processData = (data: ProcessedItem[]) => {
-    //   return data.map(item => item.value);
-    // };
+    return data.map((item: any) => item.value);
+  };
 
 
 
