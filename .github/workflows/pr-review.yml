@@ -29,3 +29,4 @@ jobs:
           openai-base-url: ${{ secrets.OPENAI_API_URL }}
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
           exclude-patterns: "*.md,*.txt,*.json,*.yml,*.yaml"
+          include-dir: "examples/nextjs/app"
