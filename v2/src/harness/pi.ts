@@ -143,7 +143,7 @@ function assertBinaryAvailable(binaryPath: string): void {
 		accessSync(binaryPath);
 	} catch {
 		throw new Error(
-			`Harness binary not found at "${binaryPath}". Install the coding agent CLI or set V2_HARNESS_BINARY.`
+			`Harness binary not found at "${binaryPath}". Pi auto-install failed; check composite action logs or set V2_HARNESS_BINARY.`
 		);
 	}
 }
