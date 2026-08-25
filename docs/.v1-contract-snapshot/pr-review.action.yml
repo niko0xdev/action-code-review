@@ -60,28 +60,5 @@ outputs:
     description: 'Summary of the code review'
 
 runs:
-  using: composite
-  steps:
-    - name: Install Pi coding agent
-      shell: bash
-      run: |
-        if ! command -v pi >/dev/null 2>&1; then
-          npm install -g @mariozechner/pi-coding-agent@0.73.1 --no-audit --no-fund --silent
-        fi
-    - name: Run AI Code Review
-      shell: bash
-      run: node ${{ github.action_path }}/dist/index.js
-      env:
-        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
-        INPUT_OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-        INPUT_OPENAI_BASE_URL: ${{ inputs.openai-base-url }}
-        INPUT_OPENAI_MODEL: ${{ inputs.openai-model }}
-        INPUT_REVIEW_PROMPT: ${{ inputs.review-prompt }}
-        INPUT_MAX_FILES: ${{ inputs.max-files }}
-        INPUT_EXCLUDE_PATTERNS: ${{ inputs.exclude-patterns }}
-        INPUT_INCLUDE_DIR: ${{ inputs.include-dir }}
-        INPUT_AUTO_APPROVE_WHEN_RESOLVED: ${{ inputs.auto-approve-when-resolved }}
-        INPUT_MIN_SEVERITY: ${{ inputs.min-severity }}
-        INPUT_BLOCK_ON_ISSUES: ${{ inputs.block-on-issues }}
-        INPUT_INCLUDE_FULL_CONTENT: ${{ inputs.include-full-content }}
-        INPUT_MAX_CONTEXT_CHARS: ${{ inputs.max-context-chars }}
+  using: 'node20'
+  main: 'dist/index.js'
