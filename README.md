@@ -7,11 +7,15 @@ Open-source monorepo that powers the **AI Code Review GitHub Action** and ships 
 ```
 .
 ├── pr-review/          # Source for the reusable GitHub Action
+├── pr-content/         # Companion action: auto-updates PR title/description
+├── v2/                 # V2 engine: repository-aware review via a coding harness
 ├── examples/nextjs/    # Sample Next.js app wired to the action
+├── docs/               # Design spec, V1 interface contract, V2 architecture
 └── .github/workflows/  # Prompt samples and internal workflows
 ```
 
-- `pr-review` is the published GitHub Action (`niko0xdev/action-code-review/pr-review`) that calls OpenAI to analyze pull requests, summarize findings, and leave inline comments.
+- `pr-review` is the published GitHub Action (`niko0xdev/action-code-review/pr-review`) that analyzes pull requests, summarizes findings, and leaves inline comments. It now transparently delegates to the **V2 engine** when present in the checkout — same inputs, same outputs (see `docs/v1-interface-contract.md`).
+- `v2/` is the next-generation engine: a coding agent inspects the whole repository (callers, tests, related files) instead of reviewing diffs in isolation, over any OpenAI-compatible endpoint. See `docs/v2-architecture.md`.
 - `examples/nextjs` shows how a typical web app can include the action in its CI pipeline.
 - `.github/workflows/review-instruction.md` contains ready-made prompt snippets you can reuse with the `review-prompt` input.
 
@@ -22,6 +26,18 @@ Open-source monorepo that powers the **AI Code Review GitHub Action** and ships 
 - **Review summaries** – Leaves a human-readable overview of the PR health plus machine-readable outputs for further automation.
 - **Configurable scope** – Limit the number of files, exclude paths, or inject your own prompts to tailor what the model inspects.
 - **Auto-approval option** – Let the bot approve once all of the issues it opened have been resolved.
+
+## V2 (in progress)
+
+V2 replaces the engine, not the interface: consumer workflows stay untouched while reviews become repository-aware. Highlights:
+
+- **Coding-harness review** – a coding agent inspects callers, interfaces and tests before judging a change, not just the raw diff.
+- **Any OpenAI-compatible endpoint** – OpenAI, LiteLLM, vLLM, zrouter or any gateway speaking chat/completions; configured through the existing `OPENAI_API_*` variables.
+- **Stack profiles** – deterministic detection plus tailored review rules for React/NextJS, NestJS/NodeJS, Python/uv, Swift/iOS and Kotlin/Android.
+- **Validated findings** – every candidate is checked (path in the PR? line touched? confidence ≥ 0.8?) before publishing; duplicates are suppressed; counts are capped to avoid review spam.
+- **Suggested changes** – small high-confidence fixes render as one-click GitHub suggestions.
+
+See `docs/v2-design-spec.md`, `docs/v1-interface-contract.md`, `docs/v2-architecture.md` and [`CHANGELOG-V2.md`](CHANGELOG-V2.md).
 
 ## Quick Start
 
@@ -89,19 +105,28 @@ Use `.github/workflows/review-instruction.md` for pre-written prompt snippets. Y
 1. **Install dependencies**
 
    ```bash
-   cd pr-review
+   cd pr-review   # legacy action
+   pnpm install
+
+   cd ../v2       # V2 engine
    pnpm install
    ```
 
 2. **Build, lint, and test**
 
    ```bash
+   # in v2/
+   pnpm test        # full suite (unit + contract + e2e)
+   pnpm typecheck
+   pnpm lint
+   pnpm build       # tsc → dist/
+
+   # in pr-review/
    pnpm run build
-   pnpm run lint
-   pnpm run test
+   npx vitest run
    ```
 
-3. **Iterate on the action** – Update `src/index.ts`, rebuild with `pnpm run build`, and commit the generated `dist` output so GitHub Actions can execute it.
+3. **Iterate on the engine** – Engine changes live under `v2/src`; the contract tests in `v2/tests/contract.test.ts` fail if any legacy input/output/default drifts. Iterate on the legacy action via `pr-review/src/index.ts`.
 
 ## Example Next.js App
 

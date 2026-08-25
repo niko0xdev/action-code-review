@@ -8,7 +8,10 @@ export { main };
 export default main;
 
 // Execute when run as the action entry process.
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop() ?? '')) {
+if (
+	process.argv[1] &&
+	import.meta.url.endsWith(process.argv[1].split('/').pop() ?? '')
+) {
 	main(['pr-review']).catch((error) => {
 		// eslint-disable-next-line no-console
 		console.error(error);
