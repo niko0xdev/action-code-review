@@ -11,12 +11,18 @@ import type { FileData, ReviewOptions } from './types';
 import { processFile, filterFiles, buildContextFiles } from './fileProcessor';
 import { getAuthenticatedLogin, postCommentsToPR } from './commentPoster';
 import { areAiCommentsResolved, approvePullRequest } from './approvalManager';
+import { runViaV2IfAvailable } from './v2Delegate';
 
 // ============================================================================
 // Main Action
 // ============================================================================
 
 async function run(): Promise<void> {
+        // V2 engine takes over when present in the checkout; the public
+        // interface is identical (see docs/v1-interface-contract.md).
+        if (await runViaV2IfAvailable()) {
+                return;
+        }
         try {
         const githubToken = core.getInput('github-token', { required: true });
         const openaiApiKey = core.getInput('openai-api-key', { required: true });

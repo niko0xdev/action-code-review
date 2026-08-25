@@ -28,3 +28,6 @@ coverage/
 *.temp
 examples/nextjs/.next/
 .aider*
+
+# V2 build output (rebuilt from source with pnpm build)
+v2/dist/
