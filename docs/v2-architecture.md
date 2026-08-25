@@ -84,7 +84,39 @@ publishReview      — one createReview (REQUEST_CHANGES or COMMENT)
 | Delegation bridge in `pr-review/src/index.ts` | If `v2/dist/entry/pr-review.js` exists it takes over; otherwise V1 runs unchanged — zero-risk rollout |
 | Contract tests parse both `action.yml` files on every run | Any interface drift fails CI immediately |
 
-## Security posture
+## Pi runtime provisioning
+
+The actions ship as **composite actions**: a bash pre-step installs the
+Pi coding agent into the runner before the node entry executes, so
+consumer repositories never install or reference Pi themselves.
+
+```yaml
+- name: Install Pi coding agent
+  shell: bash
+  run: |
+    if ! command -v pi >/dev/null 2>&1; then
+      npm install -g @mariozechner/pi-coding-agent@0.73.1 --no-audit --no-fund --silent
+    fi
+```
+
+Properties:
+- **Idempotent guard** — `command -v pi` short-circuits the npm install
+  when the binary already exists (self-hosted runners with warm caches
+  save ~30s per job).
+- **Pinned version** — `0.73.1` is embedded in both action.yml files and
+  mirrored in `v2/src/adapter/pi-install.ts` (`PI_PACKAGE_PIN`, asserted
+  by `v2/tests/runtime-install.test.ts`). Bump both together.
+- **Clean logs** — `--no-audit --no-fund --silent`.
+- **Zero public-interface change** — every input/output in both
+  action.yml files stays byte-identical; the composite step forwards all
+  inputs to `dist/index.js` via `INPUT_*` environment variables, matching
+  how GitHub Actions exposes them to node20 actions.
+
+If the harness still cannot find the binary at review time (network
+failure during install), the error message points at the composite step
+logs rather than telling consumers to install Pi manually.
+
+
 
 - The review process only ever reads the repository. It cannot execute
   PR-controlled scripts, install dependencies, or run tests (spec §23).
@@ -118,9 +150,9 @@ All optional; consumers providing none still work unchanged.
 
 ## Known limitations / next steps
 
-1. **Pi binary provisioning** — runners need `pi` installed (e.g. a setup
-   step running `npm i -g @mariozechner/pi-coding-agent`). Wiring that
-   install step into the composite action is the natural follow-up.
+1. **~~Pi binary provisioning~~ — DONE.** Both actions are now composite
+   actions that install a pinned Pi release idempotently at runtime (see
+   "Pi runtime provisioning" above).
 2. **`pr-content` V2 path** — the pr-content engine options are mapped
    and tested, but its runtime still uses the V1 flow; switching it over
    should mirror the pr-review delegation bridge.

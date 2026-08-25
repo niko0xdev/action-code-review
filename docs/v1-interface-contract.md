@@ -19,7 +19,12 @@
 | `HubWorxAI/action-code-review/pr-content@<ref>` | Auto-update PR Content | Auto-update PR title and description using AI based on code changes |
 | `HubWorxAI/action-code-review/pr-review@<ref>` | AI Code Review | Uses OpenAI to review pull requests and suggest improvements |
 
-Runner: both actions declare `runs.using: node20`, `runs.main: dist/index.js`.
+Runner: both actions originally declared `runs.using: node20`,
+`runs.main: dist/index.js`. They now ship as **composite actions** that
+install their own coding-agent runtime (pinned, idempotent) and then run
+the same `dist/index.js`. This is an internal packaging change only —
+every input, output, default and env-var name in this document remains
+exactly as listed; consumer workflows are unaffected.
 
 ---
 

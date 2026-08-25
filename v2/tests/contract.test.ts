@@ -69,8 +69,15 @@ describe('V1 contract: pr-content/action.yml', () => {
 		expect(action.name).toBe('Auto-update PR Content');
 	});
 
-	it('runs on node20 with dist/index.js', () => {
-		expect(action.runs).toEqual({ using: 'node20', main: 'dist/index.js' });
+	it('runs as a composite action executing the legacy dist entry', () => {
+		// The runner type is an implementation detail; the public surface
+		// (name, inputs, outputs) is what stays frozen. Composite lets the
+		// action provision its own Pi runtime before invoking dist/index.js.
+		const steps = (action.runs as { steps?: Array<{ run?: string }> }).steps;
+		expect(action.runs.using).toBe('composite');
+		expect(steps?.some((step) => step.run?.includes('dist/index.js'))).toBe(
+			true
+		);
 	});
 
 	it('exposes exactly the frozen inputs', () => {
@@ -104,8 +111,12 @@ describe('V1 contract: pr-review/action.yml', () => {
 		expect(action.name).toBe('AI Code Review');
 	});
 
-	it('runs on node20 with dist/index.js', () => {
-		expect(action.runs).toEqual({ using: 'node20', main: 'dist/index.js' });
+	it('runs as a composite action executing the legacy dist entry', () => {
+		const steps = (action.runs as { steps?: Array<{ run?: string }> }).steps;
+		expect(action.runs.using).toBe('composite');
+		expect(steps?.some((step) => step.run?.includes('dist/index.js'))).toBe(
+			true
+		);
 	});
 
 	it('exposes exactly the frozen inputs', () => {
