@@ -62,7 +62,7 @@ function hasSourceWithExtension(
 		if (depth > 4 || count >= minCount) {
 			return;
 		}
-		let entries: ReturnType<typeof readdirSync> = [];
+		let entries: import('node:fs').Dirent[] = [];
 		try {
 			entries = readdirSync(dir, { withFileTypes: true });
 		} catch {

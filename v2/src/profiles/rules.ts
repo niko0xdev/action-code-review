@@ -97,6 +97,21 @@ const PROFILE_RULES: Record<ProfileId, string> = {
 		'- Room transactions, networking, permissions',
 		'Pay particular attention to GlobalScope usage, incorrect Dispatchers, lifecycle-unaware collection, unbounded coroutine creation, incorrect remember usage.',
 	].join('\n'),
+
+	typescript: [
+		'TypeScript specifics:',
+		'- type-level regressions: any-escapes that weaken public contracts',
+		'- strict-mode violations the compiler would catch later',
+		'- generic constraints too loose or too tight for callers',
+		'- tsconfig changes and their project-wide impact',
+	].join('\n'),
+
+	javascript: [
+		'JavaScript specifics:',
+		'- implicit type coercions and == vs === pitfalls',
+		'- var/let/const scoping issues',
+		'- missing error handling in async flows',
+	].join('\n'),
 };
 
 /** Universal + profile rules as one prompt fragment. */
