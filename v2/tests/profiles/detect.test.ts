@@ -1,0 +1,131 @@
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { detectProfiles, profileRules } from '../../src/profiles/index.js';
+
+const scratch = join(tmpdir(), `acr-v2-profiles-${process.pid}`);
+
+function makeRepo(files: Record<string, string | undefined>): string {
+	mkdirSync(scratch, { recursive: true });
+	for (const [path, content] of Object.entries(files)) {
+		const full = join(scratch, path);
+		mkdirSync(join(full, '..'), { recursive: true });
+		if (content !== undefined) {
+			writeFileSync(full, content);
+		} else {
+			writeFileSync(full, '');
+		}
+	}
+	return scratch;
+}
+
+afterEach(() => {
+	rmSync(scratch, { recursive: true, force: true });
+});
+
+describe('detectProfiles (spec §9)', () => {
+	it('detects React via package.json dependency and tsx files', () => {
+		const repo = makeRepo({
+			'package.json': '{"dependencies": {"react": "^18.0.0"}}',
+			'src/App.tsx': 'export default () => <div/>;',
+		});
+		const profiles = detectProfiles(repo).map((p) => p.id);
+		expect(profiles).toContain('react');
+	});
+
+	it('detects NextJS via next dependency', () => {
+		const repo = makeRepo({
+			'package.json':
+				'{"dependencies": {"next": "^14.0.0", "react": "^18.0.0"}}',
+			'app/page.tsx': 'export default function Page() { return null; }',
+		});
+		const profiles = detectProfiles(repo).map((p) => p.id);
+		expect(profiles).toContain('nextjs');
+		expect(profiles).toContain('react');
+	});
+
+	it('detects NestJS via @nestjs/core or nest-cli.json', () => {
+		const repo = makeRepo({
+			'package.json': '{"dependencies": {"@nestjs/core": "^10.0.0"}}',
+			'src/main.ts': 'console.log(1);',
+		});
+		expect(detectProfiles(repo).map((p) => p.id)).toContain('nestjs');
+	});
+
+	it('detects Python/uv via pyproject.toml and uv.lock', () => {
+		const repo = makeRepo({
+			'pyproject.toml': '[project]\nname = "x"\n',
+			'uv.lock': '',
+			'main.py': 'print(1)',
+		});
+		expect(detectProfiles(repo).map((p) => p.id)).toContain('python');
+	});
+
+	it('detects Swift via Package.swift', () => {
+		const repo = makeRepo({
+			'Package.swift': '// swift-tools-version:5.9',
+			'Sources/App/Main.swift': 'print(1)',
+		});
+		expect(detectProfiles(repo).map((p) => p.id)).toContain('swift');
+	});
+
+	it('detects Kotlin/Android via build.gradle.kts and kt sources', () => {
+		const repo = makeRepo({
+			'build.gradle.kts': 'plugins { id("com.android.application") }',
+			'app/src/main/java/com/x/Main.kt': 'fun main() {}',
+		});
+		expect(detectProfiles(repo).map((p) => p.id)).toContain('kotlin');
+	});
+
+	it('returns nodejs/javascript fallbacks for plain JS repos', () => {
+		const repo = makeRepo({
+			'package.json': '{"devDependencies": {"typescript": "^5.0.0"}}',
+			'index.ts': 'const x: number = 1;',
+			'util.js': 'module.exports = {};',
+		});
+		const profiles = detectProfiles(repo).map((p) => p.id);
+		expect(profiles).toContain('nodejs');
+		expect(profiles).toContain('javascript');
+	});
+
+	it('detects typescript via tsconfig.json', () => {
+		const repo = makeRepo({
+			'package.json': '{}',
+			'tsconfig.json': '{"compilerOptions": {}}',
+			'index.ts': 'const x: number = 1;',
+		});
+		const profiles = detectProfiles(repo).map((p) => p.id);
+		expect(profiles).toContain('typescript');
+	});
+
+	it('is deterministic across repeated calls', () => {
+		const repo = makeRepo({
+			'package.json': '{"dependencies": {"react": "^18.0.0"}}',
+		});
+		const a = detectProfiles(repo);
+		const b = detectProfiles(repo);
+		expect(a).toEqual(b);
+	});
+});
+
+describe('profileRules', () => {
+	it.each(['react', 'nextjs', 'nestjs', 'nodejs', 'python', 'swift', 'kotlin'])(
+		'has rules for %s mentioning its spec concerns',
+		(id) => {
+			const rules = profileRules(id as never);
+			expect(rules.length).toBeGreaterThan(20);
+		}
+	);
+
+	it('falls back to universal rules for unknown profiles', () => {
+		expect(profileRules('unknown' as never)).toContain(
+			'High signal is more important than comment count.'
+		);
+	});
+
+	it('includes universal rules in every rule set', () => {
+		const rules = profileRules('nodejs');
+		expect(rules).toContain('formatting');
+	});
+});
