@@ -91,6 +91,18 @@ export function mapLegacyInputs(
 	return mapPrReview(inputs);
 }
 
+/** Typed wrapper for the pr-review action path. */
+export function mapPrReviewInputs(inputs: LegacyInputs): PrReviewEngineOptions {
+	return mapPrReview(inputs);
+}
+
+/** Typed wrapper for the pr-content action path. */
+export function mapPrContentInputs(
+	inputs: LegacyInputs
+): PrContentEngineOptions & { action: 'pr-content' } {
+	return mapPrContent(inputs);
+}
+
 function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 	const rawBaseUrl = get(inputs, 'openai-base-url');
 	return {
