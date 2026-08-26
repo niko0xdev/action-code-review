@@ -1,7 +1,7 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import { existsSync } from 'fs';
-import { resolve } from 'path';
 
 /**
  * V2 delegation bridge.
@@ -17,9 +17,9 @@ const V2_ENTRY_CANDIDATES = [
 	'../v2/dist/entry/pr-review.js',
 ];
 
-export function resolveV2Entry(): string | null {
+export function resolveV2Entry(baseDir?: string): string | null {
 	for (const candidate of V2_ENTRY_CANDIDATES) {
-		const full = resolve(process.cwd(), candidate);
+		const full = resolve(baseDir ?? process.cwd(), candidate);
 		if (existsSync(full)) {
 			return full;
 		}
@@ -34,7 +34,6 @@ export async function runViaV2IfAvailable(): Promise<boolean> {
 		return false;
 	}
 
-	const context = github.context;
 	core.info('Delegating review to the V2 engine.');
 
 	try {
