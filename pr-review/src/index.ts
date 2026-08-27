@@ -11,6 +11,7 @@ import type { FileData, ReviewOptions } from './types';
 import { processFile, filterFiles, buildContextFiles } from './fileProcessor';
 import { getAuthenticatedLogin, postCommentsToPR } from './commentPoster';
 import { areAiCommentsResolved, approvePullRequest } from './approvalManager';
+import { maybePostConfiguredReply } from './replyManager';
 import { runViaV2IfAvailable } from './v2Delegate';
 
 // ============================================================================
@@ -153,6 +154,10 @@ async function run(): Promise<void> {
 		}
 
                 core.setOutput('review-summary', `${reviewedFilesCount} files reviewed, ${totalIssueCount} issues found`);
+
+		// Optional inline reply driven purely by env vars (INPUT_REPLY_*),
+		// so the public action inputs stay untouched.
+		await maybePostConfiguredReply(octokit, owner, repo, prNumber);
 
                 if (autoApproveWhenResolved) {
                         const botLogin = await getAuthenticatedLogin(octokit);

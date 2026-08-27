@@ -79,6 +79,23 @@ jobs:
 
 Pin the `uses:` value to a released tag once you publish one (for example, `@v1`). Until then, `@main` keeps your workflows using the latest open-source code in this repo.
 
+### Replying to Existing Review Threads
+
+The action can post an inline reply beneath an existing review comment — handy for follow-up explanations without opening a new thread. Set two environment variables on the review step and the engine posts a reply-only comment (no summary, no re-review):
+
+```yaml
+      - name: Run AI Code Review
+        uses: niko0xdev/action-code-review/pr-review@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+        env:
+          INPUT_REPLY_TO_COMMENT_ID: '1234567890'   # GitHub review comment id
+          INPUT_REPLY_BODY: 'Follow-up: tenantId now comes from the request context.'
+```
+
+Omit both variables (the default) and behavior is unchanged. Replies reuse the same hidden `ai-review-id` marker as inline findings, so duplicate suppression keeps working across threads.
+
 ### Custom Prompts
 
 Use `.github/workflows/review-instruction.md` for pre-written prompt snippets. You can load them inside a workflow step and pass the text to the `review-prompt` input:

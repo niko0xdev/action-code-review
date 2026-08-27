@@ -116,7 +116,33 @@ If the harness still cannot find the binary at review time (network
 failure during install), the error message points at the composite step
 logs rather than telling consumers to install Pi manually.
 
+## Inline comment replies
 
+Findings post as line-anchored inline comments (`side: RIGHT`) ending in
+the `<!-- ai-review-id:<12hex> -->` marker. V2 can also **reply to an
+existing review thread** — useful for follow-up explanations after a
+reviewer asks for clarification:
+
+```ts
+// v2/src/github/review.ts
+await replyToReviewComment(octokit, {
+  owner, repo, prNumber,
+  commentId: 123456,          // GitHub's numeric review comment id
+  body: 'Follow-up explanation…',
+  finding,                    // optional; re-appends the ai-review-id marker
+});
+```
+
+Properties:
+- Reply-only: the function never posts a summary or a new review.
+- The reply body re-appends the same `ai-review-id` marker as the
+  original inline comment so duplicate suppression stays thread-consistent.
+- Activation is env-gated and off by default: set
+  `INPUT_REPLY_TO_COMMENT_ID` + `INPUT_REPLY_BODY` (V1 path) or call the
+  V2 publisher API directly. These are **v2/internal** variables — they
+  are not part of the frozen public action inputs.
+
+## Security posture
 
 - The review process only ever reads the repository. It cannot execute
   PR-controlled scripts, install dependencies, or run tests (spec §23).
