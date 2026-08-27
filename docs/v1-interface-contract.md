@@ -208,3 +208,20 @@ V2 must keep supporting exactly these events plus manual re-runs.
 | Internal implementation | Free |
 
 New inputs/outputs may be added; existing ones may not be removed or renamed.
+
+---
+
+## Internal-only environment variables (not public interface)
+
+The following variables are consumed by the engine internals. They are
+**not** action inputs and not part of the frozen contract; external
+callers may set them in a workflow `env:` block, but no consumer is
+required to know about them and their names may change:
+
+| Variable | Meaning | Default |
+|----------|---------|---------|
+| `INPUT_REPLY_TO_COMMENT_ID` | GitHub numeric review comment id to post an inline reply beneath | unset (reply disabled) |
+| `INPUT_REPLY_BODY` | Body of that inline reply | unset |
+
+Both must be set together for a reply to post; otherwise the reply step
+is skipped silently.

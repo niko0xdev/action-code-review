@@ -121,6 +121,44 @@ describe('buildReviewPayload', () => {
 		expect(payload.comments).toHaveLength(0);
 		expect(payload.event).toBe('COMMENT');
 	});
+
+	it('produces the exact wire shape GitHub expects for createReview', () => {
+		const payload = buildReviewPayload(
+			[finding(), finding({ path: 'src/b.ts', line: 4 })],
+			'abc123'
+		);
+		// Top-level REST fields for POST /pulls/{n}/reviews.
+		expect([...Object.keys(payload)].sort()).toEqual(
+			['commit_id', 'comments', 'event'].sort()
+		);
+		expect(payload.commit_id).toBe('abc123');
+		for (const comment of payload.comments) {
+			// Per-comment REST fields; side must anchor the diff, not the blob.
+			expect([...Object.keys(comment)].sort()).toEqual(
+				['body', 'line', 'path', 'side'].sort()
+			);
+			expect(comment.side).toBe('RIGHT');
+		}
+	});
+
+	it('ends every inline body with the ai-review-id dedupe marker', () => {
+		const payload = buildReviewPayload([finding(), finding({ line: 11 })], 's');
+		for (const comment of payload.comments) {
+			expect(comment.body).toMatch(/<!-- ai-review-id:[a-f0-9]{12} -->$/);
+		}
+	});
+
+	it('always sets side RIGHT so comments anchor on the diff', () => {
+		const payload = buildReviewPayload(
+			[
+				finding(),
+				finding({ path: 'deep/nested/file.tsx' }),
+				finding({ replacement: 'const x = 1;' }),
+			],
+			's'
+		);
+		expect(payload.comments.every((c) => c.side === 'RIGHT')).toBe(true);
+	});
 });
 
 describe('publishReview', () => {

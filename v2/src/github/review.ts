@@ -1,5 +1,7 @@
 import type { OctokitLike } from '../context/pr.js';
+import { normalizeCommentId } from '../review/dedupe.js';
 import type { Finding, ReviewResult } from '../types/finding.js';
+import type { ReplyParams, ReplyResult, ReviewReply } from '../types/reply.js';
 import { buildFindingBody, buildSummaryBody } from './comments.js';
 
 export { buildFindingBody, buildSummaryBody } from './comments.js';
@@ -9,6 +11,13 @@ export interface PublisherOctokit extends OctokitLike {
 	rest: OctokitLike['rest'] & {
 		pulls: OctokitLike['rest']['pulls'] & {
 			createReview(args: Record<string, unknown>): Promise<{ data: unknown }>;
+			createReplyForReviewComment(args: {
+				owner: string;
+				repo: string;
+				pull_number: number;
+				comment_id: number;
+				body: string;
+			}): Promise<{ data: { id: number; html_url: string } }>;
 		};
 		issues: {
 			createComment(args: Record<string, unknown>): Promise<{ data: unknown }>;
@@ -100,6 +109,60 @@ export async function publishReview(
 		repo,
 		issue_number: prNumber,
 		body: buildSummaryBody(result),
+	});
+}
+
+/**
+ * Body for an inline reply. Wraps the follow-up text and re-appends the
+ * finding's ai-review-id marker so duplicate suppression keeps working
+ * across the whole thread.
+ */
+export function buildReplyBody(body: string, finding?: Finding): string {
+	const trimmed = body.trim();
+	if (!finding) {
+		return trimmed;
+	}
+	return `${trimmed}\n\n<!-- ai-review-id:${normalizeCommentId(finding)} -->`;
+}
+
+/**
+ * Post an inline reply beneath an existing review comment thread
+ * (spec §20 extension). Reply-only: never posts the PR summary.
+ */
+export async function replyToReviewComment(
+	octokit: PublisherOctokit,
+	params: ReplyParams
+): Promise<ReplyResult> {
+	if (!params.body || !params.body.trim()) {
+		throw new Error(
+			'A non-empty reply body is required to reply to a review comment.'
+		);
+	}
+	if (!Number.isFinite(params.commentId) || params.commentId <= 0) {
+		throw new Error('A valid numeric review comment id is required to reply.');
+	}
+
+	const { data } = await octokit.rest.pulls.createReplyForReviewComment({
+		owner: params.owner,
+		repo: params.repo,
+		pull_number: params.prNumber,
+		comment_id: params.commentId,
+		body: buildReplyBody(params.body, params.finding),
+	});
+	return { id: data.id, html_url: data.html_url };
+}
+
+/** Convenience wrapper accepting the ReviewReply shape. */
+export async function postReviewReply(
+	octokit: PublisherOctokit,
+	reply: ReviewReply,
+	target: { owner: string; repo: string; prNumber: number }
+): Promise<ReplyResult> {
+	return replyToReviewComment(octokit, {
+		...target,
+		commentId: reply.commentId,
+		body: reply.body,
+		finding: reply.finding,
 	});
 }
 
