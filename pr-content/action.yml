@@ -45,11 +45,13 @@ runs:
       shell: bash
       run: node ${{ github.action_path }}/dist/index.js
       env:
-        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
-        INPUT_OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-        INPUT_OPENAI_BASE_URL: ${{ inputs.openai-base-url }}
-        INPUT_OPENAI_MODEL: ${{ inputs.openai-model }}
-        INPUT_MAX_TOKENS: ${{ inputs.max-tokens }}
-        INPUT_INCLUDE_FILE_LIST: ${{ inputs.include-file-list }}
-        INPUT_CUSTOM_INSTRUCTIONS: ${{ inputs.custom-instructions }}
-        INPUT_TEMPLATE_PATH: ${{ inputs.template-path }}
+        # @actions/core getInput reads INPUT_<NAME> with only
+        # spaces replaced by underscores; hyphens are preserved.
+        INPUT_GITHUB-TOKEN: ${{ inputs.github-token }}
+        INPUT_OPENAI-API-KEY: ${{ inputs.openai-api-key }}
+        INPUT_OPENAI-BASE-URL: ${{ inputs.openai-base-url }}
+        INPUT_OPENAI-MODEL: ${{ inputs.openai-model }}
+        INPUT_MAX-TOKENS: ${{ inputs.max-tokens }}
+        INPUT_INCLUDE-FILE-LIST: ${{ inputs.include-file-list }}
+        INPUT_CUSTOM-INSTRUCTIONS: ${{ inputs.custom-instructions }}
+        INPUT_TEMPLATE-PATH: ${{ inputs.template-path }}
