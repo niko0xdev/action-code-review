@@ -108,7 +108,8 @@ describe.each([
 		);
 		expect(runStep).toBeDefined();
 		for (const inputName of V1_INPUTS[action]) {
-			const envKey = `INPUT_${inputName.toUpperCase().replace(/-/g, '_')}`;
+			// @actions/core getInput preserves hyphens in INPUT_<NAME>.
+			const envKey = `INPUT_${inputName.replace(/ /g, '_').toUpperCase()}`;
 			expect(runStep?.env?.[envKey], `${envKey} forwarded`).toBeDefined();
 		}
 	});
