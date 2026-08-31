@@ -34450,12 +34450,12 @@ function loadLlmConfigFromEnv(env = process.env) {
     return {
         provider: 'openai',
         apiKey,
-        baseUrl: normalizeBaseUrl(env.OPENAI_API_URL || DEFAULT_BASE_URL),
+        baseUrl: config_normalizeBaseUrl(env.OPENAI_API_URL || DEFAULT_BASE_URL),
         model,
     };
 }
 /** Accepts gateway URLs with or without a version path; always ends with /v1-style segment preserved or appended. */
-function normalizeBaseUrl(url) {
+function config_normalizeBaseUrl(url) {
     const trimmed = url.replace(/\/+$/, '');
     if (/\/v\d+$/.test(trimmed)) {
         return trimmed;
@@ -34478,7 +34478,7 @@ function resolveEngineConfig(input) {
     return {
         provider: 'openai',
         apiKey,
-        baseUrl: normalizeBaseUrl(rawBaseUrl),
+        baseUrl: config_normalizeBaseUrl(rawBaseUrl),
         model,
     };
 }
@@ -34490,6 +34490,18 @@ function resolveEngineConfig(input) {
  * inputs are ignored; missing inputs fall back to the frozen defaults.
  */
 
+const SECURITY_DEFAULTS = {
+    mode: 'auto',
+    profile: 'diff',
+    minSeverity: 'medium',
+    failOn: 'critical',
+    confirmFindings: 'true',
+    inlineComments: 'true',
+    stickyComment: 'true',
+    generateSarif: 'true',
+    maxFindings: '20',
+    riskThreshold: 'high',
+};
 const PR_REVIEW_DEFAULTS = {
     openaiModel: 'gpt-4',
     maxFiles: '10',
@@ -34542,12 +34554,59 @@ function mapPrReviewInputs(inputs) {
 function mapPrContentInputs(inputs) {
     return mapPrContent(inputs);
 }
+/** Typed wrapper for security mode inputs. Spec reference: §4. */
+function mapSecurityInputs(inputs) {
+    const rawBaseUrl = get(inputs, 'openai-base-url') || get(inputs, 'base_url');
+    const rawMode = (get(inputs, 'mode') ?? SECURITY_DEFAULTS.mode);
+    const rawProfile = (get(inputs, 'security_profile') ??
+        get(inputs, 'security-profile') ??
+        SECURITY_DEFAULTS.profile);
+    const rawMinSev = (get(inputs, 'security_min_severity') ??
+        get(inputs, 'security-min-severity') ??
+        get(inputs, 'min-severity') ??
+        SECURITY_DEFAULTS.minSeverity);
+    const rawFailOn = (get(inputs, 'security_fail_on') ??
+        get(inputs, 'security-fail-on') ??
+        SECURITY_DEFAULTS.failOn);
+    const rawRiskThreshold = (get(inputs, 'security_risk_threshold') ??
+        get(inputs, 'security-risk-threshold') ??
+        SECURITY_DEFAULTS.riskThreshold);
+    return {
+        githubToken: get(inputs, 'github-token') ?? get(inputs, 'github_token') ?? '',
+        apiKey: get(inputs, 'openai-api-key') ??
+            get(inputs, 'api_key') ??
+            get(inputs, 'openai_api_key') ??
+            '',
+        baseUrl: rawBaseUrl ? normalizeBaseUrl(rawBaseUrl) : undefined,
+        model: get(inputs, 'openai-model') ??
+            get(inputs, 'model') ??
+            PR_REVIEW_DEFAULTS.openaiModel,
+        mode: rawMode,
+        profile: rawProfile,
+        minSeverity: rawMinSev,
+        failOn: rawFailOn,
+        confirmFindings: bool(get(inputs, 'security_confirm_findings') ??
+            get(inputs, 'security-confirm-findings'), SECURITY_DEFAULTS.confirmFindings),
+        inlineComments: bool(get(inputs, 'security_inline_comments') ??
+            get(inputs, 'security-inline-comments'), SECURITY_DEFAULTS.inlineComments),
+        stickyComment: bool(get(inputs, 'security_sticky_comment') ??
+            get(inputs, 'security-sticky-comment') ??
+            get(inputs, 'sticky-summary'), SECURITY_DEFAULTS.stickyComment),
+        generateSarif: bool(get(inputs, 'security_sarif') ?? get(inputs, 'security-sarif'), SECURITY_DEFAULTS.generateSarif),
+        maxFindings: legacy_inputs_int(get(inputs, 'security_max_findings') ??
+            get(inputs, 'security-max-findings'), SECURITY_DEFAULTS.maxFindings),
+        riskThreshold: rawRiskThreshold,
+        piArgs: get(inputs, 'pi-args') ?? get(inputs, 'pi_args'),
+        piBinaryPath: get(inputs, 'pi-binary-path') ?? get(inputs, 'pi_binary_path'),
+        trackProgress: bool(get(inputs, 'track-progress') ?? get(inputs, 'track_progress'), 'false'),
+    };
+}
 function mapPrReview(inputs) {
     const rawBaseUrl = get(inputs, 'openai-base-url');
     return {
         githubToken: get(inputs, 'github-token') ?? '',
         apiKey: get(inputs, 'openai-api-key') ?? '',
-        baseUrl: rawBaseUrl ? normalizeBaseUrl(rawBaseUrl) : undefined,
+        baseUrl: rawBaseUrl ? config_normalizeBaseUrl(rawBaseUrl) : undefined,
         model: get(inputs, 'openai-model') ?? PR_REVIEW_DEFAULTS.openaiModel,
         reviewPrompt: get(inputs, 'review-prompt'),
         maxFiles: legacy_inputs_int(get(inputs, 'max-files'), PR_REVIEW_DEFAULTS.maxFiles),
@@ -34569,7 +34628,7 @@ function mapPrContent(inputs) {
         action: 'pr-content',
         githubToken: get(inputs, 'github-token') ?? '',
         apiKey: get(inputs, 'openai-api-key') ?? '',
-        baseUrl: rawBaseUrl ? normalizeBaseUrl(rawBaseUrl) : undefined,
+        baseUrl: rawBaseUrl ? config_normalizeBaseUrl(rawBaseUrl) : undefined,
         model: get(inputs, 'openai-model') ?? PR_CONTENT_DEFAULTS.openaiModel,
         maxTokens: legacy_inputs_int(get(inputs, 'max-tokens'), PR_CONTENT_DEFAULTS.maxTokens),
         includeFileList: bool(get(inputs, 'include-file-list'), PR_CONTENT_DEFAULTS.includeFileList),
@@ -36726,7 +36785,12 @@ function buildUserPrompt(currentTitle, currentDescription, diffs, includeFileLis
 
 ;// CONCATENATED MODULE: ./src/modes/detector.ts
 
-const SUPPORTED_EVENTS = new Set(['pull_request', 'pull_request_target']);
+const SUPPORTED_EVENTS = new Set([
+    'pull_request',
+    'pull_request_target',
+    'workflow_dispatch',
+    'schedule',
+]);
 const SUPPORTED_ACTIONS = new Set([
     'opened',
     'synchronize',
@@ -36734,9 +36798,11 @@ const SUPPORTED_ACTIONS = new Set([
     'ready_for_review',
 ]);
 function resolveReviewMode(raw) {
-    if (!raw || raw === 'review')
-        return 'review';
-    lib_core.warning(`Unknown mode "${raw}" — falling back to "review" (only "review" is supported).`);
+    if (!raw || raw === 'auto')
+        return 'auto';
+    if (raw === 'review' || raw === 'security' || raw === 'agent')
+        return raw;
+    lib_core.warning(`Unknown mode "${raw}" — falling back to "review" (only "auto", "review", "security", "agent" are supported).`);
     return 'review';
 }
 function isSupportedReviewEvent(eventName, action) {
@@ -37705,7 +37771,197 @@ function validateFindings(findings, changedFiles, minConfidence = 0.8) {
     return findings.filter((finding) => validateFinding(finding, changedFiles, minConfidence));
 }
 
+;// CONCATENATED MODULE: ./src/review/verify.ts
+/**
+ * Two-pass verify (V3 Phase 5, decision Q4).
+ *
+ * After the main review pass, optionally runs a second short LLM call
+ * that asks the model to challenge its own high/critical findings.
+ * The verify pass is bounded by:
+ * - Opt-in via `AI_REVIEW_VERIFY_PASS=true` env var (default false).
+ * - Cost ceiling of `AI_REVIEW_VERIFY_BUDGET_USD` (default 0.50 USD).
+ * - Skipped when zero high/critical findings (nothing worth verifying).
+ *
+ * Output: a verified copy of the input findings where each surviving
+ * finding has a `verified: true` marker set on its body. Dropped
+ * findings are silently removed. Cost is tracked via token estimate
+ * (input + output) using a per-1K-token rate.
+ */
+const DEFAULT_BUDGET_USD = 0.5;
+const DEFAULT_RATE_PER_1K = 0.001;
+/**
+ * Severities that warrant a verify pass. Lower severities are not
+ * worth the cost - the LLM is unlikely to drop low/medium findings
+ * anyway, and the cost ceiling is tighter.
+ */
+const VERIFY_TARGET_SEVERITIES = ['critical', 'high'];
+/**
+ * Build the verify prompt. The model is asked to challenge each
+ * high/critical finding with three yes/no questions. The model must
+ * return JSON in the same shape, but each finding either survives
+ * (verified) or is dropped.
+ */
+function buildVerifyPrompt(highCritical, toolFindings, context) {
+    const toolSection = toolFindings.length
+        ? `\nStatic analyzer evidence (from V3 Phase 2 prelint):\n${toolFindings
+            .slice(0, 30)
+            .map((f) => `- [${f.tool}/${f.code}] ${f.path}:${f.line} (${f.severity}) ${f.message}`)
+            .join('\n')}\n`
+        : '';
+    return `You are reviewing your OWN findings from a prior code-review pass.
+Your job is to challenge each high-severity finding before it ships to a human reviewer.
+
+PR title: ${context.title}
+PR body (truncated): ${context.body.slice(0, 500)}
+
+Candidate findings to verify (${highCritical.length}):
+${JSON.stringify(highCritical, null, 2)}
+${toolSection}
+
+For each finding, answer 3 questions:
+1. Is the file path real (matches one of: ${context.filenames.slice(0, 20).join(', ')})?
+2. Is the line number plausible (between 1 and a reasonable file length)?
+3. Would a senior engineer agree this is a real bug?
+
+If ALL THREE answers are YES, keep the finding with "verified": true.
+Otherwise, DROP the finding from the output.
+
+Return ONLY JSON:
+{"findings": [...same shape, with verified:true on each survivor...]}
+
+Do not invent new findings. Do not change severity. Do not change titles.
+This pass exists only to catch hallucinated paths/lines and reasoning shortcuts.`;
+}
+/**
+ * Estimate the cost of running the verify pass. Conservative estimate
+ * uses input tokens + output budget.
+ */
+function estimateCostUsd(inputTokens, outputTokens, ratePer1K) {
+    return ((inputTokens + outputTokens) / 1000) * ratePer1K;
+}
+/**
+ * Run the verify pass. Always resolves (never throws). When skipped,
+ * returns the input findings unchanged with a skip reason.
+ */
+async function runVerifyPass(options) {
+    const budgetUsd = options.budgetUsd ?? DEFAULT_BUDGET_USD;
+    const ratePer1K = options.ratePer1K ?? DEFAULT_RATE_PER_1K;
+    // Filter to high/critical only.
+    const highCritical = options.findings.filter((f) => VERIFY_TARGET_SEVERITIES.includes(f.severity));
+    if (highCritical.length === 0) {
+        return {
+            findings: options.findings,
+            verifiedCount: 0,
+            droppedCount: 0,
+            skipped: true,
+            skipReason: 'no high/critical findings to verify',
+            estimatedCostUsd: 0,
+        };
+    }
+    // Cost gate.
+    const estimatedCostUsd = estimateCostUsd(options.inputTokenEstimate, options.outputTokenBudget, ratePer1K);
+    if (estimatedCostUsd > budgetUsd) {
+        return {
+            findings: options.findings,
+            verifiedCount: 0,
+            droppedCount: 0,
+            skipped: true,
+            skipReason: `estimated cost $${estimatedCostUsd.toFixed(3)} exceeds budget $${budgetUsd}`,
+            estimatedCostUsd,
+        };
+    }
+    const prompt = buildVerifyPrompt(highCritical, options.toolFindings, options.context);
+    let raw;
+    try {
+        raw = await options.verify(prompt);
+    }
+    catch (error) {
+        return {
+            findings: options.findings,
+            verifiedCount: 0,
+            droppedCount: 0,
+            skipped: true,
+            skipReason: `verify call failed: ${error instanceof Error ? error.message : String(error)}`,
+            estimatedCostUsd,
+        };
+    }
+    const parsed = parseVerifyOutput(raw, highCritical);
+    // Build verified output: keep highCritical that survived verification,
+    // plus all other findings (unchanged).
+    const verifiedSet = new Set(parsed.verified.map((f) => identifyFinding(f)));
+    const surviving = options.findings.filter((f) => {
+        if (!VERIFY_TARGET_SEVERITIES.includes(f.severity))
+            return true;
+        return verifiedSet.has(identifyFinding(f));
+    });
+    return {
+        findings: surviving,
+        verifiedCount: parsed.verified.length,
+        droppedCount: highCritical.length - parsed.verified.length,
+        skipped: false,
+        estimatedCostUsd,
+    };
+}
+/**
+ * Stable identity for a finding used to match verify-pass survivors to
+ * the original findings list. Uses path + line + category + first 4
+ * title words, matching the dedupe key in `dedupe.ts`.
+ */
+function identifyFinding(finding) {
+    const titlePrefix = finding.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim()
+        .split(' ')
+        .slice(0, 4)
+        .join(' ');
+    return [
+        finding.path,
+        finding.line,
+        finding.category,
+        finding.ruleId ?? titlePrefix,
+    ].join('|');
+}
+function parseVerifyOutput(raw, expected) {
+    // Best-effort JSON extraction. The LLM may include prose; we look for
+    // the first {...} block.
+    const jsonStart = raw.indexOf('{');
+    const jsonEnd = raw.lastIndexOf('}');
+    if (jsonStart < 0 || jsonEnd <= jsonStart)
+        return { verified: [] };
+    let parsed = null;
+    try {
+        parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
+    }
+    catch {
+        return { verified: [] };
+    }
+    if (!parsed?.findings?.length)
+        return { verified: [] };
+    // Coerce + filter to verified entries.
+    const verified = [];
+    const expectedByKey = new Map();
+    for (const f of expected)
+        expectedByKey.set(identifyFinding(f), f);
+    for (const item of parsed.findings) {
+        if (!item || item.verified !== true)
+            continue;
+        // Find original via identity.
+        const candidate = {
+            ...expected[0],
+            ...item,
+        };
+        const key = identifyFinding(candidate);
+        const original = expectedByKey.get(key);
+        if (!original)
+            continue;
+        verified.push(original);
+    }
+    return { verified };
+}
+
 ;// CONCATENATED MODULE: ./src/review/reviewer.ts
+
 
 
 
@@ -37766,24 +38022,63 @@ async function runReview(context, harness, options = {}) {
         hasTestFileChanges: hasTestFileChanges(context.diff.files.map((f) => f.filename)),
     });
     const findings = capFindings(fastPathed.findings).sort((a, b) => b.confidence - a.confidence);
+    // Phase 5: optional two-pass verify. Opt-in via env in cli.ts; the
+    // presence of `options.verify` is the gate here so unit tests can
+    // exercise the path without env mutations.
+    let verifiedFindings = findings;
+    let verifyDiagnostics;
+    if (options.verify) {
+        const toolFindingsForVerify = [];
+        const verifyResult = await runVerifyPass({
+            findings,
+            toolFindings: toolFindingsForVerify,
+            context: {
+                title: context.pullRequest.title,
+                body: context.pullRequest.body,
+                filenames: context.diff.files.map((f) => f.filename),
+            },
+            verify: options.verify,
+            inputTokenEstimate: options.inputTokenEstimate ?? Math.max(2000, findings.length * 500),
+            outputTokenBudget: options.outputTokenBudget ?? 1024,
+            budgetUsd: options.verifyBudgetUsd,
+        });
+        verifiedFindings = verifyResult.findings;
+        verifyDiagnostics = {
+            verifyPassSkipped: verifyResult.skipped,
+            verifySkipReason: verifyResult.skipReason,
+            verifyVerifiedCount: verifyResult.verifiedCount,
+            verifyDroppedCount: verifyResult.droppedCount,
+            verifyEstimatedCostUsd: verifyResult.estimatedCostUsd,
+        };
+        // Re-derive counts from verified findings.
+    }
     const result = {
-        findings,
+        findings: verifiedFindings,
         summary: summaries.join('\n\n').trim(),
-        risk: riskFromFindings(findings),
-        counts: computeCounts(findings),
+        risk: riskFromFindings(verifiedFindings),
+        counts: computeCounts(verifiedFindings),
         filesReviewed,
     };
     // Phase 3 diagnostics: bucket count + conflict drop count + trivial flag.
     // Preserve any toolFindings already set by cli.ts so reviewers don't
     // overwrite upstream phases.
-    if (normalized.bucketedCount > 0 ||
+    const hasPhase3Diag = normalized.bucketedCount > 0 ||
         crossChecked.droppedCount > 0 ||
-        fastPathed.trivialPr) {
+        fastPathed.trivialPr;
+    const hasPhase5Diag = verifyDiagnostics &&
+        (verifyDiagnostics.verifyVerifiedCount !== undefined ||
+            verifyDiagnostics.verifyPassSkipped);
+    if (hasPhase3Diag || hasPhase5Diag) {
         result.diagnostics = {
             ...result.diagnostics,
-            bucketedUnknownCategories: normalized.bucketedCount,
-            crossFindingConflictsResolved: crossChecked.droppedCount,
-            trivialPrFastPath: fastPathed.trivialPr,
+            ...(hasPhase3Diag
+                ? {
+                    bucketedUnknownCategories: normalized.bucketedCount,
+                    crossFindingConflictsResolved: crossChecked.droppedCount,
+                    trivialPrFastPath: fastPathed.trivialPr,
+                }
+                : {}),
+            ...(hasPhase5Diag ? verifyDiagnostics : {}),
         };
     }
     return result;
@@ -37812,6 +38107,10 @@ async function runReview(context, harness, options = {}) {
 
 
 function positiveTimeout(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+function positiveNumberEnv(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
@@ -38175,6 +38474,24 @@ async function main(argv) {
                 toolFindings: prelintResult.findings,
             });
             const promptFile = await readPromptFileIfNeeded(reviewContext.repositoryPath);
+            // Phase 5: two-pass verify (opt-in via env, Q4 decision).
+            // Reuses the same OpenAI-compatible provider with a smaller
+            // token budget; cost ceiling enforced inside runVerifyPass.
+            const verifyPassEnabled = process.env.AI_REVIEW_VERIFY_PASS === 'true';
+            const verifyCallback = verifyPassEnabled
+                ? async (prompt) => {
+                    const provider = new OpenAiCompatibleProvider(llmConfig);
+                    const completion = await provider.complete([
+                        {
+                            role: 'system',
+                            content: 'You are a verification pass for an existing code review. Reply with JSON only.',
+                        },
+                        { role: 'user', content: prompt },
+                    ], { temperature: 0.1, maxOutputTokens: 1024 });
+                    return completion.content;
+                }
+                : undefined;
+            const verifyBudgetUsd = positiveNumberEnv(process.env.AI_REVIEW_VERIFY_BUDGET_USD, 0.5);
             const result = await runReview(reviewContext, harness, {
                 minConfidence: Number.parseFloat(process.env.AI_REVIEW_MIN_CONFIDENCE || '0.8'),
                 extraRules: [
@@ -38185,6 +38502,8 @@ async function main(argv) {
                     .filter(Boolean)
                     .join('\n\n'),
                 minSeverity: legacyOptions.minSeverity,
+                verify: verifyCallback,
+                verifyBudgetUsd,
             });
             // Surface tool findings + prelint diagnostics in the result
             // so they can be rendered in the GitHub review summary
