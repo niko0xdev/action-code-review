@@ -14,28 +14,28 @@
 
 import type { ProfileId } from '../types/context.js';
 
-import reactSkill from './react.js';
-import nextjsSkill from './nextjs.js';
-import nestjsSkill from './nestjs.js';
-import nodejsSkill from './nodejs.js';
-import typescriptSkill from './typescript.js';
 import javascriptSkill from './javascript.js';
-import pythonSkill from './python.js';
-import swiftSkill from './swift.js';
 import kotlinSkill from './kotlin.js';
+import nestjsSkill from './nestjs.js';
+import nextjsSkill from './nextjs.js';
+import nodejsSkill from './nodejs.js';
+import pythonSkill from './python.js';
+import reactSkill from './react.js';
+import swiftSkill from './swift.js';
+import typescriptSkill from './typescript.js';
 
-export const BUILT_IN_SKILLS: Readonly<Partial<Record<ProfileId, string>>> = Object.freeze({
-	react: reactSkill,
-	nextjs: nextjsSkill,
-	nestjs: nestjsSkill,
-	nodejs: nodejsSkill,
-	typescript: typescriptSkill,
-	javascript: javascriptSkill,
-	python: pythonSkill,
-	swift: swiftSkill,
-	kotlin: kotlinSkill,
-
-});
+export const BUILT_IN_SKILLS: Readonly<Partial<Record<ProfileId, string>>> =
+	Object.freeze({
+		react: reactSkill,
+		nextjs: nextjsSkill,
+		nestjs: nestjsSkill,
+		nodejs: nodejsSkill,
+		typescript: typescriptSkill,
+		javascript: javascriptSkill,
+		python: pythonSkill,
+		swift: swiftSkill,
+		kotlin: kotlinSkill,
+	});
 
 /** All ProfileIds that have a built-in skill. */
 export function profilesWithSkills(): ProfileId[] {

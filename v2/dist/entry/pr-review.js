@@ -36098,6 +36098,48 @@ function buildUserPrompt(currentTitle, currentDescription, diffs, includeFileLis
     return `${prompt}\n\nPlease provide an improved title and description for this pull request.`;
 }
 
+;// CONCATENATED MODULE: ./src/modes/detector.ts
+
+const SUPPORTED_EVENTS = new Set(['pull_request', 'pull_request_target']);
+const SUPPORTED_ACTIONS = new Set([
+    'opened',
+    'synchronize',
+    'reopened',
+    'ready_for_review',
+]);
+function resolveReviewMode(raw) {
+    if (!raw || raw === 'review')
+        return 'review';
+    lib_core.warning(`Unknown mode "${raw}" — falling back to "review" (only "review" is supported).`);
+    return 'review';
+}
+function isSupportedReviewEvent(eventName, action) {
+    if (!eventName)
+        return false;
+    if (!SUPPORTED_EVENTS.has(eventName))
+        return false;
+    if (!action)
+        return true;
+    return SUPPORTED_ACTIONS.has(action);
+}
+function validateReviewEvent(eventName, action) {
+    if (!eventName)
+        return { supported: true };
+    if (!SUPPORTED_EVENTS.has(eventName)) {
+        return {
+            supported: false,
+            reason: `event "${eventName}" is not pull_request/pull_request_target`,
+        };
+    }
+    if (action && !SUPPORTED_ACTIONS.has(action)) {
+        return {
+            supported: false,
+            reason: `action "${action}" is not one of ${[...SUPPORTED_ACTIONS].join(', ')}`,
+        };
+    }
+    return { supported: true };
+}
+
 ;// CONCATENATED MODULE: ./src/profiles/common.ts
 
 
@@ -36809,6 +36851,7 @@ async function runReview(context, harness, options = {}) {
 
 
 
+
 function positiveTimeout(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -37026,8 +37069,16 @@ async function runPrContent(options) {
 }
 async function main(argv) {
     try {
+        const mode = resolveReviewMode(lib_core.getInput('mode') || undefined);
+        const eventName = process.env.GITHUB_EVENT_NAME;
+        const eventAction = github.context.payload.action;
+        const validation = validateReviewEvent(eventName, eventAction);
+        if (!validation.supported) {
+            lib_core.warning(`[review] Unsupported event ${eventName ?? 'unknown'}${eventAction ? `/${eventAction}` : ''}: ${validation.reason} — skipping review.`);
+            return;
+        }
         const options = parseArgs(argv);
-        lib_core.info(`[review] V2 initialized (action: ${options.action})`);
+        lib_core.info(`[review] V2 initialized (action: ${options.action}, mode: ${mode})`);
         if (options.action === 'pr-content') {
             const contentOptions = mapPrContentInputs({
                 'github-token': lib_core.getInput('github-token'),
