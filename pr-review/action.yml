@@ -70,6 +70,14 @@ inputs:
     description: 'Alias for buffer-inline-comments (CCA compat)'
     required: false
     default: 'true'
+  allowed-bots:
+    description: 'Comma-separated allowed bot usernames, or * to allow all (empty denies bots; mirrors CCA allowed_bots)'
+    required: false
+    default: ''
+  exclude-actors:
+    description: 'Comma-separated actor usernames/patterns to exclude (supports *[bot] wildcard)'
+    required: false
+    default: ''
 
 outputs:
   review-summary:
@@ -109,3 +117,5 @@ runs:
         INPUT_REQUIRE-WRITE-PERMISSIONS: ${{ inputs.require-write-permissions }}
         INPUT_BUFFER-INLINE-COMMENTS: ${{ inputs.buffer-inline-comments }}
         INPUT_CLASSIFY-INLINE-COMMENTS: ${{ inputs.classify-inline-comments }}
+        INPUT_ALLOWED-BOTS: ${{ inputs.allowed-bots }}
+        INPUT_EXCLUDE-ACTORS: ${{ inputs.exclude-actors }}
