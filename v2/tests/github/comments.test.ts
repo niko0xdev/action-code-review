@@ -20,7 +20,10 @@ function finding(overrides: Partial<Finding> = {}): Finding {
 describe('buildFindingBody', () => {
 	it('escapes HTML payloads as literal text', () => {
 		const body = buildFindingBody(
-			finding({ title: '<img onerror=alert(1)>', description: 'javascript:alert(1)' })
+			finding({
+				title: '<img onerror=alert(1)>',
+				description: 'javascript:alert(1)',
+			})
 		);
 		expect(body).toContain('&lt;img onerror=alert(1)&gt;');
 		expect(body).toContain('javascript:alert(1)');

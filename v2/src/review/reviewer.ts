@@ -59,7 +59,8 @@ export async function runReview(
 			if (outcome.status === 'fulfilled') {
 				allFindings.push(...outcome.value.result.findings);
 				filesReviewed.push(...group.files);
-				if (outcome.value.result.summary) summaries.push(outcome.value.result.summary);
+				if (outcome.value.result.summary)
+					summaries.push(outcome.value.result.summary);
 			} else {
 				console.warn(
 					`Review group failed: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`

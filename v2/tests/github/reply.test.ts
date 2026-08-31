@@ -30,7 +30,8 @@ describe('replyToReviewComment', () => {
 				pulls: {
 					getReviewComment: vi.fn(async () => ({
 						data: {
-							pull_request_url: 'https://api.github.com/repos/acme/widget/pulls/7',
+							pull_request_url:
+								'https://api.github.com/repos/acme/widget/pulls/7',
 							body: '<!-- ai-review-id:abcdef123456 -->',
 							user: { login: 'bot' },
 						},

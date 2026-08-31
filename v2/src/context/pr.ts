@@ -21,6 +21,7 @@ export interface OctokitLike {
 				data: FileWire[];
 			}>;
 		};
+		users?: { getAuthenticated: () => Promise<{ data: { login: string } }> };
 	};
 }
 
@@ -92,7 +93,6 @@ export async function fetchPrContext(
 		files: changedFiles,
 		totalAdditions: changedFiles.reduce((sum, f) => sum + f.additions, 0),
 		totalDeletions: changedFiles.reduce((sum, f) => sum + f.deletions, 0),
-		truncated: files.length >= pageSize * maxPages,
 	};
 
 	return {
@@ -113,7 +113,13 @@ async function fetchAllFiles(
 ): Promise<FileWire[]> {
 	const all: FileWire[] = [];
 	for (let page = 1; page <= maxPages; page += 1) {
-		const data = await fetchFilePage(octokit, repository, prNumber, pageSize, page);
+		const data = await fetchFilePage(
+			octokit,
+			repository,
+			prNumber,
+			pageSize,
+			page
+		);
 		all.push(...data);
 		if (data.length < pageSize) break;
 	}
@@ -137,11 +143,17 @@ async function fetchFilePage(
 			});
 			return data;
 		} catch (error) {
-			const response = error as { status?: number; response?: { status?: number; headers?: Record<string, string> } };
+			const response = error as {
+				status?: number;
+				response?: { status?: number; headers?: Record<string, string> };
+			};
 			const status = response.status ?? response.response?.status;
 			if (attempt >= 2 || (status !== 403 && status !== 429)) throw error;
 			const retryAfter = Number(response.response?.headers?.['retry-after']);
-			const delay = Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter * 1000 : 100 * 2 ** attempt;
+			const delay =
+				Number.isFinite(retryAfter) && retryAfter >= 0
+					? retryAfter * 1000
+					: 100 * 2 ** attempt;
 			await new Promise((resolve) => setTimeout(resolve, delay));
 		}
 	}

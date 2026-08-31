@@ -1,7 +1,4 @@
-import {
-	DEFAULT_MAX_OUTPUT_TOKENS,
-	timeoutFromEnv,
-} from './config.js';
+import { DEFAULT_MAX_OUTPUT_TOKENS, timeoutFromEnv } from './config.js';
 import {
 	type ChatCompletion,
 	type ChatMessage,

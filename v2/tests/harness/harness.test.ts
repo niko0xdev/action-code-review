@@ -33,7 +33,6 @@ function makeContext(overrides?: Partial<ReviewContext>): ReviewContext {
 			],
 			totalAdditions: 4,
 			totalDeletions: 1,
-			truncated: false,
 		},
 		profiles: [{ id: 'nodejs', evidence: ['package.json'] }],
 		repositoryPath: '/repo',
@@ -64,7 +63,9 @@ describe('buildReviewPrompt', () => {
 
 	it('ends repository content with a second security defense', () => {
 		const prompt = buildReviewPrompt(makeContext());
-		expect(prompt.lastIndexOf('FINAL SECURITY CHECK')).toBeGreaterThan(prompt.lastIndexOf('+new'));
+		expect(prompt.lastIndexOf('FINAL SECURITY CHECK')).toBeGreaterThan(
+			prompt.lastIndexOf('+new')
+		);
 	});
 });
 

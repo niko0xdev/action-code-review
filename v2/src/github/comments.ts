@@ -51,7 +51,9 @@ export function buildFindingBody(finding: Finding): string {
 		description: mdSafe(finding.description),
 		impact: mdSafe(finding.impact),
 		suggestion: finding.suggestion ? mdSafe(finding.suggestion) : undefined,
-		replacement: finding.replacement ? mdSafe(finding.replacement) : finding.replacement,
+		replacement: finding.replacement
+			? mdSafe(finding.replacement)
+			: finding.replacement,
 	};
 	const body = commentIdentityBody(safeFinding);
 	return `${body}\n\n<!-- ai-review-id:${normalizeCommentId(finding)} -->`;

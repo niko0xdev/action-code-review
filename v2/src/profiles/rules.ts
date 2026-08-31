@@ -115,6 +115,8 @@ export function profileRules(profileId: ProfileId): string {
 }
 
 export function combinedRules(profileIds: ProfileId[]): string {
-	const sections = [...new Set(profileIds)].map((id) => PROFILE_RULES[id]).filter(Boolean);
+	const sections = [...new Set(profileIds)]
+		.map((id) => PROFILE_RULES[id])
+		.filter(Boolean);
 	return [UNIVERSAL_RULES, ...sections].join('\n');
 }

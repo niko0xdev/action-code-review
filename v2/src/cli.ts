@@ -9,11 +9,11 @@ import { preparePiRuntimeConfig } from './adapter/runtime.js';
 import { prioritizeFiles } from './context/files.js';
 import { fetchPrContext } from './context/pr.js';
 import { publishReview } from './github/review.js';
+import type { PublisherOctokit } from './github/review.js';
 import { PiHarness } from './harness/pi.js';
 import { REVIEW_OPTION_DEFAULTS } from './llm/config.js';
 import { resolveProfiles, rulesForProfiles } from './profiles/index.js';
 import { runReview } from './review/reviewer.js';
-import type { PublisherOctokit } from './github/review.js';
 
 function positiveTimeout(value: string | undefined, fallback: number): number {
 	const parsed = Number(value);
@@ -91,7 +91,10 @@ export async function main(argv: string[]): Promise<void> {
 		try {
 			process.env.PI_CONFIG_DIR = runtimeConfig.configDir;
 			const harness = new PiHarness({
-				timeoutMs: positiveTimeout(process.env.AI_REVIEW_PI_TIMEOUT_MS, 15 * 60_000),
+				timeoutMs: positiveTimeout(
+					process.env.AI_REVIEW_PI_TIMEOUT_MS,
+					15 * 60_000
+				),
 				model: llmConfig.model,
 				apiKey: llmConfig.apiKey,
 				includeFullContent: legacyOptions.includeFullContent,

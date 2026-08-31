@@ -30,7 +30,9 @@ export interface PublisherOctokit extends OctokitLike {
 				comment_id: number;
 				body: string;
 			}): Promise<{ data: { id: number; html_url: string } }>;
-			getReviewComment(args: Record<string, unknown>): Promise<{ data: ReviewCommentRecord }>;
+			getReviewComment(
+				args: Record<string, unknown>
+			): Promise<{ data: ReviewCommentRecord }>;
 			listReviews?: (
 				args: Record<string, unknown>
 			) => Promise<{ data: ReviewRecord[] }>;
@@ -240,9 +242,9 @@ export async function replyToReviewComment(
 	});
 	const expectedUrl = `repos/${params.owner}/${params.repo}/pulls/${params.prNumber}`;
 	const targetBody = target.body ?? '';
-	const auth = octokit.users?.getAuthenticated
-		? (await octokit.users.getAuthenticated()).data.login
-		: '';
+	const getAuthenticated =
+		octokit.users?.getAuthenticated ?? octokit.rest.users?.getAuthenticated;
+	const auth = getAuthenticated ? (await getAuthenticated()).data.login : '';
 	if (
 		!target.pull_request_url?.endsWith(expectedUrl) ||
 		!targetBody.includes('<!-- ai-review-id:') ||
@@ -250,7 +252,10 @@ export async function replyToReviewComment(
 		target.user.login !== auth
 	)
 		throw new Error('Review comment target failed trust validation.');
-	if (params.finding && !targetBody.includes(normalizeCommentId(params.finding)))
+	if (
+		params.finding &&
+		!targetBody.includes(normalizeCommentId(params.finding))
+	)
 		throw new Error('Review comment target does not match finding identity.');
 	const { data } = await octokit.rest.pulls.createReplyForReviewComment({
 		owner: params.owner,

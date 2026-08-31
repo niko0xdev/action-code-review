@@ -2,7 +2,11 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { detectProfiles, profileRules, resolveProfiles } from '../../src/profiles/index.js';
+import {
+	detectProfiles,
+	profileRules,
+	resolveProfiles,
+} from '../../src/profiles/index.js';
 
 const REQUIRED_RULES: Record<string, string> = {
 	react: 'React 19',
@@ -122,13 +126,18 @@ describe('detectProfiles (spec §9)', () => {
 });
 
 describe('profileRules', () => {
-	it.each(Object.entries(REQUIRED_RULES))('includes required %s rule content', (id, text) => {
-		expect(profileRules(id as never)).toContain(text);
-	});
+	it.each(Object.entries(REQUIRED_RULES))(
+		'includes required %s rule content',
+		(id, text) => {
+			expect(profileRules(id as never)).toContain(text);
+		}
+	);
 
 	it('ignores invalid profile overrides and warns', () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-		expect(resolveProfiles('/missing', 'react,invalid,nodejs').map((p) => p.id)).toEqual(['react', 'nodejs']);
+		expect(
+			resolveProfiles('/missing', 'react,invalid,nodejs').map((p) => p.id)
+		).toEqual(['react', 'nodejs']);
 		expect(warn).toHaveBeenCalledWith(expect.stringContaining('invalid'));
 		warn.mockRestore();
 	});

@@ -30,7 +30,6 @@ function makeContext(files: string[]): ReviewContext {
 			})),
 			totalAdditions: files.length,
 			totalDeletions: 0,
-			truncated: false,
 		},
 		profiles: [{ id: 'nodejs', evidence: ['package.json'] }],
 		repositoryPath: '/repo',
@@ -65,10 +64,20 @@ describe('runReview', () => {
 				maximum = Math.max(maximum, active);
 				await new Promise((resolve) => setTimeout(resolve, 5));
 				active -= 1;
-				return { findings: [], summary: '', risk: 'none', counts: { critical: 0, high: 0, medium: 0, low: 0 }, filesReviewed: [] };
+				return {
+					findings: [],
+					summary: '',
+					risk: 'none',
+					counts: { critical: 0, high: 0, medium: 0, low: 0 },
+					filesReviewed: [],
+				};
 			},
 		};
-		await runReview(makeContext(Array.from({ length: 10 }, (_, i) => `f${i}.ts`)), harness, { maxFilesPerGroup: 1 });
+		await runReview(
+			makeContext(Array.from({ length: 10 }, (_, i) => `f${i}.ts`)),
+			harness,
+			{ maxFilesPerGroup: 1 }
+		);
 		expect(maximum).toBe(3);
 	});
 
@@ -76,14 +85,24 @@ describe('runReview', () => {
 		const harness: ReviewHarness = {
 			name: 'ordered',
 			async review(context): Promise<ReviewResult> {
-				if (context.diff.files[0].filename === 'f1.ts') throw new Error('failed');
-				return { findings: [], summary: context.diff.files[0].filename, risk: 'none', counts: { critical: 0, high: 0, medium: 0, low: 0 }, filesReviewed: [] };
+				if (context.diff.files[0].filename === 'f1.ts')
+					throw new Error('failed');
+				return {
+					findings: [],
+					summary: context.diff.files[0].filename,
+					risk: 'none',
+					counts: { critical: 0, high: 0, medium: 0, low: 0 },
+					filesReviewed: [],
+				};
 			},
 		};
-		const result = await runReview(makeContext(['f0.ts', 'f1.ts', 'f2.ts']), harness, { maxFilesPerGroup: 1 });
+		const result = await runReview(
+			makeContext(['f0.ts', 'f1.ts', 'f2.ts']),
+			harness,
+			{ maxFilesPerGroup: 1 }
+		);
 		expect(result.summary).toBe('f0.ts\n\nf2.ts');
 	});
-
 
 	it('aggregates findings from every group and dedupes', async () => {
 		let call = 0;
