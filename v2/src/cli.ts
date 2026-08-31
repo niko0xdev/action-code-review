@@ -449,7 +449,21 @@ export async function main(argv: string[]): Promise<void> {
 				);
 			}
 			trackPhase('harness', 'Pi review start', { enabled: trackEnabled });
+			const piBinaryRaw = core.getInput('pi-binary-path');
+			let piBinaryPath: string | undefined;
+			if (piBinaryRaw) {
+				try {
+					const { accessSync, constants } = await import('node:fs');
+					accessSync(piBinaryRaw, constants.X_OK);
+					piBinaryPath = piBinaryRaw;
+				} catch {
+					core.warning(
+						`[review] pi-binary-path ${piBinaryRaw} not executable — falling back to pi`
+					);
+				}
+			}
 			const harness = new PiHarness({
+				binaryPath: piBinaryPath,
 				piArgs: core.getInput('pi-args'),
 				timeoutMs: positiveTimeout(
 					process.env.AI_REVIEW_PI_TIMEOUT_MS,
