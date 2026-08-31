@@ -179,14 +179,14 @@ export function parseArgs(args: string[]): { action: string } {
 async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 	const started = performance.now();
 	const context = github.context;
-	const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
-	const client = github.getOctokit(options.githubToken);
-	const octokit = toPublisherOctokit(client);
 	const prNumber = context.payload.pull_request?.number;
 	if (!prNumber) {
 		core.setFailed('This action only runs on pull requests');
 		return;
 	}
+	const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
+	const client = github.getOctokit(options.githubToken);
+	const octokit = toPublisherOctokit(client);
 	const prContext = await fetchPrContext(octokit, repoInfo, prNumber);
 	let templateContent = '';
 	try {

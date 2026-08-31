@@ -59,6 +59,10 @@ describe('main (skeleton)', () => {
 	it('resolves without throwing', async () => {
 		await expect(main(['pr-review'])).resolves.toBeUndefined();
 	});
+
+	it('dispatches pr-content without throwing outside a pull request', async () => {
+		await expect(main(['pr-content'])).resolves.toBeUndefined();
+	});
 });
 
 describe('finding model invariants', () => {
