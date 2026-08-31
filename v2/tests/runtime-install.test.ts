@@ -78,9 +78,10 @@ describe.each([
 				? 'docs/.v1-contract-snapshot/pr-review.action.yml'
 				: 'docs/.v1-contract-snapshot/pr-content.action.yml'
 		);
-		expect(Object.keys(parsed.inputs ?? {}).sort()).toEqual(
-			Object.keys(contract.inputs ?? {}).sort()
-		);
+		const actual = Object.keys(parsed.inputs ?? {}).sort();
+		for (const key of Object.keys(contract.inputs ?? {}).sort()) {
+			expect(actual, `missing frozen input ${key}`).toContain(key);
+		}
 		for (const [name, expected] of Object.entries(contract.inputs ?? {})) {
 			expect(parsed.inputs?.[name]?.required ?? false, `${name}.required`).toBe(
 				expected.required

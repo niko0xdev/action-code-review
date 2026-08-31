@@ -54,6 +54,10 @@ inputs:
     description: 'Global character limit for all context content combined (prevents exceeding LLM context window)'
     required: false
     default: '30000'
+  mode:
+    description: 'Review mode (only "review" is supported; unknown values fall back to "review")'
+    required: false
+    default: 'review'
 
 outputs:
   review-summary:
@@ -89,3 +93,4 @@ runs:
         INPUT_BLOCK-ON-ISSUES: ${{ inputs.block-on-issues }}
         INPUT_INCLUDE-FULL-CONTENT: ${{ inputs.include-full-content }}
         INPUT_MAX-CONTEXT-CHARS: ${{ inputs.max-context-chars }}
+        INPUT_MODE: ${{ inputs.mode }}

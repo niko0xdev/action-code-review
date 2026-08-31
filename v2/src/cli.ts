@@ -24,6 +24,7 @@ import {
 	createSystemPrompt,
 } from './llm/prompts/pr-content.js';
 import type { ChatCompletion, ChatMessage } from './llm/provider.js';
+import { resolveReviewMode, validateReviewEvent } from './modes/detector.js';
 import { resolveProfiles, rulesForProfiles } from './profiles/index.js';
 import { runReview } from './review/reviewer.js';
 
@@ -283,8 +284,20 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 
 export async function main(argv: string[]): Promise<void> {
 	try {
+		const mode = resolveReviewMode(core.getInput('mode') || undefined);
+		const eventName = process.env.GITHUB_EVENT_NAME;
+		const eventAction = (github.context.payload as { action?: string }).action;
+		const validation = validateReviewEvent(eventName, eventAction);
+		if (!validation.supported) {
+			core.warning(
+				`[review] Unsupported event ${eventName ?? 'unknown'}${eventAction ? `/${eventAction}` : ''}: ${validation.reason} — skipping review.`
+			);
+			return;
+		}
 		const options = parseArgs(argv);
-		core.info(`[review] V2 initialized (action: ${options.action})`);
+		core.info(
+			`[review] V2 initialized (action: ${options.action}, mode: ${mode})`
+		);
 		if (options.action === 'pr-content') {
 			const contentOptions = mapPrContentInputs({
 				'github-token': core.getInput('github-token'),

@@ -119,10 +119,11 @@ describe('V1 contract: pr-review/action.yml', () => {
 		);
 	});
 
-	it('exposes exactly the frozen inputs', () => {
-		expect(Object.keys(action.inputs ?? {}).sort()).toEqual(
-			Object.keys(PR_REVIEW_INPUTS).sort()
-		);
+	it('exposes at least the frozen inputs (additive only)', () => {
+		const actual = Object.keys(action.inputs ?? {}).sort();
+		for (const key of Object.keys(PR_REVIEW_INPUTS).sort()) {
+			expect(actual, `missing frozen input ${key}`).toContain(key);
+		}
 	});
 
 	it('preserves required flags and defaults', () => {
