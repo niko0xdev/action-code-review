@@ -1,8 +1,24 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { detectProfiles, profileRules } from '../../src/profiles/index.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+	detectProfiles,
+	profileRules,
+	resolveProfiles,
+} from '../../src/profiles/index.js';
+
+const REQUIRED_RULES: Record<string, string> = {
+	react: 'React 19',
+	nextjs: 'NextJS 15',
+	nestjs: 'Fastify',
+	nodejs: 'ES2024',
+	python: 'Pydantic v2',
+	swift: 'Swift 6',
+	kotlin: 'Kotlin 2.0',
+	typescript: 'NoInfer',
+	javascript: 'ES2024',
+};
 
 const scratch = join(tmpdir(), `acr-v2-profiles-${process.pid}`);
 
@@ -110,6 +126,21 @@ describe('detectProfiles (spec §9)', () => {
 });
 
 describe('profileRules', () => {
+	it.each(Object.entries(REQUIRED_RULES))(
+		'includes required %s rule content',
+		(id, text) => {
+			expect(profileRules(id as never)).toContain(text);
+		}
+	);
+
+	it('ignores invalid profile overrides and warns', () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		expect(
+			resolveProfiles('/missing', 'react,invalid,nodejs').map((p) => p.id)
+		).toEqual(['react', 'nodejs']);
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining('invalid'));
+		warn.mockRestore();
+	});
 	it.each(['react', 'nextjs', 'nestjs', 'nodejs', 'python', 'swift', 'kotlin'])(
 		'has rules for %s mentioning its spec concerns',
 		(id) => {

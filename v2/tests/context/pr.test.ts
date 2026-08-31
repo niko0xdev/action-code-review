@@ -103,4 +103,16 @@ describe('fetchPrContext', () => {
 		expect(context.diff.totalAdditions).toBe(15);
 		expect(context.diff.totalDeletions).toBe(2);
 	});
+
+	it('retries rate-limited file pages', async () => {
+		let calls = 0;
+		const { octokit } = makeOctokit([]);
+		octokit.rest.pulls.listFiles = vi.fn(async () => {
+			calls += 1;
+			if (calls === 1) throw { status: 429 };
+			return { data: [] };
+		});
+		await fetchPrContext(octokit, { owner: 'o', repo: 'r' }, 1);
+		expect(calls).toBe(2);
+	});
 });

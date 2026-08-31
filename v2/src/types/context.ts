@@ -6,8 +6,6 @@
 export interface RepositoryInfo {
 	owner: string;
 	repo: string;
-	/** Default branch name, when known. */
-	defaultBranch?: string;
 }
 
 export interface PullRequestInfo {
@@ -48,8 +46,6 @@ export interface DiffInfo {
 	/** Total additions/deletions across all files. */
 	totalAdditions: number;
 	totalDeletions: number;
-	/** True when GitHub truncated the file list (more files than one page). */
-	truncated: boolean;
 }
 
 export interface DetectedProfile {

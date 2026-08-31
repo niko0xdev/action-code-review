@@ -1,7 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+
+const fixtureRepos: string[] = [];
 import { prioritizeFiles } from '../../src/context/files.js';
 import type { OctokitLike } from '../../src/context/pr.js';
 import { fetchPrContext } from '../../src/context/pr.js';
@@ -19,9 +21,22 @@ import { runReview } from '../../src/review/reviewer.js';
  * context → profiles → review → validate/dedupe/cap → GitHub payloads.
  */
 
-const scratchRoot = join(tmpdir(), `acr-v2-e2e-${process.pid}`);
-
 function makeFixtureRepo(): string {
+	const scratchRoot = mkdtempSync(join(tmpdir(), 'acr-v2-e2e-'));
+	fixtureRepos.push(scratchRoot);
+	mkdirSync(join(scratchRoot, 'src'), { recursive: true });
+	mkdirSync(join(scratchRoot, 'python'), { recursive: true });
+	writeFileSync(
+		join(scratchRoot, 'pyproject.toml'),
+		'[project]\nname = "fixture"\n'
+	);
+	writeFileSync(join(scratchRoot, 'python', 'main.py'), 'print(1)');
+	writeFileSync(join(scratchRoot, 'tsconfig.json'), '{}');
+	writeFileSync(
+		join(scratchRoot, 'src', 'types.ts'),
+		'export type ID = string;'
+	);
+	writeFileSync(join(scratchRoot, 'uv.lock'), '');
 	mkdirSync(join(scratchRoot, 'src'), { recursive: true });
 	writeFileSync(
 		join(scratchRoot, 'package.json'),
@@ -107,15 +122,14 @@ const HARNESS_OUTPUT = JSON.stringify({
 	risk: 'high',
 });
 
-let fixtureRepo: string;
-
-afterAll(() => {
-	rmSync(scratchRoot, { recursive: true, force: true });
+afterEach(() => {
+	for (const repo of fixtureRepos.splice(0))
+		rmSync(repo, { recursive: true, force: true });
 });
 
 describe('end-to-end review pipeline', () => {
 	it('runs context → profiles → review → validation → publish payloads', async () => {
-		fixtureRepo = makeFixtureRepo();
+		const fixtureRepo = makeFixtureRepo();
 
 		// 1. Context from the (fake) GitHub API
 		const { octokit } = makeOctokit([

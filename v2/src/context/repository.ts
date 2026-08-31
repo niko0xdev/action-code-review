@@ -1,6 +1,3 @@
-import { existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-
 /**
  * Repository inspection helpers for the local checkout on the runner.
  * The harness works directly in the repository; these utilities support
@@ -47,26 +44,4 @@ function detectArea(path: string): string {
 		return 'config';
 	}
 	return 'general';
-}
-
-/** List top-level entries of the checked-out repository (safe, shallow). */
-export function listTopLevel(repositoryPath: string): string[] {
-	if (!existsSync(repositoryPath)) {
-		return [];
-	}
-	try {
-		return readdirSync(repositoryPath, { withFileTypes: true })
-			.filter((entry) => entry.name !== '.git')
-			.map((entry) => entry.name)
-			.sort();
-	} catch {
-		return [];
-	}
-}
-
-export function fileExists(
-	repositoryPath: string,
-	relativePath: string
-): boolean {
-	return existsSync(join(repositoryPath, relativePath));
 }

@@ -66,7 +66,7 @@ runs:
     - name: Install Pi coding agent
       shell: bash
       run: |
-        if ! command -v pi >/dev/null 2>&1; then
+        if ! command -v pi >/dev/null 2>&1 || ! pi --version 2>/dev/null | grep -q '^0.73.1'; then
           npm install -g @mariozechner/pi-coding-agent@0.73.1 --no-audit --no-fund --ignore-scripts --silent
         fi
     - name: Run AI Code Review

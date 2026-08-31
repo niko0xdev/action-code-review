@@ -171,6 +171,8 @@ pnpm build         # tsc → dist/
 | `AI_REVIEW_MAX_FINDINGS` | `20` | overall publish cap |
 | `AI_REVIEW_MIN_CONFIDENCE` | `0.80` | validation confidence floor |
 | `AI_REVIEW_PROFILE` | `auto` | comma-separated profile override |
+| `AI_REVIEW_PI_TIMEOUT_MS` | `900000` | Pi process timeout |
+| `AI_REVIEW_LLM_TIMEOUT_MS` | `600000` | OpenAI-compatible request timeout |
 
 All optional; consumers providing none still work unchanged.
 

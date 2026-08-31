@@ -20,6 +20,14 @@ export const REVIEW_OPTION_DEFAULTS = {
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 export const DEFAULT_TIMEOUT_MS = 600_000;
 
+export function timeoutFromEnv(
+	env: NodeJS.ProcessEnv = process.env,
+	fallback = DEFAULT_TIMEOUT_MS
+): number {
+	const value = Number(env.AI_REVIEW_LLM_TIMEOUT_MS);
+	return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 export function loadLlmConfigFromEnv(
 	env: NodeJS.ProcessEnv = process.env
 ): LlmConfig {

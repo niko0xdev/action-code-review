@@ -23,8 +23,19 @@ function finding(): Finding {
 describe('replyToReviewComment', () => {
 	function makeOctokit() {
 		return {
+			users: {
+				getAuthenticated: vi.fn(async () => ({ data: { login: 'bot' } })),
+			},
 			rest: {
 				pulls: {
+					getReviewComment: vi.fn(async () => ({
+						data: {
+							pull_request_url:
+								'https://api.github.com/repos/acme/widget/pulls/7',
+							body: '<!-- ai-review-id:abcdef123456 -->',
+							user: { login: 'bot' },
+						},
+					})),
 					createReplyForReviewComment: vi.fn(async () => ({
 						data: {
 							id: 987654,

@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_TIMEOUT_MS } from './config.js';
+import { DEFAULT_MAX_OUTPUT_TOKENS, timeoutFromEnv } from './config.js';
 import {
 	type ChatCompletion,
 	type ChatMessage,
@@ -33,7 +33,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 		private readonly config: LlmConfig,
 		private readonly capabilities: ProviderCapabilities = DEFAULT_CAPABILITIES,
 		private readonly fetchImpl: typeof fetch = globalThis.fetch,
-		private readonly timeoutMs: number = DEFAULT_TIMEOUT_MS
+		private readonly timeoutMs: number = timeoutFromEnv()
 	) {}
 
 	async complete(

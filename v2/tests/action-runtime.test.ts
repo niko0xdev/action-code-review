@@ -86,9 +86,7 @@ describe.each([
 		);
 		expect(installStep, 'install step exists').toBeDefined();
 		expect(installStep?.shell).toBe('bash');
-		expect(installStep?.run).toContain(
-			'if ! command -v pi >/dev/null 2>&1; then'
-		);
+		expect(installStep?.run).toContain('command -v pi');
 		expect(installStep?.run).toContain(
 			`@mariozechner/pi-coding-agent@${PI_PACKAGE_PIN}`
 		);
