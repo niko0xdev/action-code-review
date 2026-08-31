@@ -67,6 +67,10 @@ export interface PublishParams {
 	result: ReviewResult;
 	blockOnIssues?: boolean;
 	minSeverity?: string;
+	model?: string;
+	durationMs?: number;
+	filesTotal?: number;
+	filesExcluded?: number;
 }
 
 export function buildReviewPayload(
@@ -104,9 +108,12 @@ export async function publishReview(
 	const findings = result.findings.filter(
 		(finding) => !existingIds.has(normalizeCommentId(finding))
 	);
+	const hasBlockingFinding = findings.some(
+		(finding) => finding.severity !== 'low'
+	);
 	if (findings.length > 0) {
 		const payload = buildReviewPayload(findings, headSha, {
-			blockOnIssues: params.blockOnIssues,
+			blockOnIssues: hasBlockingFinding,
 		});
 		try {
 			await octokit.rest.pulls.createReview({
@@ -114,7 +121,7 @@ export async function publishReview(
 				repo,
 				pull_number: prNumber,
 				commit_id: payload.commit_id,
-				event: payload.event,
+				event: hasBlockingFinding ? 'REQUEST_CHANGES' : 'COMMENT',
 				comments: payload.comments,
 			});
 		} catch (error) {
@@ -153,8 +160,29 @@ export async function publishReview(
 			counts: result.counts,
 			filesReviewed: result.filesReviewed,
 			summary: result.summary,
+			findings,
+			model: params.model,
+			durationMs: params.durationMs,
+			filesTotal: params.filesTotal,
+			filesExcluded: params.filesExcluded,
 		}),
 	});
+	if (findings.length === 0 || !hasBlockingFinding) {
+		try {
+			await octokit.rest.pulls.createReview({
+				owner,
+				repo,
+				pull_number: prNumber,
+				commit_id: headSha,
+				event: 'APPROVE',
+				body: '✅ AI Code Review: no blocking issues found. Auto-approving.',
+			});
+		} catch (error) {
+			console.warn(
+				`Approve review failed: ${error instanceof Error ? error.message : String(error)}`
+			);
+		}
+	}
 }
 
 async function listAll<T>(
