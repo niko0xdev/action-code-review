@@ -39,25 +39,32 @@ export async function runReview(
 	const summaries: string[] = [];
 	const filesReviewed: string[] = [];
 
-	for (const group of groups) {
-		const groupContext: ReviewContext = {
-			...scoped,
-			diff: {
-				...scoped.diff,
-				files: scoped.diff.files.filter((f) =>
-					group.files.includes(f.filename)
-				),
-			},
-		};
-		try {
-			const result = await harness.review(groupContext);
-			allFindings.push(...result.findings);
-			filesReviewed.push(...group.files);
-			if (result.summary) summaries.push(result.summary);
-		} catch (error) {
-			console.warn(
-				`Review group failed: ${error instanceof Error ? error.message : String(error)}`
-			);
+	for (let start = 0; start < groups.length; start += 3) {
+		const outcomes = await Promise.allSettled(
+			groups.slice(start, start + 3).map(async (group) => {
+				const groupContext: ReviewContext = {
+					...scoped,
+					diff: {
+						...scoped.diff,
+						files: scoped.diff.files.filter((f) =>
+							group.files.includes(f.filename)
+						),
+					},
+				};
+				return { group, result: await harness.review(groupContext) };
+			})
+		);
+		for (const [index, outcome] of outcomes.entries()) {
+			const group = groups[start + index];
+			if (outcome.status === 'fulfilled') {
+				allFindings.push(...outcome.value.result.findings);
+				filesReviewed.push(...group.files);
+				if (outcome.value.result.summary) summaries.push(outcome.value.result.summary);
+			} else {
+				console.warn(
+					`Review group failed: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`
+				);
+			}
 		}
 	}
 

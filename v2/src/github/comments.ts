@@ -1,6 +1,15 @@
 import { commentIdentityBody, normalizeCommentId } from '../review/dedupe.js';
 import type { Finding, RiskLevel } from '../types/finding.js';
 
+export function mdSafe(value: string): string {
+	return value
+		.replaceAll('&', '&amp;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+		.replaceAll('"', '&quot;')
+		.replaceAll("'", '&#39;');
+}
+
 /**
  * Comment body rendering. Severity icons and the hidden ai-review-id
  * marker follow the legacy format (docs/v1-interface-contract.md) so
@@ -36,7 +45,15 @@ export function severityBadge(finding: Finding): string {
 
 /** Full inline-comment body for a finding, ending with its id marker. */
 export function buildFindingBody(finding: Finding): string {
-	const body = commentIdentityBody(finding);
+	const safeFinding = {
+		...finding,
+		title: mdSafe(finding.title),
+		description: mdSafe(finding.description),
+		impact: mdSafe(finding.impact),
+		suggestion: finding.suggestion ? mdSafe(finding.suggestion) : undefined,
+		replacement: finding.replacement ? mdSafe(finding.replacement) : finding.replacement,
+	};
+	const body = commentIdentityBody(safeFinding);
 	return `${body}\n\n<!-- ai-review-id:${normalizeCommentId(finding)} -->`;
 }
 

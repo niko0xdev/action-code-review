@@ -7,12 +7,18 @@ import {
 } from './adapter/legacy-inputs.js';
 import { preparePiRuntimeConfig } from './adapter/runtime.js';
 import { prioritizeFiles } from './context/files.js';
-import { type OctokitLike, fetchPrContext } from './context/pr.js';
+import { fetchPrContext } from './context/pr.js';
 import { publishReview } from './github/review.js';
 import { PiHarness } from './harness/pi.js';
 import { REVIEW_OPTION_DEFAULTS } from './llm/config.js';
 import { resolveProfiles, rulesForProfiles } from './profiles/index.js';
 import { runReview } from './review/reviewer.js';
+import type { PublisherOctokit } from './github/review.js';
+
+function positiveTimeout(value: string | undefined, fallback: number): number {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 export function parseArgs(args: string[]): { action: string } {
 	return { action: args[0] === 'pr-content' ? 'pr-content' : 'pr-review' };
@@ -46,7 +52,7 @@ export async function main(argv: string[]): Promise<void> {
 		const llmConfig = resolveEngineConfig(legacyOptions);
 		const octokit = github.getOctokit(
 			legacyOptions.githubToken
-		) as unknown as OctokitLike;
+		) as unknown as PublisherOctokit;
 		const prNumber = context.payload.pull_request.number;
 		const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
 		const reviewContext = await fetchPrContext(octokit, repoInfo, prNumber);
@@ -85,7 +91,7 @@ export async function main(argv: string[]): Promise<void> {
 		try {
 			process.env.PI_CONFIG_DIR = runtimeConfig.configDir;
 			const harness = new PiHarness({
-				timeoutMs: 15 * 60_000,
+				timeoutMs: positiveTimeout(process.env.AI_REVIEW_PI_TIMEOUT_MS, 15 * 60_000),
 				model: llmConfig.model,
 				apiKey: llmConfig.apiKey,
 				includeFullContent: legacyOptions.includeFullContent,
@@ -102,7 +108,7 @@ export async function main(argv: string[]): Promise<void> {
 					.join('\n\n'),
 				minSeverity: legacyOptions.minSeverity,
 			});
-			await publishReview(octokit as never, {
+			await publishReview(octokit as unknown as PublisherOctokit, {
 				owner: repoInfo.owner,
 				repo: repoInfo.repo,
 				prNumber,
