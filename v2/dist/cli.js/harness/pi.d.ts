@@ -11,6 +11,7 @@ export interface PiHarnessOptions {
     extraRules?: string;
     includeFullContent?: boolean;
     maxContextChars?: number;
+    piArgs?: string;
     /**
      * Static-analyzer findings to inject as evidence in the LLM prompt.
      * Sourced from `context/prelint.ts`. Optional - when omitted, the
@@ -19,7 +20,8 @@ export interface PiHarnessOptions {
      */
     toolFindings?: ToolFinding[];
 }
-export declare function buildPiArgs(repositoryPath: string, model?: string, provider?: string): string[];
+export declare function parsePiArgs(raw: string): string[];
+export declare function buildPiArgs(repositoryPath: string, model?: string, provider?: string, extraArgs?: string[]): string[];
 export declare function buildPiEnv(configDir: string, apiKey?: string): NodeJS.ProcessEnv;
 export declare function extractAssistantText(stdout: string): string;
 export declare class PiHarness implements ReviewHarness {
