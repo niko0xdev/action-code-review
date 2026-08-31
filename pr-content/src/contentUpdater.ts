@@ -18,7 +18,7 @@ export async function updatePullRequestContent(
 ): Promise<void> {
 	try {
 		// Parse AI response
-		let update: PRContentUpdate;
+		let update: PRContentUpdate | undefined;
 		try {
 			update = JSON.parse(aiResponse);
 		} catch {
@@ -38,11 +38,12 @@ export async function updatePullRequestContent(
 					try {
 						update = JSON.parse(jsonMatch[0]);
 					} catch {
-						throw new Error('Failed to parse AI response as JSON');
+						// fall through to throw below
 					}
-				} else {
-					throw new Error('Failed to parse AI response as JSON');
 				}
+			}
+			if (!update) {
+				throw new Error('Failed to parse AI response as JSON');
 			}
 		}
 
