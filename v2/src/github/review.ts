@@ -6,11 +6,21 @@ import { buildFindingBody, buildSummaryBody } from './comments.js';
 
 export { buildFindingBody, buildSummaryBody } from './comments.js';
 
-/** Minimal publisher surface; extends the read shape with write calls. */
+interface ReviewRecord {
+	id: number;
+	user?: { login?: string } | null;
+}
+interface ReviewCommentRecord {
+	body?: string | null;
+}
+
 export interface PublisherOctokit extends OctokitLike {
 	rest: OctokitLike['rest'] & {
 		pulls: OctokitLike['rest']['pulls'] & {
 			createReview(args: Record<string, unknown>): Promise<{ data: unknown }>;
+			createReviewComment(
+				args: Record<string, unknown>
+			): Promise<{ data: unknown }>;
 			createReplyForReviewComment(args: {
 				owner: string;
 				repo: string;
@@ -18,18 +28,19 @@ export interface PublisherOctokit extends OctokitLike {
 				comment_id: number;
 				body: string;
 			}): Promise<{ data: { id: number; html_url: string } }>;
+			listReviews?: (
+				args: Record<string, unknown>
+			) => Promise<{ data: ReviewRecord[] }>;
+			listCommentsForReview?: (
+				args: Record<string, unknown>
+			) => Promise<{ data: ReviewCommentRecord[] }>;
 		};
 		issues: {
 			createComment(args: Record<string, unknown>): Promise<{ data: unknown }>;
 		};
 	};
+	users?: { getAuthenticated: () => Promise<{ data: { login: string } }> };
 }
-
-/**
- * GitHub review publisher (spec §20/§25): inline comments on changed
- * lines via a single review submission, plus the PR summary comment.
- * Requires only contents:read + pull-requests:write.
- */
 
 export interface ReviewCommentWire {
 	path: string;
@@ -37,14 +48,12 @@ export interface ReviewCommentWire {
 	side: 'RIGHT';
 	body: string;
 }
-
 export interface ReviewPayload {
 	commit_id: string;
 	event: 'REQUEST_CHANGES' | 'COMMENT' | 'APPROVE';
 	comments: ReviewCommentWire[];
 	body?: string;
 }
-
 export interface PublishParams {
 	owner: string;
 	repo: string;
@@ -60,21 +69,18 @@ export function buildReviewPayload(
 	headSha: string,
 	options: { blockOnIssues?: boolean } = {}
 ): ReviewPayload {
-	const comments: ReviewCommentWire[] = findings.map((finding) => ({
+	const comments = findings.map((finding) => ({
 		path: finding.path,
 		line: finding.line,
-		side: 'RIGHT',
+		side: 'RIGHT' as const,
 		body: buildFindingBody(finding),
 	}));
-
-	const event: ReviewPayload['event'] =
-		options.blockOnIssues === false || comments.length === 0
-			? 'COMMENT'
-			: 'REQUEST_CHANGES';
-
 	return {
 		commit_id: headSha,
-		event,
+		event:
+			options.blockOnIssues === false || comments.length === 0
+				? 'COMMENT'
+				: 'REQUEST_CHANGES',
 		comments,
 	};
 }
@@ -84,64 +90,145 @@ export async function publishReview(
 	params: PublishParams
 ): Promise<void> {
 	const { owner, repo, prNumber, headSha, result } = params;
-
-	if (result.findings.length > 0) {
-		const payload = buildReviewPayload(result.findings, headSha, {
+	const existingIds = await fetchExistingCommentIds(
+		octokit,
+		owner,
+		repo,
+		prNumber
+	);
+	const findings = result.findings.filter(
+		(finding) => !existingIds.has(normalizeCommentId(finding))
+	);
+	if (findings.length > 0) {
+		const payload = buildReviewPayload(findings, headSha, {
 			blockOnIssues: params.blockOnIssues,
 		});
-		await octokit.rest.pulls.createReview({
-			owner,
-			repo,
-			pull_number: prNumber,
-			commit_id: payload.commit_id,
-			event: payload.event,
-			comments: payload.comments.map((c) => ({
-				path: c.path,
-				line: c.line,
-				side: c.side,
-				body: c.body,
-			})),
-		});
+		try {
+			await octokit.rest.pulls.createReview({
+				owner,
+				repo,
+				pull_number: prNumber,
+				commit_id: payload.commit_id,
+				event: payload.event,
+				comments: payload.comments,
+			});
+		} catch (error) {
+			console.warn(
+				`Batch review failed: ${error instanceof Error ? error.message : String(error)}`
+			);
+			for (const comment of payload.comments) {
+				try {
+					await octokit.rest.pulls.createReviewComment({
+						owner,
+						repo,
+						pull_number: prNumber,
+						body: comment.body,
+						commit_id: headSha,
+						path: comment.path,
+						line: comment.line,
+						side: comment.side,
+					});
+				} catch {
+					await octokit.rest.issues.createComment({
+						owner,
+						repo,
+						issue_number: prNumber,
+						body: `## Review for ${comment.path}\n\n**Line ${comment.line}:** ${comment.body}`,
+					});
+				}
+			}
+		}
 	}
-
 	await octokit.rest.issues.createComment({
 		owner,
 		repo,
 		issue_number: prNumber,
-		body: buildSummaryBody(result),
+		body: buildSummaryBody({
+			risk: result.risk,
+			counts: result.counts,
+			filesReviewed: result.filesReviewed,
+			summary: result.summary,
+		}),
 	});
 }
 
-/**
- * Body for an inline reply. Wraps the follow-up text and re-appends the
- * finding's ai-review-id marker so duplicate suppression keeps working
- * across the whole thread.
- */
-export function buildReplyBody(body: string, finding?: Finding): string {
-	const trimmed = body.trim();
-	if (!finding) {
-		return trimmed;
+async function listAll<T>(
+	method:
+		| ((args: Record<string, unknown>) => Promise<{ data: T[] }>)
+		| undefined,
+	args: Record<string, unknown>
+): Promise<T[]> {
+	if (!method) return [];
+	const all: T[] = [];
+	for (let page = 1; page <= 10; page += 1) {
+		const { data } = await method({ ...args, page, per_page: 100 });
+		all.push(...data);
+		if (data.length < 100) break;
 	}
-	return `${trimmed}\n\n<!-- ai-review-id:${normalizeCommentId(finding)} -->`;
+	return all;
 }
 
-/**
- * Post an inline reply beneath an existing review comment thread
- * (spec §20 extension). Reply-only: never posts the PR summary.
- */
+async function fetchExistingCommentIds(
+	octokit: PublisherOctokit,
+	owner: string,
+	repo: string,
+	prNumber: number
+): Promise<Set<string>> {
+	const ids = new Set<string>();
+	if (
+		!octokit.users?.getAuthenticated ||
+		!octokit.rest.pulls.listReviews ||
+		!octokit.rest.pulls.listCommentsForReview
+	)
+		return ids;
+	try {
+		const { data: auth } = await octokit.users.getAuthenticated();
+		const reviews = await listAll(octokit.rest.pulls.listReviews, {
+			owner,
+			repo,
+			pull_number: prNumber,
+		});
+		for (const review of reviews) {
+			if (review.user?.login !== auth.login) continue;
+			const comments = await listAll(octokit.rest.pulls.listCommentsForReview, {
+				owner,
+				repo,
+				pull_number: prNumber,
+				review_id: review.id,
+				per_page: 100,
+			});
+			for (const comment of comments) {
+				const match = comment.body?.match(
+					/<!-- ai-review-id:([a-f0-9]{12}) -->/
+				);
+				if (match) ids.add(match[1]);
+			}
+		}
+	} catch (error) {
+		console.warn(
+			`Failed to fetch existing review comments: ${error instanceof Error ? error.message : String(error)}`
+		);
+	}
+	return ids;
+}
+
+export function buildReplyBody(body: string, finding?: Finding): string {
+	const trimmed = body.trim();
+	return finding
+		? `${trimmed}\n\n<!-- ai-review-id:${normalizeCommentId(finding)} -->`
+		: trimmed;
+}
+
 export async function replyToReviewComment(
 	octokit: PublisherOctokit,
 	params: ReplyParams
 ): Promise<ReplyResult> {
-	if (!params.body || !params.body.trim()) {
+	if (!params.body || !params.body.trim())
 		throw new Error(
 			'A non-empty reply body is required to reply to a review comment.'
 		);
-	}
-	if (!Number.isFinite(params.commentId) || params.commentId <= 0) {
+	if (!Number.isFinite(params.commentId) || params.commentId <= 0)
 		throw new Error('A valid numeric review comment id is required to reply.');
-	}
-
 	const { data } = await octokit.rest.pulls.createReplyForReviewComment({
 		owner: params.owner,
 		repo: params.repo,
@@ -152,7 +239,6 @@ export async function replyToReviewComment(
 	return { id: data.id, html_url: data.html_url };
 }
 
-/** Convenience wrapper accepting the ReviewReply shape. */
 export async function postReviewReply(
 	octokit: PublisherOctokit,
 	reply: ReviewReply,
@@ -166,14 +252,11 @@ export async function postReviewReply(
 	});
 }
 
-/** GitHub Job Summary content (spec §39). */
 export function buildJobSummary(input: {
 	model?: string;
 	durationMs?: number;
 	filesReviewed: string[];
-	result: Pick<ReviewResult, 'counts' | 'risk'> & {
-		findings: unknown[];
-	};
+	result: Pick<ReviewResult, 'counts' | 'risk'> & { findings: unknown[] };
 }): string {
 	const seconds =
 		input.durationMs !== undefined

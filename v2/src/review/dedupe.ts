@@ -1,13 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Finding } from '../types/finding.js';
 
-/**
- * Finding deduplication (spec §18) and the legacy-compatible comment id
- * format (docs/v1-interface-contract.md): 12-hex SHA-256 over
- * path|line|body|ruleId so V2 comments participate in the same duplicate
- * suppression as V1.
- */
-
 export function normalizeTitle(title: string): string {
 	return title
 		.toLowerCase()
@@ -20,11 +13,11 @@ function dedupeKey(finding: Finding): string {
 		finding.path,
 		finding.line,
 		finding.category,
-		normalizeTitle(finding.title).split(' ').slice(0, 4).join(' '),
+		finding.ruleId?.trim() ||
+			normalizeTitle(finding.title).split(' ').slice(0, 4).join(' '),
 	].join('|');
 }
 
-/** Remove duplicates, keeping the highest-confidence copy of each. */
 export function dedupeFindings(findings: Finding[]): Finding[] {
 	const best = new Map<string, Finding>();
 	for (const finding of findings) {
@@ -37,22 +30,60 @@ export function dedupeFindings(findings: Finding[]): Finding[] {
 	return [...best.values()];
 }
 
-/** Legacy-compatible stable comment id (12 hex chars). */
-export function normalizeCommentId(finding: Finding): string {
-	const hash = createHash('sha256');
-	hash.update(
-		[
-			finding.path,
-			finding.line.toString(),
-			buildCommentBody(finding).trim(),
-			'',
-		].join('|')
-	);
-	return hash.digest('hex').slice(0, 12);
+export function legacySeverity(severity: Finding['severity']): string {
+	return severity === 'medium' ? 'low' : severity;
 }
 
-function buildCommentBody(finding: Finding): string {
-	return [finding.title, finding.description, finding.impact]
-		.filter(Boolean)
-		.join('\n\n');
+export function commentIdentityBody(finding: Finding): string {
+	const icons: Record<string, string> = {
+		critical: '🚨',
+		high: '🔥',
+		medium: '⚠️',
+		low: '✅',
+	};
+	const categories: Record<string, string> = {
+		correctness: 'Correctness',
+		security: 'Security',
+		regression: 'Regression',
+		'error-handling': 'Error handling',
+		'data-integrity': 'Data integrity',
+		concurrency: 'Concurrency',
+		performance: 'Performance',
+		maintainability: 'Maintainability',
+		testing: 'Testing',
+		compatibility: 'Compatibility',
+	};
+	const parts = [
+		`${icons[finding.severity] ?? '•'} ${finding.severity.toUpperCase()} · ${categories[finding.category] ?? finding.category}`,
+		`_Severity:_ ${legacySeverity(finding.severity)}`,
+		finding.title,
+		finding.description,
+		finding.impact ? `**Impact:** ${finding.impact}` : '',
+		finding.suggestion && !finding.replacement
+			? `**Suggestion:** ${finding.suggestion}`
+			: '',
+	];
+	if (
+		finding.replacement &&
+		finding.confidence >= 0.85 &&
+		finding.replacement.split('\n').length <= 10 &&
+		finding.replacement.length <= 400
+	) {
+		parts.push(['```suggestion', finding.replacement, '```'].join('\n'));
+	}
+	return parts.filter(Boolean).join('\n\n').trim();
+}
+
+export function normalizeCommentId(finding: Finding): string {
+	return createHash('sha256')
+		.update(
+			[
+				finding.path,
+				finding.line.toString(),
+				commentIdentityBody(finding),
+				finding.ruleId?.trim() ?? '',
+			].join('|')
+		)
+		.digest('hex')
+		.slice(0, 12);
 }

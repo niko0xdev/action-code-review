@@ -3,13 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LlmConfig } from '../llm/provider.js';
 
-/**
- * Runtime configuration for the Pi child process. The normalized LLM
- * config (from the frozen OPENAI_* variables) is materialized as a
- * models.json in a temp dir pointed at via PI_CODING_AGENT_DIR — nothing
- * touches ~/.pi and the directory dies with the runner.
- */
-
 export function buildPiRuntimeModelsJson(config: LlmConfig): string {
 	return JSON.stringify(
 		{
@@ -17,7 +10,6 @@ export function buildPiRuntimeModelsJson(config: LlmConfig): string {
 				[config.provider]: {
 					name: config.provider,
 					baseUrl: config.baseUrl,
-					apiKey: config.apiKey,
 					api: 'openai-completions',
 					compat: {
 						supportsDeveloperRole: false,
@@ -51,11 +43,16 @@ export async function preparePiRuntimeConfig(
 	config: LlmConfig
 ): Promise<PiRuntimeConfig> {
 	const configDir = await mkdtemp(join(tmpdir(), 'acr-v2-pi-'));
-	await writeFile(
-		join(configDir, 'models.json'),
-		buildPiRuntimeModelsJson(config),
-		'utf8'
-	);
+	try {
+		await writeFile(
+			join(configDir, 'models.json'),
+			buildPiRuntimeModelsJson(config),
+			'utf8'
+		);
+	} catch (error) {
+		await rm(configDir, { recursive: true, force: true });
+		throw error;
+	}
 	return {
 		configDir,
 		async cleanup() {

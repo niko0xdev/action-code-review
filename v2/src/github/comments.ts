@@ -1,6 +1,5 @@
-import { normalizeCommentId } from '../review/dedupe.js';
+import { commentIdentityBody, normalizeCommentId } from '../review/dedupe.js';
 import type { Finding, RiskLevel } from '../types/finding.js';
-import { buildSuggestion } from './suggestions.js';
 
 /**
  * Comment body rendering. Severity icons and the hidden ai-review-id
@@ -37,25 +36,8 @@ export function severityBadge(finding: Finding): string {
 
 /** Full inline-comment body for a finding, ending with its id marker. */
 export function buildFindingBody(finding: Finding): string {
-	const parts: string[] = [severityBadge(finding)];
-
-	parts.push(finding.title);
-	if (finding.description) {
-		parts.push(finding.description);
-	}
-	if (finding.impact) {
-		parts.push(`**Impact:** ${finding.impact}`);
-	}
-	if (finding.suggestion && !finding.replacement) {
-		parts.push(`**Suggestion:** ${finding.suggestion}`);
-	}
-
-	const suggestion = buildSuggestion(finding);
-	if (suggestion) {
-		parts.push(suggestion);
-	}
-
-	return `${parts.join('\n\n')}\n\n<!-- ai-review-id:${normalizeCommentId(finding)} -->`;
+	const body = commentIdentityBody(finding);
+	return `${body}\n\n<!-- ai-review-id:${normalizeCommentId(finding)} -->`;
 }
 
 const RISK_LABEL: Record<RiskLevel, string> = {

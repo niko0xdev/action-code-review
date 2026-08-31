@@ -33,6 +33,8 @@ export interface Finding {
 	 */
 	line: number;
 	title: string;
+	/** Stable rule identifier used for cross-run comment identity. */
+	ruleId?: string;
 	description: string;
 	/** Concrete consequence if left unaddressed. */
 	impact: string;

@@ -39,7 +39,7 @@ runs:
       shell: bash
       run: |
         if ! command -v pi >/dev/null 2>&1; then
-          npm install -g @mariozechner/pi-coding-agent@0.73.1 --no-audit --no-fund --silent
+          npm install -g @mariozechner/pi-coding-agent@0.73.1 --no-audit --no-fund --ignore-scripts --silent
         fi
     - name: Run Auto-update PR Content
       shell: bash
