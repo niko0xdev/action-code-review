@@ -34349,14 +34349,11 @@ var __webpack_exports__ = {};
 
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
-  A: () => (/* binding */ pr_content),
-  i: () => (/* reexport */ main)
+  Te: () => (/* binding */ applyLegacyFilters),
+  iW: () => (/* binding */ main),
+  Zy: () => (/* binding */ parseArgs)
 });
 
-;// CONCATENATED MODULE: external "node:path"
-const external_node_path_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:path");
-;// CONCATENATED MODULE: external "node:url"
-const external_node_url_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:url");
 ;// CONCATENATED MODULE: external "node:buffer"
 const external_node_buffer_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:buffer");
 ;// CONCATENATED MODULE: external "node:perf_hooks"
@@ -34530,6 +34527,8 @@ function mapPrContent(inputs) {
 const promises_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:fs/promises");
 ;// CONCATENATED MODULE: external "node:os"
 const external_node_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:os");
+;// CONCATENATED MODULE: external "node:path"
+const external_node_path_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:path");
 ;// CONCATENATED MODULE: ./src/adapter/runtime.ts
 
 
@@ -36629,21 +36628,7 @@ function applyLegacyFilters(filenames, options) {
     });
 }
 
-;// CONCATENATED MODULE: ./src/entry/pr-content.ts
-
-
-
-const entryPath = (0,external_node_path_namespaceObject.resolve)((0,external_node_url_namespaceObject.fileURLToPath)(import.meta.url));
-const invokedPath = process.argv[1] ? (0,external_node_path_namespaceObject.resolve)(process.argv[1]) : undefined;
-
-/* harmony default export */ const pr_content = (main);
-if (invokedPath === entryPath) {
-    main(['pr-content']).catch((error) => {
-        console.error(error);
-        process.exitCode = 1;
-    });
-}
-
-var __webpack_exports__default = __webpack_exports__.A;
-var __webpack_exports__main = __webpack_exports__.i;
-export { __webpack_exports__default as default, __webpack_exports__main as main };
+var __webpack_exports__applyLegacyFilters = __webpack_exports__.Te;
+var __webpack_exports__main = __webpack_exports__.iW;
+var __webpack_exports__parseArgs = __webpack_exports__.Zy;
+export { __webpack_exports__applyLegacyFilters as applyLegacyFilters, __webpack_exports__main as main, __webpack_exports__parseArgs as parseArgs };
