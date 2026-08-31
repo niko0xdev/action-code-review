@@ -14,7 +14,8 @@ export async function updatePullRequestContent(
 	repo: string,
 	pullNumber: number,
 	aiResponse: string,
-	templateContent?: string
+	templateContent?: string,
+	model?: string
 ): Promise<void> {
 	try {
 		// Parse AI response
@@ -97,13 +98,20 @@ export async function updatePullRequestContent(
 			return;
 		}
 
+		// Append a custom footer so reviewers can see which model produced
+		// the description (GitHub's default footer only shows the actor name,
+		// which is "unknown" for personal-access-token runs).
+		const footerSeparator = '\n\n---\n\n';
+		const footer = `_Auto-generated with \`${model ?? 'gpt-4'}\` by AI Code Review_`;
+		const finalBody = `${finalDescription}${footerSeparator}${footer}`;
+
 		// Update PR
 		await octokit.rest.pulls.update({
 			owner,
 			repo,
 			pull_number: pullNumber,
 			title: update!.title,
-			body: finalDescription,
+			body: finalBody,
 		});
 
 		core.info(`Updated PR title: "${update!.title}"`);

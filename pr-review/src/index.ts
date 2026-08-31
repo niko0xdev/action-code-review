@@ -139,10 +139,15 @@ async function run(): Promise<void> {
                 }
 
 		if (reviewedFilesCount > 0) {
-			const summaryBody = `# 🤖 AI Code Review
+			const reviewModel = core.getInput('openai-model') || 'gpt-4';
+			const summaryBody = `# ✨ AI Code Review
 
-**Reviewed files:** ${reviewedFilesCount}
-**Total issues found:** ${totalIssueCount}`;
+		**Reviewed files:** ${reviewedFilesCount}
+		**Total issues found:** ${totalIssueCount}
+
+		---
+
+		_Auto-generated with \`${reviewModel}\` by AI Code Review_`;
 
 			await octokit.rest.issues.createComment({
 				owner,
@@ -150,7 +155,7 @@ async function run(): Promise<void> {
 				issue_number: prNumber,
 				body: summaryBody,
 			});
-			core.info('Posted review summary to PR');
+			core.info(`Posted review summary to PR (model: ${reviewModel})`);
 		}
 
                 core.setOutput('review-summary', `${reviewedFilesCount} files reviewed, ${totalIssueCount} issues found`);

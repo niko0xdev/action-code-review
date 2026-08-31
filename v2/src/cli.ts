@@ -387,6 +387,7 @@ export async function main(argv: string[]): Promise<void> {
 				prNumber,
 				headSha: reviewContext.pullRequest.headSha,
 				result,
+				model: llmConfig.model,
 				blockOnIssues: legacyOptions.blockOnIssues,
 				minSeverity: legacyOptions.minSeverity,
 			});
