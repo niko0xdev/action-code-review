@@ -22,6 +22,7 @@ export interface PiHarnessOptions {
 	extraRules?: string;
 	includeFullContent?: boolean;
 	maxContextChars?: number;
+	piArgs?: string;
 	/**
 	 * Static-analyzer findings to inject as evidence in the LLM prompt.
 	 * Sourced from `context/prelint.ts`. Optional - when omitted, the
@@ -30,10 +31,48 @@ export interface PiHarnessOptions {
 	 */
 	toolFindings?: ToolFinding[];
 }
+const PI_ARGS_ALLOWLIST = new Set([
+	'--max-duration',
+	'--model-override',
+	'--no-session',
+]);
+
+export function parsePiArgs(raw: string): string[] {
+	if (!raw.trim()) return [];
+	const tokens = raw.trim().split(/\s+/);
+	const out: string[] = [];
+	for (let i = 0; i < tokens.length; i++) {
+		const tok = tokens[i];
+		if (
+			tok.includes(';') ||
+			tok.includes('|') ||
+			tok.includes('&') ||
+			tok.includes('`') ||
+			tok.includes('$')
+		)
+			continue;
+		if (tok.startsWith('--')) {
+			const name = tok.split('=')[0];
+			if (!PI_ARGS_ALLOWLIST.has(name) && name !== '--model') continue;
+			out.push(tok);
+			if (
+				!tok.includes('=') &&
+				i + 1 < tokens.length &&
+				!tokens[i + 1].startsWith('-')
+			) {
+				out.push(tokens[++i]);
+			}
+		} else if (tok.startsWith('-')) continue;
+		else out.push(tok);
+	}
+	return out;
+}
+
 export function buildPiArgs(
 	repositoryPath: string,
 	model?: string,
-	provider = 'openai'
+	provider = 'openai',
+	extraArgs: string[] = []
 ): string[] {
 	const args = [
 		'-p',
@@ -60,6 +99,26 @@ export function buildPiArgs(
 		provider,
 	];
 	if (model) args.push('--model', model);
+	for (const a of extraArgs) {
+		if (a === '--model-override') continue;
+		if (a.startsWith('--model-override=')) {
+			const v = a.slice('--model-override='.length);
+			const mi = args.indexOf('--model');
+			if (mi !== -1) args.splice(mi, 2);
+			args.push('--model', v);
+			continue;
+		}
+		if (!args.includes(a)) args.push(a);
+	}
+	// Handle --model-override value token following the flag
+	for (let i = 0; i < extraArgs.length; i++) {
+		if (extraArgs[i] === '--model-override' && extraArgs[i + 1]) {
+			const v = extraArgs[i + 1];
+			const mi = args.indexOf('--model');
+			if (mi !== -1) args.splice(mi, 2);
+			args.push('--model', v);
+		}
+	}
 	args.push(`Review this pull request in ${repositoryPath}. See instructions.`);
 	return args;
 }
@@ -119,7 +178,8 @@ export class PiHarness implements ReviewHarness {
 			args: buildPiArgs(
 				context.repositoryPath,
 				this.options.model ?? process.env.OPENAI_API_MODEL,
-				this.options.provider ?? 'openai'
+				this.options.provider ?? 'openai',
+				parsePiArgs(this.options.piArgs ?? '')
 			),
 			cwd: context.repositoryPath,
 			configDir: await resolveRuntimeConfigDir(),

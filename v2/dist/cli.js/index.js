@@ -36290,7 +36290,43 @@ function coerceFinding(item) {
 
 const PI_READONLY_TOOLS = ['read', 'grep', 'find', 'ls'];
 const MAX_OUTPUT_BYTES = 50 * 1024 * 1024;
-function buildPiArgs(repositoryPath, model, provider = 'openai') {
+const PI_ARGS_ALLOWLIST = new Set([
+    '--max-duration',
+    '--model-override',
+    '--no-session',
+]);
+function parsePiArgs(raw) {
+    if (!raw.trim())
+        return [];
+    const tokens = raw.trim().split(/\s+/);
+    const out = [];
+    for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        if (tok.includes(';') ||
+            tok.includes('|') ||
+            tok.includes('&') ||
+            tok.includes('`') ||
+            tok.includes('$'))
+            continue;
+        if (tok.startsWith('--')) {
+            const name = tok.split('=')[0];
+            if (!PI_ARGS_ALLOWLIST.has(name) && name !== '--model')
+                continue;
+            out.push(tok);
+            if (!tok.includes('=') &&
+                i + 1 < tokens.length &&
+                !tokens[i + 1].startsWith('-')) {
+                out.push(tokens[++i]);
+            }
+        }
+        else if (tok.startsWith('-'))
+            continue;
+        else
+            out.push(tok);
+    }
+    return out;
+}
+function buildPiArgs(repositoryPath, model, provider = 'openai', extraArgs = []) {
     const args = [
         '-p',
         '--mode',
@@ -36317,6 +36353,30 @@ function buildPiArgs(repositoryPath, model, provider = 'openai') {
     ];
     if (model)
         args.push('--model', model);
+    for (const a of extraArgs) {
+        if (a === '--model-override')
+            continue;
+        if (a.startsWith('--model-override=')) {
+            const v = a.slice('--model-override='.length);
+            const mi = args.indexOf('--model');
+            if (mi !== -1)
+                args.splice(mi, 2);
+            args.push('--model', v);
+            continue;
+        }
+        if (!args.includes(a))
+            args.push(a);
+    }
+    // Handle --model-override value token following the flag
+    for (let i = 0; i < extraArgs.length; i++) {
+        if (extraArgs[i] === '--model-override' && extraArgs[i + 1]) {
+            const v = extraArgs[i + 1];
+            const mi = args.indexOf('--model');
+            if (mi !== -1)
+                args.splice(mi, 2);
+            args.push('--model', v);
+        }
+    }
     args.push(`Review this pull request in ${repositoryPath}. See instructions.`);
     return args;
 }
@@ -36366,7 +36426,7 @@ class PiHarness {
     async review(context) {
         const stdout = await runPi({
             binaryPath: this.options.binaryPath ?? 'pi',
-            args: buildPiArgs(context.repositoryPath, this.options.model ?? process.env.OPENAI_API_MODEL, this.options.provider ?? 'openai'),
+            args: buildPiArgs(context.repositoryPath, this.options.model ?? process.env.OPENAI_API_MODEL, this.options.provider ?? 'openai', parsePiArgs(this.options.piArgs ?? '')),
             cwd: context.repositoryPath,
             configDir: await resolveRuntimeConfigDir(),
             apiKey: this.options.apiKey,
@@ -37583,6 +37643,7 @@ async function main(argv) {
             }
             trackPhase('harness', 'Pi review start', { enabled: trackEnabled });
             const harness = new PiHarness({
+                piArgs: lib_core.getInput('pi-args'),
                 timeoutMs: positiveTimeout(process.env.AI_REVIEW_PI_TIMEOUT_MS, 15 * 60_000),
                 model: llmConfig.model,
                 apiKey: llmConfig.apiKey,
