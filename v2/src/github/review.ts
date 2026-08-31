@@ -19,6 +19,7 @@ interface ReviewCommentRecord {
 export interface PublisherOctokit extends OctokitLike {
 	rest: OctokitLike['rest'] & {
 		pulls: OctokitLike['rest']['pulls'] & {
+			update(args: Record<string, unknown>): Promise<{ data: unknown }>;
 			createReview(args: Record<string, unknown>): Promise<{ data: unknown }>;
 			createReviewComment(
 				args: Record<string, unknown>
