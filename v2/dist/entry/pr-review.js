@@ -32552,6 +32552,20 @@ module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:events"
 
 /***/ }),
 
+/***/ 3024:
+/***/ ((module) => {
+
+module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:fs");
+
+/***/ }),
+
+/***/ 6760:
+/***/ ((module) => {
+
+module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:path");
+
+/***/ }),
+
 /***/ 7075:
 /***/ ((module) => {
 
@@ -34327,6 +34341,36 @@ module.exports = /*#__PURE__*/JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45
 /******/ /* webpack/runtime/asset-relocator-loader */
 /******/ if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = decodeURIComponent(new URL('.', import.meta.url).pathname).slice(import.meta.url.match(/^file:\/\/\/\w:/) ? 1 : 0, -1) + "/";
 /******/ 
+/******/ /* webpack/runtime/create fake namespace object */
+/******/ (() => {
+/******/ 	var getProto = Object.getPrototypeOf ? (obj) => (Object.getPrototypeOf(obj)) : (obj) => (obj.__proto__);
+/******/ 	var leafPrototypes;
+/******/ 	// create a fake namespace object
+/******/ 	// mode & 1: value is a module id, require it
+/******/ 	// mode & 2: merge all properties of value into the ns
+/******/ 	// mode & 4: return value when already ns object
+/******/ 	// mode & 16: return value when it's Promise-like
+/******/ 	// mode & 8|1: behave like require
+/******/ 	__nccwpck_require__.t = function(value, mode) {
+/******/ 		if(mode & 1) value = this(value);
+/******/ 		if(mode & 8) return value;
+/******/ 		if(typeof value === 'object' && value) {
+/******/ 			if((mode & 4) && value.__esModule) return value;
+/******/ 			if((mode & 16) && typeof value.then === 'function') return value;
+/******/ 		}
+/******/ 		var ns = Object.create(null);
+/******/ 		__nccwpck_require__.r(ns);
+/******/ 		var def = {};
+/******/ 		leafPrototypes = leafPrototypes || [null, getProto({}), getProto([]), getProto(getProto)];
+/******/ 		for(var current = mode & 2 && value; typeof current == 'object' && !~leafPrototypes.indexOf(current); current = getProto(current)) {
+/******/ 			Object.getOwnPropertyNames(current).forEach((key) => (def[key] = () => (value[key])));
+/******/ 		}
+/******/ 		def['default'] = () => (value);
+/******/ 		__nccwpck_require__.d(ns, def);
+/******/ 		return ns;
+/******/ 	};
+/******/ })();
+/******/ 
 /******/ /* webpack/runtime/define property getters */
 /******/ (() => {
 /******/ 	// define getter functions for harmony exports
@@ -34344,6 +34388,17 @@ module.exports = /*#__PURE__*/JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45
 /******/ 	__nccwpck_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
 /******/ })();
 /******/ 
+/******/ /* webpack/runtime/make namespace object */
+/******/ (() => {
+/******/ 	// define __esModule on exports
+/******/ 	__nccwpck_require__.r = (exports) => {
+/******/ 		if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+/******/ 			Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+/******/ 		}
+/******/ 		Object.defineProperty(exports, '__esModule', { value: true });
+/******/ 	};
+/******/ })();
+/******/ 
 /************************************************************************/
 var __webpack_exports__ = {};
 
@@ -34353,8 +34408,8 @@ __nccwpck_require__.d(__webpack_exports__, {
   i: () => (/* reexport */ main)
 });
 
-;// CONCATENATED MODULE: external "node:path"
-const external_node_path_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:path");
+// EXTERNAL MODULE: external "node:path"
+var external_node_path_ = __nccwpck_require__(6760);
 ;// CONCATENATED MODULE: external "node:url"
 const external_node_url_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:url");
 ;// CONCATENATED MODULE: external "node:buffer"
@@ -34715,16 +34770,16 @@ async function writeSkillsForProfiles(configDir, profiles) {
         const content = BUILT_IN_SKILLS[profile];
         if (!content)
             continue;
-        const skillDir = (0,external_node_path_namespaceObject.join)(configDir, 'skills', profile);
+        const skillDir = (0,external_node_path_.join)(configDir, 'skills', profile);
         await (0,promises_namespaceObject.mkdir)(skillDir, { recursive: true });
-        await (0,promises_namespaceObject.writeFile)((0,external_node_path_namespaceObject.join)(skillDir, 'SKILL.md'), content, 'utf8');
+        await (0,promises_namespaceObject.writeFile)((0,external_node_path_.join)(skillDir, 'SKILL.md'), content, 'utf8');
     }
 }
 async function preparePiRuntimeConfig(config, options) {
-    const configDir = await (0,promises_namespaceObject.mkdtemp)((0,external_node_path_namespaceObject.join)((0,external_node_os_namespaceObject.tmpdir)(), 'acr-v2-pi-'));
+    const configDir = await (0,promises_namespaceObject.mkdtemp)((0,external_node_path_.join)((0,external_node_os_namespaceObject.tmpdir)(), 'acr-v2-pi-'));
     try {
         await (0,promises_namespaceObject.mkdir)(configDir, { recursive: true });
-        await (0,promises_namespaceObject.writeFile)((0,external_node_path_namespaceObject.join)(configDir, 'models.json'), buildPiRuntimeModelsJson(config), 'utf8');
+        await (0,promises_namespaceObject.writeFile)((0,external_node_path_.join)(configDir, 'models.json'), buildPiRuntimeModelsJson(config), 'utf8');
         if (options?.profiles && options.profiles.length > 0) {
             await writeSkillsForProfiles(configDir, options.profiles);
         }
@@ -34888,8 +34943,8 @@ async function fetchFilePage(octokit, repository, prNumber, pageSize, page) {
 
 ;// CONCATENATED MODULE: external "node:child_process"
 const external_node_child_process_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:child_process");
-;// CONCATENATED MODULE: external "node:fs"
-const external_node_fs_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:fs");
+// EXTERNAL MODULE: external "node:fs"
+var external_node_fs_ = __nccwpck_require__(3024);
 ;// CONCATENATED MODULE: ./src/context/prelint.ts
 /**
  * PreLint orchestrator (V3 Phase 2).
@@ -34917,11 +34972,11 @@ const PRELINT_TIMEOUT_MS = 60_000;
 const MAX_FINDINGS_PER_TOOL = 100;
 function findBinary(repositoryPath, binary) {
     const candidates = [
-        (0,external_node_path_namespaceObject.join)(repositoryPath, 'node_modules', '.bin', binary),
-        (0,external_node_path_namespaceObject.join)(repositoryPath, 'node_modules', '.bin', `${binary}.cmd`),
+        (0,external_node_path_.join)(repositoryPath, 'node_modules', '.bin', binary),
+        (0,external_node_path_.join)(repositoryPath, 'node_modules', '.bin', `${binary}.cmd`),
     ];
     for (const candidate of candidates) {
-        if ((0,external_node_fs_namespaceObject.existsSync)(candidate))
+        if ((0,external_node_fs_.existsSync)(candidate))
             return candidate;
     }
     return null;
@@ -35392,7 +35447,7 @@ function trackPhase(phase, detail, options) {
     if (!stepSummaryPath)
         return;
     try {
-        (0,external_node_fs_namespaceObject.appendFileSync)(stepSummaryPath, line, 'utf8');
+        (0,external_node_fs_.appendFileSync)(stepSummaryPath, line, 'utf8');
     }
     catch (error) {
         lib_core.warning(`[progress] write to $GITHUB_STEP_SUMMARY failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -35675,7 +35730,7 @@ function appendToBuffer(findings) {
     if (findings.length === 0)
         return;
     const lines = `${findings.map((f) => JSON.stringify(f)).join('\n')}\n`;
-    (0,external_node_fs_namespaceObject.appendFileSync)(BUFFER_PATH, lines, 'utf8');
+    (0,external_node_fs_.appendFileSync)(BUFFER_PATH, lines, 'utf8');
 }
 function readBuffer() {
     try {
@@ -36330,7 +36385,7 @@ async function resolveRuntimeConfigDir() {
     const configDir = process.env.PI_CODING_AGENT_DIR;
     if (configDir)
         return configDir;
-    return (0,promises_namespaceObject.mkdtemp)((0,external_node_path_namespaceObject.join)((0,external_node_os_namespaceObject.tmpdir)(), 'acr-v2-pi-test-'));
+    return (0,promises_namespaceObject.mkdtemp)((0,external_node_path_.join)((0,external_node_os_namespaceObject.tmpdir)(), 'acr-v2-pi-test-'));
 }
 function runPi(params) {
     return new Promise((resolve, reject) => {
@@ -36479,11 +36534,11 @@ function validateReviewEvent(eventName, action) {
 
 
 function readPackageJson(repo) {
-    const path = (0,external_node_path_namespaceObject.join)(repo, 'package.json');
-    if (!(0,external_node_fs_namespaceObject.existsSync)(path))
+    const path = (0,external_node_path_.join)(repo, 'package.json');
+    if (!(0,external_node_fs_.existsSync)(path))
         return null;
     try {
-        return JSON.parse((0,external_node_fs_namespaceObject.readFileSync)(path, 'utf8'));
+        return JSON.parse((0,external_node_fs_.readFileSync)(path, 'utf8'));
     }
     catch {
         return null;
@@ -36498,11 +36553,11 @@ function packageDependency(repo, name) {
     return Boolean(all[name]);
 }
 function hasFile(repo, ...candidates) {
-    return candidates.some((candidate) => (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, candidate)));
+    return candidates.some((candidate) => (0,external_node_fs_.existsSync)((0,external_node_path_.join)(repo, candidate)));
 }
 function hasMatchingFile(repo, dir, pattern) {
     try {
-        return (0,external_node_fs_namespaceObject.readdirSync)((0,external_node_path_namespaceObject.join)(repo, dir)).some((name) => pattern.test(name));
+        return (0,external_node_fs_.readdirSync)((0,external_node_path_.join)(repo, dir)).some((name) => pattern.test(name));
     }
     catch {
         return false;
@@ -36515,7 +36570,7 @@ function hasSourceWithExtension(repo, extension) {
             return;
         let entries;
         try {
-            entries = (0,external_node_fs_namespaceObject.readdirSync)(dir, { withFileTypes: true });
+            entries = (0,external_node_fs_.readdirSync)(dir, { withFileTypes: true });
         }
         catch {
             return;
@@ -36525,7 +36580,7 @@ function hasSourceWithExtension(repo, extension) {
                 return;
             if (entry.isDirectory()) {
                 if (!['node_modules', '.git', 'dist'].includes(entry.name))
-                    walk((0,external_node_path_namespaceObject.join)(dir, entry.name), depth + 1);
+                    walk((0,external_node_path_.join)(dir, entry.name), depth + 1);
             }
             else if (entry.name.endsWith(extension))
                 found = true;
@@ -36568,22 +36623,22 @@ const SIGNALS = [
     {
         id: 'nodejs',
         evidence: 'package.json present',
-        test: (repo) => (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, 'package.json')),
+        test: (repo) => (0,external_node_fs_.existsSync)((0,external_node_path_.join)(repo, 'package.json')),
     },
     {
         id: 'typescript',
         evidence: 'tsconfig.json present',
-        test: (repo) => (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, 'tsconfig.json')),
+        test: (repo) => (0,external_node_fs_.existsSync)((0,external_node_path_.join)(repo, 'tsconfig.json')),
     },
     {
         id: 'python',
         evidence: 'pyproject.toml present',
-        test: (repo) => (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, 'pyproject.toml')),
+        test: (repo) => (0,external_node_fs_.existsSync)((0,external_node_path_.join)(repo, 'pyproject.toml')),
     },
     {
         id: 'python',
         evidence: 'uv.lock present',
-        test: (repo) => (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, 'uv.lock')),
+        test: (repo) => (0,external_node_fs_.existsSync)((0,external_node_path_.join)(repo, 'uv.lock')),
     },
     {
         id: 'python',
@@ -36593,7 +36648,7 @@ const SIGNALS = [
     {
         id: 'swift',
         evidence: 'Package.swift present',
-        test: (repo) => (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, 'Package.swift')),
+        test: (repo) => (0,external_node_fs_.existsSync)((0,external_node_path_.join)(repo, 'Package.swift')),
     },
     {
         id: 'swift',
@@ -36631,9 +36686,9 @@ const SIGNALS = [
         test: (repo) => hasSourceWithExtension(repo, '.sql') &&
             (hasFile(repo, 'prisma/schema.prisma') ||
                 hasMatchingFile(repo, '.', /^drizzle\.config\./) ||
-                (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, 'prisma')) ||
-                (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, 'drizzle')) ||
-                (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, 'migrations')) ||
+                (0,external_node_fs_.existsSync)((0,external_node_path_.join)(repo, 'prisma')) ||
+                (0,external_node_fs_.existsSync)((0,external_node_path_.join)(repo, 'drizzle')) ||
+                (0,external_node_fs_.existsSync)((0,external_node_path_.join)(repo, 'migrations')) ||
                 hasMatchingFile(repo, '.', /^knexfile\./) ||
                 packageDependency(repo, 'typeorm')),
     },
@@ -36643,7 +36698,7 @@ const SIGNALS = [
         test: (repo) => hasSourceWithExtension(repo, '.sql') &&
             (packageDependency(repo, 'mysql2') ||
                 packageDependency(repo, 'mysql') ||
-                (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, '.my.cnf'))),
+                (0,external_node_fs_.existsSync)((0,external_node_path_.join)(repo, '.my.cnf'))),
     },
 ];
 function detectProfiles(repositoryPath) {
@@ -37538,9 +37593,14 @@ async function main(argv) {
                 provider: llmConfig.provider,
                 toolFindings: prelintResult.findings,
             });
+            const promptFile = await readPromptFileIfNeeded(reviewContext.repositoryPath);
             const result = await runReview(reviewContext, harness, {
                 minConfidence: Number.parseFloat(process.env.AI_REVIEW_MIN_CONFIDENCE || '0.8'),
-                extraRules: [legacyOptions.reviewPrompt, rulesForProfiles(profiles)]
+                extraRules: [
+                    promptFile,
+                    legacyOptions.reviewPrompt,
+                    rulesForProfiles(profiles),
+                ]
                     .filter(Boolean)
                     .join('\n\n'),
                 minSeverity: legacyOptions.minSeverity,
@@ -37587,6 +37647,27 @@ async function main(argv) {
         lib_core.setFailed(`Action failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
+async function readPromptFileIfNeeded(repoPath) {
+    const file = lib_core.getInput('review-prompt-file');
+    if (!file)
+        return undefined;
+    try {
+        const { readFileSync, statSync } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 3024, 23));
+        const { resolve } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 6760, 23));
+        const full = resolve(repoPath, file);
+        const stat = statSync(full);
+        if (stat.size > 50 * 1024) {
+            lib_core.warning(`[review] review-prompt-file ${file} exceeds 50 KiB — ignored`);
+            return undefined;
+        }
+        const content = readFileSync(full, 'utf8');
+        return content.trim() || undefined;
+    }
+    catch (error) {
+        lib_core.warning(`[review] review-prompt-file read failed: ${error instanceof Error ? error.message : String(error)}`);
+        return undefined;
+    }
+}
 function applyLegacyFilters(filenames, options) {
     const excludeRegexes = options.excludePatterns.map((pattern) => new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
     return filenames.filter((filename) => {
@@ -37602,8 +37683,8 @@ function applyLegacyFilters(filenames, options) {
 
 
 
-const entryPath = (0,external_node_path_namespaceObject.resolve)((0,external_node_url_namespaceObject.fileURLToPath)(import.meta.url));
-const invokedPath = process.argv[1] ? (0,external_node_path_namespaceObject.resolve)(process.argv[1]) : undefined;
+const entryPath = (0,external_node_path_.resolve)((0,external_node_url_namespaceObject.fileURLToPath)(import.meta.url));
+const invokedPath = process.argv[1] ? (0,external_node_path_.resolve)(process.argv[1]) : undefined;
 /**
  * Entry bundle for the pr-review compatibility adapter. The adapter's
  * dist imports this file when the V2 engine is present in the checkout.

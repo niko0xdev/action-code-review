@@ -86,6 +86,10 @@ inputs:
     description: 'Emit $GITHUB_STEP_SUMMARY updates as the review walks phases (CCA track_progress analog)'
     required: false
     default: 'false'
+  review-prompt-file:
+    description: 'Path to a repo-relative file whose contents are prepended to the review prompt'
+    required: false
+    default: ''
 
 outputs:
   review-summary:
@@ -129,3 +133,4 @@ runs:
         INPUT_EXCLUDE-ACTORS: ${{ inputs.exclude-actors }}
         INPUT_STICKY-SUMMARY: ${{ inputs.sticky-summary }}
         INPUT_TRACK-PROGRESS: ${{ inputs.track-progress }}
+        INPUT_REVIEW-PROMPT-FILE: ${{ inputs.review-prompt-file }}
