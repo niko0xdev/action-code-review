@@ -35439,7 +35439,7 @@ function severityBadge(finding) {
     return `${icon} ${label} · ${category}`;
 }
 /** Full inline-comment body for a finding, ending with its id marker. */
-function buildFindingBody(finding) {
+function comments_buildFindingBody(finding) {
     const safeFinding = {
         ...finding,
         title: mdSafe(finding.title),
@@ -35562,6 +35562,150 @@ function footerLine(model) {
     return `_Auto-generated with \`${mdSafe(model)}\` by [AI Code Review](https://github.com/niko0xdev/action-code-review) · ${run}_`;
 }
 
+;// CONCATENATED MODULE: ./src/github/buffer.ts
+
+
+
+const BUFFER_PATH = process.env.AI_INLINE_BUFFER_PATH ?? '/tmp/ai-inline-buffer.jsonl';
+const TEST_PROBE_RE = /^(test comment|testing if|can i|does this work|checking if)/i;
+function isTestProbe(body) {
+    const trimmed = body.trim();
+    if (!trimmed)
+        return true;
+    return TEST_PROBE_RE.test(trimmed);
+}
+function appendToBuffer(findings) {
+    if (findings.length === 0)
+        return;
+    const lines = `${findings.map((f) => JSON.stringify(f)).join('\n')}\n`;
+    (0,external_node_fs_namespaceObject.appendFileSync)(BUFFER_PATH, lines, 'utf8');
+}
+function readBuffer() {
+    try {
+        const raw = readFileSync(BUFFER_PATH, 'utf8');
+        return raw
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line));
+    }
+    catch {
+        return [];
+    }
+}
+function classifyFindings(findings) {
+    const neverPost = findings.filter((f) => f.confirmed === false);
+    const candidates = findings.filter((f) => f.confirmed !== false);
+    if (neverPost.length > 0) {
+        lib_core.info(`[buffer] ${neverPost.length} with confirmed=false — not posting`);
+    }
+    if (candidates.length === 0)
+        return { real: [], probe: neverPost };
+    const real = [];
+    const probe = [...neverPost];
+    for (const f of candidates) {
+        const body = `${f.title} ${f.description}`.trim();
+        if (isTestProbe(body) || isTestProbe(f.title)) {
+            probe.push(f);
+        }
+        else {
+            real.push(f);
+        }
+    }
+    return { real, probe };
+}
+async function classifyWithLlm(findings, provider) {
+    if (!provider)
+        return null;
+    if (findings.length === 0)
+        return [];
+    const prompt = `Classify each finding as REAL review vs TEST/PROBE (tool-check placeholder). TEST/PROBE is generic placeholder not specific to code. Respond ONLY JSON array booleans true=REAL false=TEST.\n\n${findings
+        .map((f, i) => `${i + 1}. ${JSON.stringify(`${f.title} — ${f.description}`)}`)
+        .join('\n')}`;
+    try {
+        const res = await provider.complete([{ role: 'user', content: prompt }], {
+            temperature: 0,
+            maxOutputTokens: 256,
+        });
+        const match = res.content.match(/\[[\s\S]*\]/);
+        if (!match)
+            return null;
+        const parsed = JSON.parse(match[0]);
+        if (!Array.isArray(parsed) ||
+            parsed.length !== findings.length ||
+            !parsed.every((v) => typeof v === 'boolean'))
+            return null;
+        return parsed;
+    }
+    catch {
+        return null;
+    }
+}
+async function flushBuffer(octokit, owner, repo, prNumber, headSha, provider) {
+    const buffered = readBuffer();
+    if (buffered.length === 0)
+        return { posted: 0, filtered: 0 };
+    const neverPost = buffered.filter((f) => f.confirmed === false);
+    const candidates = buffered.filter((f) => f.confirmed !== false);
+    if (candidates.length === 0) {
+        core.info(`[buffer] ${neverPost.length} confirmed=false — not posting`);
+        return { posted: 0, filtered: neverPost.length };
+    }
+    let verdicts = null;
+    if (provider) {
+        verdicts = await classifyWithLlm(candidates, provider);
+    }
+    let toPost;
+    let filtered;
+    if (verdicts === null) {
+        const { real, probe } = classifyFindings(candidates);
+        toPost = real;
+        filtered = [...neverPost, ...probe.filter((p) => !neverPost.includes(p))];
+        if (probe.length > 0 && verdicts === null) {
+            // heuristic path already accounted; filtered includes probes
+        }
+    }
+    else {
+        toPost = candidates.filter((_, i) => verdicts?.[i] === true);
+        filtered = [
+            ...neverPost,
+            ...candidates.filter((_, i) => verdicts?.[i] === false),
+        ];
+    }
+    if (filtered.length > 0) {
+        core.warning(`${filtered.length} buffered finding(s) classified as test/probe — NOT posted`);
+    }
+    let posted = 0;
+    for (const finding of toPost) {
+        try {
+            await octokit.rest.pulls.createReviewComment({
+                owner,
+                repo,
+                pull_number: prNumber,
+                body: buildFindingBody(finding),
+                commit_id: headSha,
+                path: finding.path,
+                line: finding.line,
+                side: 'RIGHT',
+            });
+            posted += 1;
+        }
+        catch (error) {
+            core.warning(`[buffer] failed ${finding.path}:${finding.line}: ${error instanceof Error ? error.message : String(error)}`);
+            try {
+                await octokit.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number: prNumber,
+                    body: `## Review for ${finding.path}\n\n**Line ${finding.line}:** ${buildFindingBody(finding)}`,
+                });
+                posted += 1;
+            }
+            catch { }
+        }
+    }
+    return { posted, filtered: filtered.length };
+}
+
 ;// CONCATENATED MODULE: ./src/github/permissions.ts
 
 function isBotActor(actor) {
@@ -35597,12 +35741,13 @@ async function hasWritePermission(octokit, owner, repo, actor) {
 
 
 
+
 function buildReviewPayload(findings, headSha, options = {}) {
     const comments = findings.map((finding) => ({
         path: finding.path,
         line: finding.line,
         side: 'RIGHT',
-        body: buildFindingBody(finding),
+        body: comments_buildFindingBody(finding),
     }));
     return {
         commit_id: headSha,
@@ -35624,8 +35769,21 @@ async function publishReview(octokit, params) {
     const existingIds = await fetchExistingCommentIds(octokit, owner, repo, prNumber);
     const findings = result.findings.filter((finding) => !existingIds.has(dedupe_normalizeCommentId(finding)));
     const hasBlockingFinding = findings.some((finding) => finding.severity !== 'low');
-    if (findings.length > 0) {
-        const payload = buildReviewPayload(findings, headSha, {
+    let findingsToPublish = findings;
+    if (params.bufferInlineComments) {
+        const buffered = findings.map((f) => ({ ...f, ts: new Date().toISOString() }));
+        try {
+            appendToBuffer(buffered);
+        }
+        catch { }
+        const { real, probe } = classifyFindings(buffered);
+        if (probe.length > 0) {
+            lib_core.warning(`[buffer] ${probe.length} finding(s) filtered as test/probe — NOT posted`);
+        }
+        findingsToPublish = real;
+    }
+    if (findingsToPublish.length > 0) {
+        const payload = buildReviewPayload(findingsToPublish, headSha, {
             blockOnIssues: hasBlockingFinding,
         });
         try {
@@ -37231,6 +37389,8 @@ async function main(argv) {
                 blockOnIssues: legacyOptions.blockOnIssues,
                 minSeverity: legacyOptions.minSeverity,
                 requireWritePermissions: lib_core.getInput('require-write-permissions') === 'true',
+                bufferInlineComments: lib_core.getInput('buffer-inline-comments') !== 'false' &&
+                    lib_core.getInput('classify-inline-comments') !== 'false',
                 actor: process.env.GITHUB_ACTOR ??
                     github.context.payload.pull_request?.user?.login ??
                     github.context.actor,
