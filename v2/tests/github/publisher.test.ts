@@ -216,6 +216,87 @@ describe('publishReview', () => {
 		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
 		expect(octokit.rest.issues.createComment).toHaveBeenCalledOnce();
 	});
+
+	it('submits an APPROVE event when there are no findings', async () => {
+		const octokit = makeOctokit();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result: {
+				findings: [],
+				summary: 'clean',
+				risk: 'none',
+				counts: { critical: 0, high: 0, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+			},
+			blockOnIssues: true,
+		});
+		const callArgs = (octokit.rest.pulls.createReview as ReturnType<typeof vi.fn>).mock
+			.calls[0]?.[0];
+		expect(callArgs).toMatchObject({ event: 'APPROVE', pull_number: 7 });
+		// APPROVE event MUST NOT carry inline comments — GitHub API rejects
+		// `comments` on an APPROVE review.
+		expect(callArgs.comments).toBeUndefined();
+	});
+
+	it('does not submit APPROVE when a blocking finding is present', async () => {
+		const octokit = makeOctokit();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 8,
+			headSha: 'sha-block',
+			result: {
+				findings: [finding({ severity: 'high' })],
+				summary: 'one high',
+				risk: 'high',
+				counts: { critical: 0, high: 1, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+			},
+			blockOnIssues: true,
+		});
+		const callArgs = (octokit.rest.pulls.createReview as ReturnType<typeof vi.fn>).mock
+			.calls[0]?.[0];
+		expect(callArgs.event).toBe('REQUEST_CHANGES');
+	});
+
+	it('logs approval errors via core.warning, not console.warn', async () => {
+		const warn = vi.fn();
+		const octokit = {
+			...makeOctokit(),
+			rest: {
+				...makeOctokit().rest,
+				pulls: {
+					...makeOctokit().rest.pulls,
+					createReview: vi.fn(async () => {
+						throw new Error('GitHub API down');
+					}),
+				},
+			},
+		};
+		// Spy on core.warning (action runtime). Falls back to no-op if @actions/core
+		// mock doesn't expose it; either way the test should not throw.
+		const coreMod = await import('@actions/core');
+		const spy = vi.spyOn(coreMod, 'warning').mockImplementation(warn);
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 9,
+			headSha: 'sha-warn',
+			result: {
+				findings: [],
+				summary: '',
+				risk: 'none',
+				counts: { critical: 0, high: 0, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+			},
+			blockOnIssues: true,
+		});
+		expect(warn).toHaveBeenCalled();
+		spy.mockRestore();
+	});
 });
 
 describe('buildJobSummary (spec §39)', () => {

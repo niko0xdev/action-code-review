@@ -1,3 +1,4 @@
+import * as core from '@actions/core';
 import type { OctokitLike } from '../context/pr.js';
 import { normalizeCommentId } from '../review/dedupe.js';
 import type { Finding, ReviewResult } from '../types/finding.js';
@@ -126,7 +127,7 @@ export async function publishReview(
 				comments: payload.comments,
 			});
 		} catch (error) {
-			console.warn(
+			core.warning(
 				`Batch review failed: ${error instanceof Error ? error.message : String(error)}`
 			);
 			for (const comment of payload.comments) {
@@ -179,7 +180,7 @@ export async function publishReview(
 				body: '✅ AI Code Review: no blocking issues found. Auto-approving.',
 			});
 		} catch (error) {
-			console.warn(
+			core.warning(
 				`Approve review failed: ${error instanceof Error ? error.message : String(error)}`
 			);
 		}
@@ -239,7 +240,7 @@ async function fetchExistingCommentIds(
 			}
 		}
 	} catch (error) {
-		console.warn(
+		core.warning(
 			`Failed to fetch existing review comments: ${error instanceof Error ? error.message : String(error)}`
 		);
 	}
