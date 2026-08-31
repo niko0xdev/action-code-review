@@ -165,6 +165,21 @@ function toPublisherOctokit(
 					}),
 			},
 			issues: {
+				listComments: (args: Record<string, unknown>) =>
+					client.rest.issues.listComments({
+						owner: requiredString(args, 'owner'),
+						repo: requiredString(args, 'repo'),
+						issue_number: requiredNumber(args, 'issue_number'),
+						page: requiredNumber(args, 'page'),
+						per_page: requiredNumber(args, 'per_page'),
+					}),
+				updateComment: (args: Record<string, unknown>) =>
+					client.rest.issues.updateComment({
+						owner: requiredString(args, 'owner'),
+						repo: requiredString(args, 'repo'),
+						comment_id: requiredNumber(args, 'comment_id'),
+						body: requiredString(args, 'body'),
+					}),
 				createComment: (args: Record<string, unknown>) =>
 					client.rest.issues.createComment({
 						owner: requiredString(args, 'owner'),
@@ -464,6 +479,7 @@ export async function main(argv: string[]): Promise<void> {
 				minSeverity: legacyOptions.minSeverity,
 				requireWritePermissions:
 					core.getInput('require-write-permissions') === 'true',
+				stickySummary: core.getInput('sticky-summary') !== 'false',
 				bufferInlineComments:
 					core.getInput('buffer-inline-comments') !== 'false' &&
 					core.getInput('classify-inline-comments') !== 'false',

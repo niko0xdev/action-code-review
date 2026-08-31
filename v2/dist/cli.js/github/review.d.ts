@@ -64,6 +64,18 @@ export interface PublisherOctokit extends OctokitLike {
             createComment(args: Record<string, unknown>): Promise<{
                 data: unknown;
             }>;
+            listComments?(args: Record<string, unknown>): Promise<{
+                data: Array<{
+                    id: number;
+                    body?: string | null;
+                    user?: {
+                        login?: string;
+                    } | null;
+                }>;
+            }>;
+            updateComment?(args: Record<string, unknown>): Promise<{
+                data: unknown;
+            }>;
         };
     };
     users?: {
@@ -101,6 +113,7 @@ export interface PublishParams {
     requireWritePermissions?: boolean;
     actor?: string;
     bufferInlineComments?: boolean;
+    stickySummary?: boolean;
 }
 export declare function buildReviewPayload(findings: Finding[], headSha: string, options?: {
     blockOnIssues?: boolean;

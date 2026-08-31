@@ -4,7 +4,11 @@ import { normalizeCommentId } from '../review/dedupe.js';
 import type { Finding, ReviewResult } from '../types/finding.js';
 import type { ReplyParams, ReplyResult, ReviewReply } from '../types/reply.js';
 import { appendToBuffer, classifyFindings } from './buffer.js';
-import { buildFindingBody, buildSummaryBody } from './comments.js';
+import {
+	buildFindingBody,
+	buildSummaryBody,
+	stickySummaryMarker,
+} from './comments.js';
 import { hasWritePermission } from './permissions.js';
 
 export { buildFindingBody, buildSummaryBody } from './comments.js';
@@ -53,6 +57,16 @@ export interface PublisherOctokit extends OctokitLike {
 		};
 		issues: {
 			createComment(args: Record<string, unknown>): Promise<{ data: unknown }>;
+			listComments?(
+				args: Record<string, unknown>
+			): Promise<{
+				data: Array<{
+					id: number;
+					body?: string | null;
+					user?: { login?: string } | null;
+				}>;
+			}>;
+			updateComment?(args: Record<string, unknown>): Promise<{ data: unknown }>;
 		};
 	};
 	users?: { getAuthenticated: () => Promise<{ data: { login: string } }> };
@@ -85,6 +99,7 @@ export interface PublishParams {
 	requireWritePermissions?: boolean;
 	actor?: string;
 	bufferInlineComments?: boolean;
+	stickySummary?: boolean;
 }
 
 export function buildReviewPayload(
@@ -193,22 +208,49 @@ export async function publishReview(
 			}
 		}
 	}
-	await octokit.rest.issues.createComment({
-		owner,
-		repo,
-		issue_number: prNumber,
-		body: buildSummaryBody({
-			risk: result.risk,
-			counts: result.counts,
-			filesReviewed: result.filesReviewed,
-			summary: result.summary,
-			findings,
-			model: params.model,
-			durationMs: params.durationMs,
-			filesTotal: params.filesTotal,
-			filesExcluded: params.filesExcluded,
-		}),
-	});
+	const marker = stickySummaryMarker(owner, repo, prNumber);
+	const summaryBody = `${buildSummaryBody({
+		risk: result.risk,
+		counts: result.counts,
+		filesReviewed: result.filesReviewed,
+		summary: result.summary,
+		findings,
+		model: params.model,
+		durationMs: params.durationMs,
+		filesTotal: params.filesTotal,
+		filesExcluded: params.filesExcluded,
+	})}\n\n${marker}`;
+	if (params.stickySummary) {
+		const existing = await findStickyComment(
+			octokit,
+			owner,
+			repo,
+			prNumber,
+			marker
+		);
+		if (existing) {
+			await octokit.rest.issues.updateComment?.({
+				owner,
+				repo,
+				comment_id: existing,
+				body: summaryBody,
+			});
+		} else {
+			await octokit.rest.issues.createComment({
+				owner,
+				repo,
+				issue_number: prNumber,
+				body: summaryBody,
+			});
+		}
+	} else {
+		await octokit.rest.issues.createComment({
+			owner,
+			repo,
+			issue_number: prNumber,
+			body: summaryBody,
+		});
+	}
 	if (hasWrite && (findings.length === 0 || !hasBlockingFinding)) {
 		try {
 			await octokit.rest.pulls.createReview({
@@ -225,6 +267,50 @@ export async function publishReview(
 			);
 		}
 	}
+}
+
+async function findStickyComment(
+	octokit: PublisherOctokit,
+	owner: string,
+	repo: string,
+	prNumber: number,
+	marker: string
+): Promise<number | null> {
+	const listComments = octokit.rest.issues.listComments as
+		| ((args: Record<string, unknown>) => Promise<{ data: unknown }>)
+		| undefined;
+	if (!listComments) return null;
+	try {
+		const auth = octokit.users
+			? await octokit.users.getAuthenticated().catch(() => null)
+			: null;
+		const selfLogin = auth?.data?.login;
+		const comments = await listAll(
+			listComments as (
+				args: Record<string, unknown>
+			) => Promise<{
+				data: Array<{
+					id: number;
+					body?: string | null;
+					user?: { login?: string } | null;
+				}>;
+			}>,
+			{ owner, repo, issue_number: prNumber }
+		);
+		for (const c of comments as Array<{
+			id: number;
+			body?: string | null;
+			user?: { login?: string } | null;
+		}>) {
+			if (
+				selfLogin &&
+				(c as { user?: { login?: string } | null }).user?.login !== selfLogin
+			)
+				continue;
+			if (typeof c.body === 'string' && c.body.includes(marker)) return c.id;
+		}
+	} catch {}
+	return null;
 }
 
 async function listAll<T>(

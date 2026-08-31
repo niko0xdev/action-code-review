@@ -23,5 +23,6 @@ export declare function formatDecisionBanner(risk: RiskLevel, findings?: Finding
 export declare function buildChecksTable(findings: Finding[], _counts: SummaryResult['counts']): string[];
 /** Render rich PR summary while keeping the legacy heading recognizable. */
 export declare function buildSummaryBody(result: SummaryResult): string;
+export declare function stickySummaryMarker(owner: string, repo: string, prNumber: number): string;
 export {};
 //# sourceMappingURL=comments.d.ts.map
