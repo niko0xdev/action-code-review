@@ -450,6 +450,7 @@ export async function main(argv: string[]): Promise<void> {
 			}
 			trackPhase('harness', 'Pi review start', { enabled: trackEnabled });
 			const harness = new PiHarness({
+				piArgs: core.getInput('pi-args'),
 				timeoutMs: positiveTimeout(
 					process.env.AI_REVIEW_PI_TIMEOUT_MS,
 					15 * 60_000

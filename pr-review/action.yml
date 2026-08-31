@@ -90,6 +90,10 @@ inputs:
     description: 'Path to a repo-relative file whose contents are prepended to the review prompt'
     required: false
     default: ''
+  pi-args:
+    description: 'Extra Pi CLI flags (whitelisted: --max-duration/--model-override/--no-session)'
+    required: false
+    default: ''
 
 outputs:
   review-summary:
@@ -134,3 +138,4 @@ runs:
         INPUT_STICKY-SUMMARY: ${{ inputs.sticky-summary }}
         INPUT_TRACK-PROGRESS: ${{ inputs.track-progress }}
         INPUT_REVIEW-PROMPT-FILE: ${{ inputs.review-prompt-file }}
+        INPUT_PI-ARGS: ${{ inputs.pi-args }}
