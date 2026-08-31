@@ -12,6 +12,8 @@ const PROFILE_IDS = new Set<ProfileId>([
 	'python',
 	'swift',
 	'kotlin',
+	'postgres',
+	'mysql',
 ]);
 
 function isProfileId(id: string): id is ProfileId {
