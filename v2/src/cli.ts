@@ -155,6 +155,14 @@ function toPublisherOctokit(
 	return {
 		rest: {
 			pulls,
+			repos: {
+				getCollaboratorPermissionLevel: (args: Record<string, unknown>) =>
+					client.rest.repos.getCollaboratorPermissionLevel({
+						owner: requiredString(args, 'owner'),
+						repo: requiredString(args, 'repo'),
+						username: requiredString(args, 'username'),
+					}),
+			},
 			issues: {
 				createComment: (args: Record<string, unknown>) =>
 					client.rest.issues.createComment({
@@ -436,6 +444,16 @@ export async function main(argv: string[]): Promise<void> {
 				model: llmConfig.model,
 				blockOnIssues: legacyOptions.blockOnIssues,
 				minSeverity: legacyOptions.minSeverity,
+				requireWritePermissions:
+					core.getInput('require-write-permissions') === 'true',
+				actor:
+					process.env.GITHUB_ACTOR ??
+					(
+						github.context.payload.pull_request?.user as
+							| { login?: string }
+							| undefined
+					)?.login ??
+					(github.context.actor as string | undefined),
 			});
 			core.setOutput(
 				'review-summary',

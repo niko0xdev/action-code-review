@@ -58,6 +58,10 @@ inputs:
     description: 'Review mode (only "review" is supported; unknown values fall back to "review")'
     required: false
     default: 'review'
+  require-write-permissions:
+    description: 'When true, skip APPROVE/REQUEST_CHANGES escalation if the PR actor lacks write permission (still posts review)'
+    required: false
+    default: 'false'
 
 outputs:
   review-summary:
@@ -94,3 +98,4 @@ runs:
         INPUT_INCLUDE-FULL-CONTENT: ${{ inputs.include-full-content }}
         INPUT_MAX-CONTEXT-CHARS: ${{ inputs.max-context-chars }}
         INPUT_MODE: ${{ inputs.mode }}
+        INPUT_REQUIRE-WRITE-PERMISSIONS: ${{ inputs.require-write-permissions }}

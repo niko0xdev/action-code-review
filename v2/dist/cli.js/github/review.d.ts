@@ -49,6 +49,17 @@ export interface PublisherOctokit extends OctokitLike {
                 data: ReviewCommentRecord[];
             }>;
         };
+        repos?: {
+            getCollaboratorPermissionLevel(args: {
+                owner: string;
+                repo: string;
+                username: string;
+            }): Promise<{
+                data: {
+                    permission: string;
+                };
+            }>;
+        };
         issues: {
             createComment(args: Record<string, unknown>): Promise<{
                 data: unknown;
@@ -87,6 +98,8 @@ export interface PublishParams {
     durationMs?: number;
     filesTotal?: number;
     filesExcluded?: number;
+    requireWritePermissions?: boolean;
+    actor?: string;
 }
 export declare function buildReviewPayload(findings: Finding[], headSha: string, options?: {
     blockOnIssues?: boolean;
