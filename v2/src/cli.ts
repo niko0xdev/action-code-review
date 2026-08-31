@@ -20,8 +20,143 @@ function positiveTimeout(value: string | undefined, fallback: number): number {
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function recordArgs(args: unknown): Record<string, unknown> {
+	if (!args || typeof args !== 'object')
+		throw new Error('Invalid request arguments');
+	return args as Record<string, unknown>;
+}
+
+function requiredString(args: Record<string, unknown>, key: string): string {
+	const value = args[key];
+	if (typeof value !== 'string') throw new Error(`Missing ${key}`);
+	return value;
+}
+
+function requiredNumber(args: Record<string, unknown>, key: string): number {
+	const value = args[key];
+	if (typeof value !== 'number') throw new Error(`Missing ${key}`);
+	return value;
+}
+
+function repositoryArgs(args: Record<string, unknown>) {
+	return {
+		owner: requiredString(args, 'owner'),
+		repo: requiredString(args, 'repo'),
+		pull_number: requiredNumber(args, 'pull_number'),
+	};
+}
+
+function toPublisherOctokit(
+	client: ReturnType<typeof github.getOctokit>
+): PublisherOctokit {
+	const pulls = {
+		get: (args: unknown) =>
+			client.rest.pulls.get(repositoryArgs(recordArgs(args))),
+		listFiles: (args: Record<string, unknown>) =>
+			client.rest.pulls.listFiles({
+				...repositoryArgs(args),
+				page: requiredNumber(args, 'page'),
+				per_page: requiredNumber(args, 'per_page'),
+			}),
+		createReview: (args: Record<string, unknown>) => {
+			const event = requiredString(args, 'event');
+			if (!['REQUEST_CHANGES', 'COMMENT', 'APPROVE'].includes(event))
+				throw new Error('Invalid event');
+			if (!Array.isArray(args.comments)) throw new Error('Missing comments');
+			return client.rest.pulls.createReview({
+				...repositoryArgs(args),
+				commit_id: requiredString(args, 'commit_id'),
+				event: event as 'REQUEST_CHANGES' | 'COMMENT' | 'APPROVE',
+				comments: args.comments as Array<{
+					path: string;
+					line?: number;
+					body: string;
+					side?: string;
+				}>,
+			});
+		},
+		createReviewComment: (args: Record<string, unknown>) =>
+			client.rest.pulls.createReviewComment({
+				...repositoryArgs(args),
+				body: requiredString(args, 'body'),
+				commit_id: requiredString(args, 'commit_id'),
+				path: requiredString(args, 'path'),
+				line: requiredNumber(args, 'line'),
+				side: (() => {
+					const side = requiredString(args, 'side');
+					if (side !== 'RIGHT' && side !== 'LEFT')
+						throw new Error('Invalid side');
+					return side;
+				})(),
+			}),
+		createReplyForReviewComment: (args: {
+			owner: string;
+			repo: string;
+			pull_number: number;
+			comment_id: number;
+			body: string;
+		}) => client.rest.pulls.createReplyForReviewComment(args),
+		getReviewComment: (args: Record<string, unknown>) =>
+			client.rest.pulls.getReviewComment({
+				...repositoryArgs(args),
+				comment_id: requiredNumber(args, 'comment_id'),
+			}),
+		listReviews: async (args: Record<string, unknown>) => {
+			const response = await client.rest.pulls.listReviews({
+				...repositoryArgs(args),
+				page: requiredNumber(args, 'page'),
+				per_page: requiredNumber(args, 'per_page'),
+			});
+			return {
+				data: response.data.map((review) => ({
+					id: review.id,
+					user: review.user ? { login: review.user.login ?? undefined } : null,
+				})),
+			};
+		},
+		listCommentsForReview: async (args: Record<string, unknown>) => {
+			const response = await client.rest.pulls.listCommentsForReview({
+				...repositoryArgs(args),
+				review_id: requiredNumber(args, 'review_id'),
+				page: requiredNumber(args, 'page'),
+				per_page: requiredNumber(args, 'per_page'),
+			});
+			return {
+				data: response.data.map((comment) => ({
+					body: comment.body ?? null,
+					pull_request_url: comment.pull_request_url ?? null,
+					user: comment.user
+						? { login: comment.user.login ?? undefined }
+						: null,
+				})),
+			};
+		},
+	};
+	return {
+		rest: {
+			pulls,
+			issues: {
+				createComment: (args: Record<string, unknown>) =>
+					client.rest.issues.createComment({
+						owner: requiredString(args, 'owner'),
+						repo: requiredString(args, 'repo'),
+						issue_number: requiredNumber(args, 'issue_number'),
+						body: requiredString(args, 'body'),
+					}),
+			},
+			users: {
+				getAuthenticated: () => client.rest.users.getAuthenticated(),
+			},
+		},
+		users: { getAuthenticated: () => client.rest.users.getAuthenticated() },
+	};
+}
+
 export function parseArgs(args: string[]): { action: string } {
-	return { action: args[0] === 'pr-content' ? 'pr-content' : 'pr-review' };
+	return {
+		action:
+			(args[0] ?? 'pr-review') === 'pr-content' ? 'pr-content' : 'pr-review',
+	};
 }
 
 export async function main(argv: string[]): Promise<void> {
@@ -50,9 +185,9 @@ export async function main(argv: string[]): Promise<void> {
 			'max-context-chars': core.getInput('max-context-chars'),
 		});
 		const llmConfig = resolveEngineConfig(legacyOptions);
-		const octokit = github.getOctokit(
-			legacyOptions.githubToken
-		) as unknown as PublisherOctokit;
+		const octokit = toPublisherOctokit(
+			github.getOctokit(legacyOptions.githubToken)
+		);
 		const prNumber = context.payload.pull_request.number;
 		const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
 		const reviewContext = await fetchPrContext(octokit, repoInfo, prNumber);
@@ -88,8 +223,8 @@ export async function main(argv: string[]): Promise<void> {
 		reviewContext.profiles = profiles;
 		const previousConfigDir = process.env.PI_CONFIG_DIR;
 		const runtimeConfig = await preparePiRuntimeConfig(llmConfig);
+		process.env.PI_CONFIG_DIR = runtimeConfig.configDir;
 		try {
-			process.env.PI_CONFIG_DIR = runtimeConfig.configDir;
 			const harness = new PiHarness({
 				timeoutMs: positiveTimeout(
 					process.env.AI_REVIEW_PI_TIMEOUT_MS,
@@ -111,7 +246,7 @@ export async function main(argv: string[]): Promise<void> {
 					.join('\n\n'),
 				minSeverity: legacyOptions.minSeverity,
 			});
-			await publishReview(octokit as unknown as PublisherOctokit, {
+			await publishReview(octokit, {
 				owner: repoInfo.owner,
 				repo: repoInfo.repo,
 				prNumber,
@@ -137,19 +272,18 @@ export async function main(argv: string[]): Promise<void> {
 	}
 }
 
-function applyLegacyFilters(
+export function applyLegacyFilters(
 	filenames: string[],
 	options: { excludePatterns: string[]; includeDirs?: string[] }
 ): string[] {
-	const toRegex = (pattern: string) =>
-		new RegExp(
-			pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
-		);
+	const excludeRegexes = options.excludePatterns.map(
+		(pattern) =>
+			new RegExp(
+				`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`
+			)
+	);
 	return filenames.filter((filename) => {
-		if (
-			options.excludePatterns.some((pattern) => toRegex(pattern).test(filename))
-		)
-			return false;
+		if (excludeRegexes.some((regex) => regex.test(filename))) return false;
 		if (options.includeDirs?.length)
 			return options.includeDirs.some(
 				(dir) => filename.startsWith(`${dir}/`) || filename === dir

@@ -53,6 +53,26 @@ describe('buildReviewPrompt', () => {
 		expect(prompt).toContain('+new');
 	});
 
+	it('scrubs secrets from PR body and patches', () => {
+		const context = makeContext({
+			pullRequest: { ...makeContext().pullRequest, body: 'sk-body gho_body' },
+			diff: {
+				...makeContext().diff,
+				files: [
+					{
+						...makeContext().diff.files[0],
+						patch: '+ghp_patch xoxb-patch AIza-key github_pat_key',
+					},
+				],
+			},
+		});
+		const prompt = buildReviewPrompt(context);
+		expect(prompt).not.toMatch(
+			/sk-body|gho_body|ghp_patch|xoxb-patch|AIza-key|github_pat_key/
+		);
+		expect(prompt).toContain('[REDACTED-TOKEN]');
+	});
+
 	it('states repository content is untrusted (prompt-injection defense, spec §24)', () => {
 		const prompt = buildReviewPrompt(makeContext());
 		expect(prompt.toLowerCase()).toContain('untrusted');
@@ -152,5 +172,14 @@ describe('parseHarnessFindings', () => {
 		});
 		const result = parseHarnessFindings(raw);
 		expect(result.findings[0].confidence).toBeLessThanOrEqual(1);
+	});
+
+	it('maps non-finite confidence to zero', () => {
+		const raw = JSON.stringify({
+			findings: [{ severity: 'low', confidence: 'NaN', path: 'c.ts', line: 1 }],
+			summary: '',
+			risk: 'low',
+		});
+		expect(parseHarnessFindings(raw).findings[0].confidence).toBe(0);
 	});
 });

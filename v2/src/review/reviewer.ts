@@ -1,7 +1,12 @@
 import { prioritizeFiles } from '../context/files.js';
 import type { ReviewHarness } from '../harness/harness.js';
 import type { ReviewContext } from '../types/context.js';
-import type { Finding, ReviewResult } from '../types/finding.js';
+import {
+	FINDING_LIMITS,
+	type Finding,
+	type ReviewResult,
+	SEVERITY_ORDER,
+} from '../types/finding.js';
 import { dedupeFindings } from './dedupe.js';
 import { planReviewGroups } from './planner.js';
 import { capFindings, computeCounts, riskFromFindings } from './severity.js';
@@ -13,13 +18,6 @@ export interface RunReviewOptions {
 	extraRules?: string;
 	minSeverity?: string;
 }
-
-const SEVERITY_RANK: Record<string, number> = {
-	low: 0,
-	medium: 1,
-	high: 2,
-	critical: 3,
-};
 
 export async function runReview(
 	context: ReviewContext,
@@ -57,7 +55,11 @@ export async function runReview(
 		for (const [index, outcome] of outcomes.entries()) {
 			const group = groups[start + index];
 			if (outcome.status === 'fulfilled') {
-				allFindings.push(...outcome.value.result.findings);
+				allFindings.push(
+					...capFindings(
+						outcome.value.result.findings.slice(0, FINDING_LIMITS.overall)
+					)
+				);
 				filesReviewed.push(...group.files);
 				if (outcome.value.result.summary)
 					summaries.push(outcome.value.result.summary);
@@ -70,9 +72,12 @@ export async function runReview(
 	}
 
 	const minimum =
-		SEVERITY_RANK[options.minSeverity ?? 'low'] ?? SEVERITY_RANK.critical;
+		options.minSeverity === undefined
+			? SEVERITY_ORDER.low
+			: (SEVERITY_ORDER[options.minSeverity as keyof typeof SEVERITY_ORDER] ??
+				SEVERITY_ORDER.critical);
 	const filtered = allFindings.filter(
-		(finding) => SEVERITY_RANK[finding.severity] >= minimum
+		(finding) => SEVERITY_ORDER[finding.severity] >= minimum
 	);
 	const validated = validateFindings(
 		filtered,

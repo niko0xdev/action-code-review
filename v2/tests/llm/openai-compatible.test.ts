@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
 	OpenAiCompatibleProvider,
 	extractJsonBlock,
+	scrubSecrets,
 } from '../../src/llm/openai-compatible.js';
+import { safeErrorDetail } from '../../src/llm/openai-compatible.js';
 import type { LlmConfig } from '../../src/llm/provider.js';
 
 const CONFIG: LlmConfig = {
@@ -49,6 +51,28 @@ describe('OpenAiCompatibleProvider', () => {
 		const body = JSON.parse(init.body as string);
 		expect(body.model).toBe('gpt-4o-mini');
 		expect(body.max_tokens).toBeDefined();
+	});
+
+	it('redacts all supported token forms globally', () => {
+		const text =
+			'sk-secret gho_one ghp_two ghs_three xoxb-four AIzafive github_pat_six eyJabc.eyJdef.sig Bearer ghp_seven';
+		const scrubbed = scrubSecrets(text);
+		expect(scrubbed).not.toContain('sk-secret');
+		expect(scrubbed).not.toContain('gho_one');
+		expect(scrubbed).not.toContain('ghp_two');
+		expect(scrubbed).not.toContain('ghs_three');
+		expect(scrubbed).not.toContain('xoxb-four');
+		expect(scrubbed).not.toContain('AIzafive');
+		expect(scrubbed).not.toContain('github_pat_six');
+		expect(scrubbed).not.toContain('eyJabc.eyJdef.sig');
+		expect(scrubbed).toMatch(/\[REDACTED-TOKEN\]/);
+	});
+
+	it('redacts response details before truncation', async () => {
+		const detail = await safeErrorDetail(
+			new Response('first Bearer ghp_xxx then sk-secret and eyJabc.eyJdef.sig')
+		);
+		expect(detail).not.toMatch(/ghp_xxx|sk-secret|eyJabc/);
 	});
 
 	it('returns content and usage from the response', async () => {

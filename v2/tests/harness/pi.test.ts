@@ -136,6 +136,22 @@ EOF
 		await expect(harness.review(makeContext())).rejects.toThrow(/timed out/);
 	});
 
+	it('kills a process when stdout exceeds the 50 MiB cap', async () => {
+		const bin = writeFakePi('#!/bin/sh\nhead -c 52428801 /dev/zero\n');
+		const harness = new PiHarness({ binaryPath: bin, timeoutMs: 10_000 });
+		await expect(harness.review(makeContext())).rejects.toThrow(
+			/stdout output exceeded 52428800 byte cap/
+		);
+	});
+
+	it('kills a process when stderr exceeds the 50 MiB cap', async () => {
+		const bin = writeFakePi('#!/bin/sh\nhead -c 52428801 /dev/zero >&2\n');
+		const harness = new PiHarness({ binaryPath: bin, timeoutMs: 10_000 });
+		await expect(harness.review(makeContext())).rejects.toThrow(
+			/stderr output exceeded 52428800 byte cap/
+		);
+	});
+
 	it('reports a clear error when the binary is missing', async () => {
 		const harness = new PiHarness({
 			binaryPath: join(scratchRoot, 'does-not-exist'),

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { main, parseArgs } from '../src/cli.js';
+import { describe, expect, it, vi } from 'vitest';
+import { applyLegacyFilters, main, parseArgs } from '../src/cli.js';
+
 import {
 	FINDING_LIMITS,
 	SEVERITY_ORDER,
@@ -17,6 +18,40 @@ describe('parseArgs', () => {
 
 	it('falls back to pr-review for unknown arguments', () => {
 		expect(parseArgs(['unknown']).action).toBe('pr-review');
+	});
+
+	it('anchors exclude patterns and compiles them once', () => {
+		const result = applyLegacyFilters(
+			['src/a.ts', 'src/a.ts.bak', 'docs/a.ts'],
+			{ excludePatterns: ['src/*.ts'] }
+		);
+		expect(result).toEqual(['src/a.ts.bak', 'docs/a.ts']);
+	});
+
+	it('compiles each exclude pattern once for all filenames', () => {
+		const original = RegExp;
+		let calls = 0;
+		const spy = vi.spyOn(globalThis, 'RegExp').mockImplementation((...args) => {
+			calls += 1;
+			return new original(...args);
+		});
+		try {
+			applyLegacyFilters(['a.ts', 'b.ts', 'c.ts'], {
+				excludePatterns: ['*.ts', '*.md'],
+			});
+			expect(calls).toBe(2);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it('keeps pr-content metadata author explicit', async () => {
+		const { readFile } = await import('node:fs/promises');
+		const action = await readFile(
+			new URL('../../pr-content/action.yml', import.meta.url),
+			'utf8'
+		);
+		expect(action).toContain("author: 'niko0xdev'");
 	});
 });
 
