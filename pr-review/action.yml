@@ -82,6 +82,10 @@ inputs:
     description: 'Reuse a single summary comment per PR (update on re-runs instead of re-posting)'
     required: false
     default: 'true'
+  track-progress:
+    description: 'Emit $GITHUB_STEP_SUMMARY updates as the review walks phases (CCA track_progress analog)'
+    required: false
+    default: 'false'
 
 outputs:
   review-summary:
@@ -124,3 +128,4 @@ runs:
         INPUT_ALLOWED-BOTS: ${{ inputs.allowed-bots }}
         INPUT_EXCLUDE-ACTORS: ${{ inputs.exclude-actors }}
         INPUT_STICKY-SUMMARY: ${{ inputs.sticky-summary }}
+        INPUT_TRACK-PROGRESS: ${{ inputs.track-progress }}

@@ -35380,6 +35380,37 @@ function parsePrContentResponse(response) {
     }
 }
 
+;// CONCATENATED MODULE: ./src/github/progress.ts
+
+
+function trackPhase(phase, detail, options) {
+    if (!options.enabled)
+        return;
+    const stepSummaryPath = process.env.GITHUB_STEP_SUMMARY;
+    const line = `**[progress]** ${phase}: ${detail}\n`;
+    lib_core.info(line.trim());
+    if (!stepSummaryPath)
+        return;
+    try {
+        (0,external_node_fs_namespaceObject.appendFileSync)(stepSummaryPath, line, 'utf8');
+    }
+    catch (error) {
+        lib_core.warning(`[progress] write to $GITHUB_STEP_SUMMARY failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+function writeSummaryBlock(title, lines, options) {
+    if (!options.enabled)
+        return;
+    const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+    if (!summaryPath)
+        return;
+    const block = `## ${title}\n\n${lines.map((l) => `- ${l}`).join('\n')}\n`;
+    try {
+        appendFileSync(summaryPath, block, 'utf8');
+    }
+    catch { }
+}
+
 // EXTERNAL MODULE: external "node:crypto"
 var external_node_crypto_ = __nccwpck_require__(7598);
 ;// CONCATENATED MODULE: ./src/review/dedupe.ts
@@ -37157,6 +37188,7 @@ async function runReview(context, harness, options = {}) {
 
 
 
+
 function positiveTimeout(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -37454,6 +37486,8 @@ async function main(argv) {
         const octokit = toPublisherOctokit(github.getOctokit(legacyOptions.githubToken));
         const prNumber = context.payload.pull_request.number;
         const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
+        const trackEnabled = lib_core.getInput('track-progress') === 'true';
+        trackPhase('fetch', `PR #${prNumber}`, { enabled: trackEnabled });
         const reviewContext = await fetchPrContext(octokit, repoInfo, prNumber);
         reviewContext.repositoryPath =
             process.env.GITHUB_WORKSPACE || process.cwd();
@@ -37461,12 +37495,16 @@ async function main(argv) {
         const maxFiles = Math.min(legacyOptions.maxFiles, Number.parseInt(process.env.AI_REVIEW_MAX_FILES ||
             `${REVIEW_OPTION_DEFAULTS.aiReviewMaxFiles}`, 10));
         reviewContext.diff.files = prioritizeFiles(reviewContext.diff.files.filter((f) => filtered.includes(f.filename) && Boolean(f.patch)), maxFiles);
+        trackPhase('filter', `${reviewContext.diff.files.length} files after filter`, { enabled: trackEnabled });
         if (reviewContext.diff.files.length === 0) {
             lib_core.info('[review] No files to review after filtering');
             return;
         }
         const profiles = resolveProfiles(reviewContext.repositoryPath, process.env.AI_REVIEW_PROFILE);
         reviewContext.profiles = profiles;
+        trackPhase('profiles', profiles.map((p) => p.id).join(', ') || 'auto', {
+            enabled: trackEnabled,
+        });
         const previousConfigDir = process.env.PI_CODING_AGENT_DIR;
         const runtimeConfig = await preparePiRuntimeConfig(llmConfig, {
             profiles: profiles.map((p) => p.id),
@@ -37489,6 +37527,7 @@ async function main(argv) {
             if (prelintResult.ran.length > 0) {
                 lib_core.info(`[prelint] Ran ${prelintResult.ran.join(', ')} — ${prelintResult.findings.length} findings`);
             }
+            trackPhase('harness', 'Pi review start', { enabled: trackEnabled });
             const harness = new PiHarness({
                 timeoutMs: positiveTimeout(process.env.AI_REVIEW_PI_TIMEOUT_MS, 15 * 60_000),
                 model: llmConfig.model,
@@ -37515,6 +37554,7 @@ async function main(argv) {
                 prelintRan: prelintResult.ran,
                 prelintSkipped: prelintResult.skipped,
             };
+            trackPhase('harness', `Pi review done: ${result.findings.length} findings`, { enabled: trackEnabled });
             await publishReview(octokit, {
                 owner: repoInfo.owner,
                 repo: repoInfo.repo,
@@ -37532,6 +37572,7 @@ async function main(argv) {
                     github.context.payload.pull_request?.user?.login ??
                     github.context.actor,
             });
+            trackPhase('publish', 'review published', { enabled: trackEnabled });
             lib_core.setOutput('review-summary', `${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`);
         }
         finally {
