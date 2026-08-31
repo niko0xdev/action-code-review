@@ -108,14 +108,17 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 	}
 }
 
+export function scrubSecrets(text: string): string {
+	return text.replace(
+		/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+|(?:sk-|gh[oprsu]_|xox[abprs]-|AIza|github_pat_)[A-Za-z0-9._~+/=-]*/gi,
+		'[REDACTED-TOKEN]'
+	);
+}
+
 /** Extract response details without leaking Authorization material. */
 export async function safeErrorDetail(response: Response): Promise<string> {
 	const text = await response.text().catch(() => '');
-	const sanitized = text.replace(
-		/(?:sk-|gh[opru]_|Bearer\s+)[A-Za-z0-9._~+/=-]+/gi,
-		'[redacted]'
-	);
-	return sanitized.slice(0, 500);
+	return scrubSecrets(text).slice(0, 500);
 }
 
 /**

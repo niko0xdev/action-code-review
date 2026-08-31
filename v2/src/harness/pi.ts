@@ -12,7 +12,7 @@ import {
 } from './harness.js';
 
 export const PI_READONLY_TOOLS = ['read', 'grep', 'find', 'ls'] as const;
-const MAX_OUTPUT_CHARS = 2_000_000;
+const MAX_OUTPUT_BYTES = 50 * 1024 * 1024;
 export interface PiHarnessOptions {
 	binaryPath?: string;
 	timeoutMs?: number;
@@ -144,37 +144,57 @@ function runPi(params: RunPiParams): Promise<string> {
 		let stdout = '';
 		let stderr = '';
 		let settled = false;
-		const timer = setTimeout(() => {
-			if (!settled) {
-				child.kill('SIGTERM');
-				setTimeout(() => {
-					child.kill('SIGKILL');
-				}, 250);
-				finish(
-					new Error(`Pi review process timed out after ${params.timeoutMs}ms`)
-				);
-			}
-		}, params.timeoutMs);
+		let killTimer: ReturnType<typeof setTimeout> | undefined;
 		const finish = (error?: Error) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
+			if (killTimer) clearTimeout(killTimer);
 			error ? reject(error) : resolve(stdout);
 		};
-		const append = (current: string, chunk: unknown) =>
-			`${current}${String(chunk)}`.slice(-MAX_OUTPUT_CHARS);
+		const timer = setTimeout(() => {
+			if (settled) return;
+			child.kill('SIGTERM');
+			killTimer = setTimeout(() => child.kill('SIGKILL'), 250);
+			finish(
+				new Error(`Pi review process timed out after ${params.timeoutMs}ms`)
+			);
+		}, params.timeoutMs);
+		const killAndFail = (stream: 'stdout' | 'stderr') => {
+			if (settled) return;
+			child.kill('SIGKILL');
+			finish(
+				new Error(`Pi ${stream} output exceeded ${MAX_OUTPUT_BYTES} byte cap`)
+			);
+		};
+		const append = (
+			current: string,
+			chunk: unknown,
+			stream: 'stdout' | 'stderr'
+		) => {
+			const text = String(chunk);
+			if (
+				Buffer.byteLength(current) + Buffer.byteLength(text) >
+				MAX_OUTPUT_BYTES
+			) {
+				killAndFail(stream);
+				return current;
+			}
+			return current + text;
+		};
 		child.stdout.on('data', (chunk) => {
-			stdout = append(stdout, chunk);
+			stdout = append(stdout, chunk, 'stdout');
 		});
 		child.stderr.on('data', (chunk) => {
-			stderr = append(stderr, chunk);
+			stderr = append(stderr, chunk, 'stderr');
 		});
 		child.stdin.on('error', (error) =>
 			finish(new Error(`Failed to write harness prompt: ${error.message}`))
 		);
-		child.on('error', (error) =>
-			finish(new Error(`Failed to start harness: ${error.message}`))
-		);
+		child.on('error', (error) => {
+			clearTimeout(timer);
+			finish(new Error(`Failed to start harness: ${error.message}`));
+		});
 		child.on('close', (code) => {
 			if (settled) return;
 			if (code !== 0)

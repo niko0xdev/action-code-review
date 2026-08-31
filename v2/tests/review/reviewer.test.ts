@@ -175,6 +175,33 @@ describe('runReview', () => {
 		expect(result.findings.map((f) => f.title)).toEqual(['Good anchor']);
 	});
 
+	it('caps findings from each harness result before aggregation', async () => {
+		const findings = Array.from({ length: 10_000 }, (_, index) => ({
+			severity: 'low' as const,
+			confidence: 0.9,
+			category: 'correctness' as const,
+			path: 'a.ts',
+			line: 2,
+			title: `finding ${index}`,
+			description: 'd',
+			impact: 'i',
+		}));
+		const harness: ReviewHarness = {
+			name: 'large',
+			async review(): Promise<ReviewResult> {
+				return {
+					findings,
+					summary: '',
+					risk: 'low',
+					counts: { critical: 0, high: 0, medium: 0, low: findings.length },
+					filesReviewed: [],
+				};
+			},
+		};
+		const result = await runReview(makeContext(['a.ts']), harness);
+		expect(result.findings.length).toBeLessThanOrEqual(20);
+	});
+
 	it('propagates harness failures with diagnostics', async () => {
 		const harness: ReviewHarness = {
 			name: 'fake',

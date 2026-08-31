@@ -1,4 +1,9 @@
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { main } from '../cli.js';
+
+const entryPath = resolve(fileURLToPath(import.meta.url));
+const invokedPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
 
 /**
  * Entry bundle for the pr-review compatibility adapter. The adapter's
@@ -7,11 +12,7 @@ import { main } from '../cli.js';
 export { main };
 export default main;
 
-// Execute when run as the action entry process.
-if (
-	process.argv[1] &&
-	import.meta.url.endsWith(process.argv[1].split('/').pop() ?? '')
-) {
+if (invokedPath === entryPath) {
 	main(['pr-review']).catch((error) => {
 		// eslint-disable-next-line no-console
 		console.error(error);

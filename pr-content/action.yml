@@ -1,6 +1,6 @@
 name: 'Auto-update PR Content'
 description: 'Automatically update pull request title and description using AI based on code changes'
-author: 'AI Assistant'
+author: 'niko0xdev'
 inputs:
   github-token:
     description: 'GitHub token for API access'
