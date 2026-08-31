@@ -100,3 +100,95 @@ describe('buildFindingBody', () => {
 		expect(body).toContain(`ai-review-id:${normalizeCommentId(item)}`);
 	});
 });
+
+describe('buildSummaryBody - tool findings + diagnostics (Q3)', () => {
+	const base = {
+		risk: 'medium' as const,
+		counts: { critical: 0, high: 1, medium: 2, low: 0 },
+		filesReviewed: ['a.ts'],
+		model: 'test-model',
+	};
+
+	it('omits details blocks when neither toolFindings nor diagnostics provided', () => {
+		const body = buildSummaryBody(base);
+		expect(body).not.toContain('<details>');
+	});
+
+	it('renders toolFindings in collapsible block', () => {
+		const body = buildSummaryBody({
+			...base,
+			toolFindings: [
+				{
+					tool: 'biome',
+					code: 'no-unused',
+					path: 'src/a.ts',
+					line: 4,
+					severity: 'medium',
+					message: 'unused var',
+				},
+			],
+		});
+		expect(body).toContain('<details><summary>Static analyzer findings</summary>');
+		expect(body).toContain('[`biome/no-unused`]');
+		expect(body).toContain('src/a.ts:4');
+		expect(body).toContain('</details>');
+	});
+
+	it('truncates long toolFindings lists with "more" line', () => {
+		const many = Array.from({ length: 25 }, (_, i) => ({
+			tool: 'biome',
+			code: `R${i}`,
+			path: `src/f${i}.ts`,
+			line: i + 1,
+			severity: 'low' as const,
+			message: `m ${i}`,
+		}));
+		const body = buildSummaryBody({ ...base, toolFindings: many });
+		expect(body).toContain('... and 5 more');
+	});
+
+	it('renders diagnostics in collapsible block', () => {
+		const body = buildSummaryBody({
+			...base,
+			diagnostics: {
+				prelintRan: ['biome', 'ruff'],
+				prelintSkipped: ['swiftlint (binary not found)'],
+				bucketedUnknownCategories: 1,
+				crossFindingConflictsResolved: 0,
+				trivialPrFastPath: false,
+			},
+		});
+		expect(body).toContain('<details><summary>Pipeline diagnostics</summary>');
+		expect(body).toContain('**Tools ran:** biome, ruff');
+		expect(body).toContain('**Tools skipped:** swiftlint (binary not found)');
+		expect(body).toContain('**Bucketed (unknown category -> low):** 1');
+		expect(body).toContain('**Trivial-PR fast path:** no');
+	});
+
+	it('omits diagnostics block when all fields undefined', () => {
+		const body = buildSummaryBody({
+			...base,
+			diagnostics: {},
+		});
+		expect(body).not.toContain('Pipeline diagnostics');
+	});
+
+	it('escapes malicious tool finding content', () => {
+		const body = buildSummaryBody({
+			...base,
+			toolFindings: [
+				{
+					tool: 'biome',
+					code: '<script>',
+					path: 'src/a.ts',
+					line: 1,
+					severity: 'medium',
+					message: '<img onerror=alert(1)>',
+				},
+			],
+		});
+		expect(body).not.toContain('<script>');
+		expect(body).toContain('&lt;script&gt;');
+		expect(body).toContain('&lt;img onerror=alert(1)&gt;');
+	});
+});

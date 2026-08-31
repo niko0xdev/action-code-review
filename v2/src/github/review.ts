@@ -217,6 +217,8 @@ export async function publishReview(
 		durationMs: params.durationMs,
 		filesTotal: params.filesTotal,
 		filesExcluded: params.filesExcluded,
+		toolFindings: result.toolFindings,
+		diagnostics: result.diagnostics,
 	})}\n\n${marker}`;
 	if (params.stickySummary) {
 		const existing = await findStickyComment(
@@ -437,12 +439,14 @@ export function buildJobSummary(input: {
 	durationMs?: number;
 	filesReviewed: string[];
 	result: Pick<ReviewResult, 'counts' | 'risk'> & { findings: unknown[] };
+	toolFindings?: ReviewResult['toolFindings'];
+	diagnostics?: ReviewResult['diagnostics'];
 }): string {
 	const seconds =
 		input.durationMs !== undefined
 			? `${Math.round(input.durationMs / 1000)}s`
 			: 'n/a';
-	return [
+	const lines: string[] = [
 		'## AI Review V2',
 		'',
 		`- **Model:** ${input.model ?? 'unknown'}`,
@@ -450,5 +454,83 @@ export function buildJobSummary(input: {
 		`- **Review duration:** ${seconds}`,
 		`- **Files reviewed:** ${input.filesReviewed.length}`,
 		`- **Findings:** Critical ${input.result.counts.critical} · High ${input.result.counts.high} · Medium ${input.result.counts.medium} · Low ${input.result.counts.low}`,
-	].join('\n');
+	];
+	// Q3 decision: surface tool findings + diagnostics in a collapsible
+	// section so users can verify what static analyzers ran and what
+	// they caught. Always rendered (collapsed by default) so the
+	// summary stays compact in the headline view.
+	if (
+		(input.toolFindings && input.toolFindings.length > 0) ||
+		input.diagnostics
+	) {
+		lines.push('');
+		lines.push(renderToolFindingsSection(input.toolFindings, input.diagnostics));
+	}
+	return lines.join('\n');
+}
+
+/**
+ * Render the collapsible diagnostics block (tool findings + pipeline
+ * metadata). Mirrors how CodeRabbit / PR-Agent show tool output:
+ * always present, collapsed by default in GitHub's `<details>` widget.
+ */
+export function renderToolFindingsSection(
+	toolFindings: ReviewResult['toolFindings'],
+	diagnostics: ReviewResult['diagnostics']
+): string {
+	const summaryLabel = diagnostics?.prelintRan?.length
+		? `Tool findings (${diagnostics.prelintRan.join(', ')})`
+		: 'Tool findings';
+	const lines: string[] = [`<details><summary>${summaryLabel}</summary>`, ''];
+	if (diagnostics) {
+		const diagLines: string[] = [];
+		if (diagnostics.prelintRan?.length) {
+			diagLines.push(
+				`- **Tools ran:** ${diagnostics.prelintRan.join(', ')}`
+			);
+		}
+		if (diagnostics.prelintSkipped?.length) {
+			diagLines.push(
+				`- **Tools skipped:** ${diagnostics.prelintSkipped.join(', ')}`
+			);
+		}
+		if (diagnostics.toolFindingsTotal !== undefined) {
+			diagLines.push(`- **Tool findings total:** ${diagnostics.toolFindingsTotal}`);
+		}
+		if (diagnostics.bucketedUnknownCategories !== undefined) {
+			diagLines.push(
+				`- **Bucketed (unknown category -> low):** ${diagnostics.bucketedUnknownCategories}`
+			);
+		}
+		if (diagnostics.crossFindingConflictsResolved !== undefined) {
+			diagLines.push(
+				`- **Cross-finding conflicts resolved:** ${diagnostics.crossFindingConflictsResolved}`
+			);
+		}
+		if (diagnostics.trivialPrFastPath !== undefined) {
+			diagLines.push(
+				`- **Trivial-PR fast path:** ${diagnostics.trivialPrFastPath ? 'yes' : 'no'}`
+			);
+		}
+		if (diagLines.length > 0) {
+			lines.push('### Pipeline diagnostics', '');
+			lines.push(...diagLines);
+			lines.push('');
+		}
+	}
+	if (toolFindings && toolFindings.length > 0) {
+		lines.push('### Static analyzer findings', '');
+		const top = toolFindings.slice(0, 20);
+		for (const finding of top) {
+			lines.push(
+				`- [${finding.tool}/${finding.code}] \`${finding.path}:${finding.line}\` (${finding.severity}) ${finding.message}`
+			);
+		}
+		if (toolFindings.length > top.length) {
+			lines.push(`- ... and ${toolFindings.length - top.length} more`);
+		}
+		lines.push('');
+	}
+	lines.push('</details>');
+	return lines.join('\n');
 }
