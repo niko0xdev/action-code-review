@@ -77,7 +77,7 @@ async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResp
             }
         }
         // Validate response
-        if (!update?.title || !update?.description) {
+        if (!update.title || !update.description) {
             throw new Error('AI response missing required fields: title and description');
         }
         // Get current PR to compare
@@ -87,26 +87,26 @@ async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResp
             pull_number: pullNumber,
         });
         // If we have a template, use the AI-generated description to fill it in
-        let finalDescription = update?.description;
+        let finalDescription = update.description;
         if (templateContent) {
             // Try to extract the description from the AI response if it's in a template format
             // Otherwise, use the description as is
-            if (update?.description.includes('## Description')) {
-                finalDescription = update?.description;
+            if (update.description.includes('## Description')) {
+                finalDescription = update.description;
             }
             else {
                 // Fill the template with the AI-generated description
-                finalDescription = templateContent.replace(/<!-- AI will fill this section with a description of what changed -->/, update?.description);
+                finalDescription = templateContent.replace(/<!-- AI will fill this section with a description of what changed -->/, update.description);
                 // Also fill in the testing section if the AI provided it
-                if (update?.description.includes('## How Has This Been Tested')) {
-                    const testingMatch = update?.description.match(/## How Has This Been Tested\s*\n([\s\S]*?)(?=\n##|\n\n|$)/);
+                if (update.description.includes('## How Has This Been Tested')) {
+                    const testingMatch = update.description.match(/## How Has This Been Tested\s*\n([\s\S]*?)(?=\n##|\n\n|$)/);
                     if (testingMatch) {
                         finalDescription = finalDescription.replace(/<!-- AI will fill this section with testing information -->/, testingMatch[1].trim());
                     }
                 }
             }
         }
-        const hasChanges = currentPR.data.title !== update?.title ||
+        const hasChanges = currentPR.data.title !== update.title ||
             currentPR.data.body !== finalDescription;
         if (!hasChanges) {
             core.info('No changes needed - PR content is already optimal');
@@ -117,10 +117,10 @@ async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResp
             owner,
             repo,
             pull_number: pullNumber,
-            title: update?.title,
+            title: update.title,
             body: finalDescription,
         });
-        core.info(`Updated PR title: "${update?.title}"`);
+        core.info(`Updated PR title: "${update.title}"`);
         core.info(`Updated PR description: ${finalDescription.substring(0, 100)}...`);
     }
     catch (error) {
@@ -340,7 +340,7 @@ function createSystemPrompt(customInstructions, templateContent) {
         'Do not include markdown code fences in your response.',
     ];
     if (templateContent) {
-        basePrompt.push('Use the following pull request template as the base for the description. ', 'Fill in the template sections with appropriate content based on the code changes. ', 'Preserve the template structure and formatting, only fill in the content sections.\n\n', `Template:\n${templateContent}`);
+        basePrompt.push(`Use the following pull request template as the base for the description. `, `Fill in the template sections with appropriate content based on the code changes. `, `Preserve the template structure and formatting, only fill in the content sections.\n\n`, `Template:\n${templateContent}`);
     }
     if (customInstructions) {
         basePrompt.push(`Additional instructions: ${customInstructions}`);
@@ -414,13 +414,32 @@ exports.runViaV2IfAvailable = runViaV2IfAvailable;
 const node_fs_1 = __nccwpck_require__(3024);
 const node_path_1 = __nccwpck_require__(6760);
 const core = __importStar(__nccwpck_require__(6966));
+/**
+ * V2 delegation bridge for pr-content.
+ *
+ * Mirrors `pr-review/src/v2Delegate.ts`. Resolves the V2 entry bundle
+ * relative to `GITHUB_ACTION_PATH` (the action checkout) so the V2
+ * engine is found at runtime regardless of the consumer repo's CWD.
+ *
+ * The V2 dist lives at `<action-repo>/v2/dist/entry/pr-content.js`,
+ * i.e. next to this compiled `dist/index.js`.
+ */
 const V2_ENTRY_CANDIDATES = [
     'v2/dist/entry/pr-content.js',
     '../v2/dist/entry/pr-content.js',
+    '../../v2/dist/entry/pr-content.js',
 ];
+function resolveBaseDir() {
+    const fromEnv = process.env.GITHUB_ACTION_PATH;
+    if (fromEnv && (0, node_path_1.isAbsolute)(fromEnv)) {
+        return fromEnv;
+    }
+    return process.cwd();
+}
 function resolveV2Entry(baseDir) {
+    const root = baseDir ?? resolveBaseDir();
     for (const candidate of V2_ENTRY_CANDIDATES) {
-        const full = (0, node_path_1.resolve)(baseDir ?? process.cwd(), candidate);
+        const full = (0, node_path_1.resolve)(root, candidate);
         if ((0, node_fs_1.existsSync)(full))
             return full;
     }
@@ -429,7 +448,9 @@ function resolveV2Entry(baseDir) {
 async function runViaV2IfAvailable() {
     const entry = resolveV2Entry();
     if (!entry) {
-        core.info('V2 engine not present; running V1 content flow.');
+        core.info(`V2 engine not present; running V1 content flow. (searched ${process.env.GITHUB_ACTION_PATH
+            ? `GITHUB_ACTION_PATH=${process.env.GITHUB_ACTION_PATH}`
+            : `cwd=${process.cwd()}`})`);
         return false;
     }
     core.info('Delegating PR content to the V2 engine.');
