@@ -42,7 +42,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.updatePullRequestContent = updatePullRequestContent;
 const core = __importStar(__nccwpck_require__(6966));
-async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResponse, templateContent) {
+async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResponse, templateContent, model) {
     try {
         // Parse AI response
         let update;
@@ -112,13 +112,19 @@ async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResp
             core.info('No changes needed - PR content is already optimal');
             return;
         }
+        // Append a custom footer so reviewers can see which model produced
+        // the description (GitHub's default footer only shows the actor name,
+        // which is "unknown" for personal-access-token runs).
+        const footerSeparator = '\n\n---\n\n';
+        const footer = `_Auto-generated with \`${model ?? 'gpt-4'}\` by AI Code Review_`;
+        const finalBody = `${finalDescription}${footerSeparator}${footer}`;
         // Update PR
         await octokit.rest.pulls.update({
             owner,
             repo,
             pull_number: pullNumber,
             title: update.title,
-            body: finalDescription,
+            body: finalBody,
         });
         core.info(`Updated PR title: "${update.title}"`);
         core.info(`Updated PR description: ${finalDescription.substring(0, 100)}...`);
@@ -286,7 +292,7 @@ async function run() {
         // in markdown code fences or surrounded by prose; if it still fails,
         // retry once with the larger budget to recover from truncation.
         try {
-            await (0, contentUpdater_1.updatePullRequestContent)(octokit, owner, repo, pullNumber, response, templateContent);
+            await (0, contentUpdater_1.updatePullRequestContent)(octokit, owner, repo, pullNumber, response, templateContent, model);
         }
         catch (parseError) {
             core.warning(`First parse failed (${parseError instanceof Error ? parseError.message : String(parseError)}); retrying with max_tokens=4096`);
@@ -303,9 +309,9 @@ async function run() {
             if (!retryResponse) {
                 throw parseError;
             }
-            await (0, contentUpdater_1.updatePullRequestContent)(octokit, owner, repo, pullNumber, retryResponse, templateContent);
+            await (0, contentUpdater_1.updatePullRequestContent)(octokit, owner, repo, pullNumber, retryResponse, templateContent, model);
         }
-        core.info('Successfully updated pull request content');
+        core.info(`Successfully updated pull request content (model: ${model})`);
     }
     catch (error) {
         if (error instanceof Error) {
