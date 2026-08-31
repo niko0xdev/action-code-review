@@ -1,4 +1,5 @@
 import type { ProfileId } from '../types/context.js';
+import { SQL_RULES } from './sql.js';
 
 export const UNIVERSAL_RULES = [
 	'Review for: correctness, security, regression, error handling, data integrity, concurrency, performance, maintainability, testing impact, backward compatibility.',
@@ -23,6 +24,18 @@ const PROFILE_RULES: Record<ProfileId, string> = {
 		'- semantic HTML, keyboard navigation, form labels',
 		'- focus behavior, ARIA misuse',
 		'React 19: forms, actions, optimistic state, server/client boundaries.',
+		'TailwindCSS:',
+		'- dynamic class concatenation breaking purge (e.g. clsx(`text-${color}`), `bg-${variant}`)',
+		'- @apply overuse that bloats CSS and hides token drift',
+		'- dynamic class lookup via object key without safelist',
+		'Shadcn/Radix:',
+		'- controlled vs uncontrolled Dialog/Select state mismatch',
+		'- portal mount missing or double-mount causing hydration flash',
+		'- ref forwarding (forwardRef) missing on primitives',
+		'- Dialog/Select open state not tied to source of truth',
+		'Serialization boundary:',
+		'- non-serializable props passed from Server to Client components (Date, Map, function, class instance)',
+		'- server-only imports leaked into client bundle',
 		'Avoid subjective visual design comments unless a functional UX problem is clear.',
 	].join('\n'),
 	nextjs: [
@@ -34,6 +47,9 @@ const PROFILE_RULES: Record<ProfileId, string> = {
 		'- cache semantics, dynamic vs static rendering',
 		'NextJS 15: cache components, revalidation, parallel routes, intercepting routes.',
 		'- metadata, image optimization',
+		'- heavy client components must use dynamic() with ssr:false or loading boundary',
+		'- fetch without revalidate / cache directive → stale data or over-fetch',
+		'- route segment config (dynamic, revalidate, fetchCache, runtime) mismatch',
 	].join('\n'),
 	nestjs: [
 		'NestJS/NodeJS backend specifics:',
@@ -79,6 +95,10 @@ const PROFILE_RULES: Record<ProfileId, string> = {
 		'- UI thread safety, SwiftUI state management, UIKit lifecycle',
 		'- networking and persistence correctness, API compatibility',
 		'Particularly inspect Task/TaskGroup lifecycles, actor boundaries, Observable/ObservableObject/State/StateObject/Binding usage.',
+		'- force unwrap (!) and force cast (as!) — common crash class, must guard or use guard/if let',
+		'- Combine: AnyCancellable must be retained (store(in: &cancellables)); sink without retention silently drops',
+		'- hardcoded user-facing strings not using LocalizedStringKey / String(localized:) → i18n gap',
+		'- @Observable (iOS 17+) vs ObservableObject must be consistent; mixing causes observation breakage',
 		'Focus on functional problems rather than Swift style preferences.',
 	].join('\n'),
 	kotlin: [
@@ -91,6 +111,10 @@ const PROFILE_RULES: Record<ProfileId, string> = {
 		'- memory leaks, context leaks, null safety',
 		'- Room transactions, networking, permissions',
 		'Pay particular attention to GlobalScope usage, incorrect Dispatchers, lifecycle-unaware collection, unbounded coroutine creation, incorrect remember usage.',
+		'- Compose: rememberSaveable vs remember — configuration change survival; key parameter correctness',
+		'- WorkManager: uniqueWork conflict policy (APPEND vs REPLACE), missing network/battery constraints',
+		'- LiveData vs Flow consistency — mixing in same ViewModel causes dual source of truth',
+		'- R8/ProGuard: @Keep or keep rules for reflection libs (Moshi, Gson, kotlinx.serialization)',
 	].join('\n'),
 	typescript: [
 		'TypeScript specifics:',
@@ -107,6 +131,8 @@ const PROFILE_RULES: Record<ProfileId, string> = {
 		'JavaScript ES2024: new built-ins, RegExp.escape, Object.groupBy, and runtime target support.',
 		'- missing error handling in async flows',
 	].join('\n'),
+	postgres: SQL_RULES,
+	mysql: SQL_RULES,
 };
 
 export function profileRules(profileId: ProfileId): string {

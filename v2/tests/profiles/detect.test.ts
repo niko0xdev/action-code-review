@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+	combinedRules,
 	detectProfiles,
 	profileRules,
 	resolveProfiles,
@@ -122,6 +123,80 @@ describe('detectProfiles (spec §9)', () => {
 		const a = detectProfiles(repo);
 		const b = detectProfiles(repo);
 		expect(a).toEqual(b);
+	});
+});
+
+describe('detectProfiles — SQL (postgres/mysql)', () => {
+	it('detects postgres via Prisma schema + .sql migration', () => {
+		const repo = makeRepo({
+			'prisma/schema.prisma': 'datasource db { provider = "postgresql" }',
+			'migrations/001_init.sql': 'CREATE TABLE users (id SERIAL PRIMARY KEY);',
+		});
+		expect(detectProfiles(repo).map((p) => p.id)).toContain('postgres');
+	});
+
+	it('detects postgres via drizzle.config + .sql file', () => {
+		const repo = makeRepo({
+			'drizzle.config.ts': 'export default {}',
+			'queries/init.sql': 'SELECT 1;',
+		});
+		expect(detectProfiles(repo).map((p) => p.id)).toContain('postgres');
+	});
+
+	it('detects postgres via migrations directory + .sql file', () => {
+		const repo = makeRepo({
+			'migrations/001_add_index.sql': 'CREATE INDEX idx ON users(email);',
+			'src/data.sql': 'SELECT * FROM users;',
+		});
+		// migrations dir exists + .sql files present
+		expect(detectProfiles(repo).map((p) => p.id)).toContain('postgres');
+	});
+
+	it('detects mysql via mysql2 in package.json + .sql file', () => {
+		const repo = makeRepo({
+			'package.json': '{"dependencies": {"mysql2": "^3.0.0"}}',
+			'db/schema.sql': 'CREATE TABLE users (id INT PRIMARY KEY);',
+		});
+		expect(detectProfiles(repo).map((p) => p.id)).toContain('mysql');
+	});
+
+	it('detects mysql via .my.cnf + .sql file', () => {
+		const repo = makeRepo({
+			'.my.cnf': '[client]\nuser=root',
+			'dump.sql': 'SELECT 1;',
+		});
+		expect(detectProfiles(repo).map((p) => p.id)).toContain('mysql');
+	});
+
+	it('does NOT detect postgres/mysql when only docs/fixtures .sql present (false-positive guard)', () => {
+		const repo = makeRepo({
+			'docs/fixtures/data.sql': 'SELECT * FROM example;',
+			'README.md': '# docs',
+		});
+		const ids = detectProfiles(repo).map((p) => p.id);
+		expect(ids).not.toContain('postgres');
+		expect(ids).not.toContain('mysql');
+	});
+
+	it('does NOT detect mysql without .sql files even if mysql2 present', () => {
+		const repo = makeRepo({
+			'package.json': '{"dependencies": {"mysql2": "^3.0.0"}}',
+			'src/index.ts': 'console.log(1)',
+		});
+		expect(detectProfiles(repo).map((p) => p.id)).not.toContain('mysql');
+	});
+
+	it('combined rules include postgres-specific SQL injection marker', () => {
+		const rules = combinedRules(['postgres']);
+		expect(rules).toContain('SQL injection');
+		expect(rules).toContain('CONCURRENTLY');
+	});
+
+	it('postgres and mysql share the same rule set', () => {
+		expect(combinedRules(['postgres'])).toEqual(combinedRules(['mysql']));
+		expect(profileRules('postgres' as never)).toEqual(
+			profileRules('mysql' as never)
+		);
 	});
 });
 

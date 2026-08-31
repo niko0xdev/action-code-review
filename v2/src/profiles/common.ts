@@ -155,6 +155,29 @@ const SIGNALS: DetectionSignal[] = [
 		evidence: '*.js sources present',
 		test: (repo) => hasSourceWithExtension(repo, '.js'),
 	},
+	{
+		id: 'postgres',
+		evidence:
+			'*.sql + prisma/schema.prisma or drizzle.config.* or prisma/ or drizzle/ or migrations/ or knexfile.* or typeorm',
+		test: (repo) =>
+			hasSourceWithExtension(repo, '.sql') &&
+			(hasFile(repo, 'prisma/schema.prisma') ||
+				hasMatchingFile(repo, '.', /^drizzle\.config\./) ||
+				existsSync(join(repo, 'prisma')) ||
+				existsSync(join(repo, 'drizzle')) ||
+				existsSync(join(repo, 'migrations')) ||
+				hasMatchingFile(repo, '.', /^knexfile\./) ||
+				packageDependency(repo, 'typeorm')),
+	},
+	{
+		id: 'mysql',
+		evidence: '*.sql + mysql2/mysql dependency or .my.cnf',
+		test: (repo) =>
+			hasSourceWithExtension(repo, '.sql') &&
+			(packageDependency(repo, 'mysql2') ||
+				packageDependency(repo, 'mysql') ||
+				existsSync(join(repo, '.my.cnf'))),
+	},
 ];
 
 export function detectProfiles(repositoryPath: string): DetectedProfile[] {

@@ -35828,6 +35828,26 @@ const SIGNALS = [
         evidence: '*.js sources present',
         test: (repo) => hasSourceWithExtension(repo, '.js'),
     },
+    {
+        id: 'postgres',
+        evidence: '*.sql + prisma/schema.prisma or drizzle.config.* or prisma/ or drizzle/ or migrations/ or knexfile.* or typeorm',
+        test: (repo) => hasSourceWithExtension(repo, '.sql') &&
+            (hasFile(repo, 'prisma/schema.prisma') ||
+                hasMatchingFile(repo, '.', /^drizzle\.config\./) ||
+                (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, 'prisma')) ||
+                (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, 'drizzle')) ||
+                (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, 'migrations')) ||
+                hasMatchingFile(repo, '.', /^knexfile\./) ||
+                packageDependency(repo, 'typeorm')),
+    },
+    {
+        id: 'mysql',
+        evidence: '*.sql + mysql2/mysql dependency or .my.cnf',
+        test: (repo) => hasSourceWithExtension(repo, '.sql') &&
+            (packageDependency(repo, 'mysql2') ||
+                packageDependency(repo, 'mysql') ||
+                (0,external_node_fs_namespaceObject.existsSync)((0,external_node_path_namespaceObject.join)(repo, '.my.cnf'))),
+    },
 ];
 function detectProfiles(repositoryPath) {
     const found = new Map();
@@ -35843,7 +35863,43 @@ function detectProfiles(repositoryPath) {
     return [...found.values()];
 }
 
+;// CONCATENATED MODULE: ./src/profiles/sql.ts
+const SQL_RULES = [
+    'PostgreSQL/MySQL specifics:',
+    'SQL injection:',
+    '- never concatenate user input into raw queries; use parameterized queries / ORM safe APIs',
+    '- flag string interpolation or template literals in knex.raw, prisma.$queryRawUnsafe, drizzle sql tag, typeorm query()',
+    '- ORM raw fallback (prisma.$queryRaw, drizzle.execute, typeorm.manager.query) must use bound params',
+    'Indexing:',
+    '- new WHERE/JOIN/filter columns without index → flag as performance',
+    '- SELECT * without LIMIT → flag, especially on large tables',
+    '- missing WHERE on UPDATE/DELETE → critical correctness',
+    '- low-selectivity index removed or predicate changed → verify query patterns',
+    '- partial index predicate must match actual queries; check LIKE prefix vs full scan',
+    'Migration safety:',
+    '- ALTER TABLE on large table without CONCURRENTLY / online DDL → lock duration risk',
+    '- CREATE INDEX must be CONCURRENTLY (Postgres) on production tables',
+    '- DROP COLUMN: verify no app code still references it (cross-stack grep)',
+    '- RENAME column/table → coordination risk (deploy ordering)',
+    '- irreversible DDL (DROP, TRUNCATE) without backwards-compatible step → flag',
+    '- NOT NULL added without DEFAULT/backfill on existing rows → will fail on large tables',
+    'ORM-specific:',
+    '- Prisma: nested include deeper than 2 levels → N+1 risk; prefer select with explicit depth',
+    '- Drizzle: with:{} chain depth check; unbounded with without limit',
+    '- TypeORM: relations:[] without loadEagerRelations:false can silently join too much',
+    '- Knex/raw: string interpolation detected → SQL injection',
+    'Pool/timeout:',
+    '- pool size vs expected concurrency; missing statement_timeout / idleTimeout',
+    '- connection not released in finally → leak under errors',
+    '- long-running query without timeout on user-facing path',
+    'MySQL specifics:',
+    '- implicit type conversion (VARCHAR = INT) bypasses index → flag',
+    '- GROUP BY with non-aggregated columns under ONLY_FULL_GROUP_BY',
+    '- missing FOR UPDATE / locking read when transaction expects it',
+].join('\n');
+
 ;// CONCATENATED MODULE: ./src/profiles/rules.ts
+
 const UNIVERSAL_RULES = [
     'Review for: correctness, security, regression, error handling, data integrity, concurrency, performance, maintainability, testing impact, backward compatibility.',
     'Do NOT produce findings solely for formatting, personal style preference, naming preference, lint issues already enforced automatically, unchanged legacy code, or pure speculation.',
@@ -35866,6 +35922,18 @@ const PROFILE_RULES = {
         '- semantic HTML, keyboard navigation, form labels',
         '- focus behavior, ARIA misuse',
         'React 19: forms, actions, optimistic state, server/client boundaries.',
+        'TailwindCSS:',
+        '- dynamic class concatenation breaking purge (e.g. clsx(`text-${color}`), `bg-${variant}`)',
+        '- @apply overuse that bloats CSS and hides token drift',
+        '- dynamic class lookup via object key without safelist',
+        'Shadcn/Radix:',
+        '- controlled vs uncontrolled Dialog/Select state mismatch',
+        '- portal mount missing or double-mount causing hydration flash',
+        '- ref forwarding (forwardRef) missing on primitives',
+        '- Dialog/Select open state not tied to source of truth',
+        'Serialization boundary:',
+        '- non-serializable props passed from Server to Client components (Date, Map, function, class instance)',
+        '- server-only imports leaked into client bundle',
         'Avoid subjective visual design comments unless a functional UX problem is clear.',
     ].join('\n'),
     nextjs: [
@@ -35877,6 +35945,9 @@ const PROFILE_RULES = {
         '- cache semantics, dynamic vs static rendering',
         'NextJS 15: cache components, revalidation, parallel routes, intercepting routes.',
         '- metadata, image optimization',
+        '- heavy client components must use dynamic() with ssr:false or loading boundary',
+        '- fetch without revalidate / cache directive → stale data or over-fetch',
+        '- route segment config (dynamic, revalidate, fetchCache, runtime) mismatch',
     ].join('\n'),
     nestjs: [
         'NestJS/NodeJS backend specifics:',
@@ -35922,6 +35993,10 @@ const PROFILE_RULES = {
         '- UI thread safety, SwiftUI state management, UIKit lifecycle',
         '- networking and persistence correctness, API compatibility',
         'Particularly inspect Task/TaskGroup lifecycles, actor boundaries, Observable/ObservableObject/State/StateObject/Binding usage.',
+        '- force unwrap (!) and force cast (as!) — common crash class, must guard or use guard/if let',
+        '- Combine: AnyCancellable must be retained (store(in: &cancellables)); sink without retention silently drops',
+        '- hardcoded user-facing strings not using LocalizedStringKey / String(localized:) → i18n gap',
+        '- @Observable (iOS 17+) vs ObservableObject must be consistent; mixing causes observation breakage',
         'Focus on functional problems rather than Swift style preferences.',
     ].join('\n'),
     kotlin: [
@@ -35934,6 +36009,10 @@ const PROFILE_RULES = {
         '- memory leaks, context leaks, null safety',
         '- Room transactions, networking, permissions',
         'Pay particular attention to GlobalScope usage, incorrect Dispatchers, lifecycle-unaware collection, unbounded coroutine creation, incorrect remember usage.',
+        '- Compose: rememberSaveable vs remember — configuration change survival; key parameter correctness',
+        '- WorkManager: uniqueWork conflict policy (APPEND vs REPLACE), missing network/battery constraints',
+        '- LiveData vs Flow consistency — mixing in same ViewModel causes dual source of truth',
+        '- R8/ProGuard: @Keep or keep rules for reflection libs (Moshi, Gson, kotlinx.serialization)',
     ].join('\n'),
     typescript: [
         'TypeScript specifics:',
@@ -35950,6 +36029,8 @@ const PROFILE_RULES = {
         'JavaScript ES2024: new built-ins, RegExp.escape, Object.groupBy, and runtime target support.',
         '- missing error handling in async flows',
     ].join('\n'),
+    postgres: SQL_RULES,
+    mysql: SQL_RULES,
 };
 function profileRules(profileId) {
     const specific = PROFILE_RULES[profileId];
@@ -35975,6 +36056,8 @@ const PROFILE_IDS = new Set([
     'python',
     'swift',
     'kotlin',
+    'postgres',
+    'mysql',
 ]);
 function isProfileId(id) {
     return PROFILE_IDS.has(id);

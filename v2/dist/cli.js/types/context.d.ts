@@ -40,7 +40,7 @@ export interface DetectedProfile {
     /** Detection signals that fired, e.g. ["package.json:next dependency"]. */
     evidence: string[];
 }
-export type ProfileId = 'react' | 'nextjs' | 'typescript' | 'javascript' | 'nestjs' | 'nodejs' | 'python' | 'swift' | 'kotlin';
+export type ProfileId = 'react' | 'nextjs' | 'typescript' | 'javascript' | 'nestjs' | 'nodejs' | 'python' | 'swift' | 'kotlin' | 'postgres' | 'mysql';
 export interface ReviewContext {
     repository: RepositoryInfo;
     pullRequest: PullRequestInfo;
