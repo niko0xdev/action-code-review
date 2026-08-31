@@ -35563,7 +35563,37 @@ function footerLine(model) {
     return `_Auto-generated with \`${mdSafe(model)}\` by [AI Code Review](https://github.com/niko0xdev/action-code-review) · ${run}_`;
 }
 
+;// CONCATENATED MODULE: ./src/github/permissions.ts
+
+function isBotActor(actor) {
+    return actor.endsWith('[bot]');
+}
+async function hasWritePermission(octokit, owner, repo, actor) {
+    if (!actor)
+        return true;
+    if (isBotActor(actor))
+        return true;
+    const repos = octokit.rest?.repos;
+    const method = repos?.getCollaboratorPermissionLevel;
+    if (!method) {
+        lib_core.warning('[review] getCollaboratorPermissionLevel not available — assuming write permission');
+        return true;
+    }
+    try {
+        const { data } = await method({ owner, repo, username: actor });
+        const perm = data.permission;
+        lib_core.info(`[review] Permission for ${actor}: ${perm}`);
+        return perm === 'admin' || perm === 'write';
+    }
+    catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        lib_core.warning(`[review] Permission check failed for ${actor}: ${msg}`);
+        return false;
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/github/review.ts
+
 
 
 
@@ -35585,6 +35615,13 @@ function buildReviewPayload(findings, headSha, options = {}) {
 }
 async function publishReview(octokit, params) {
     const { owner, repo, prNumber, headSha, result } = params;
+    let hasWrite = true;
+    if (params.requireWritePermissions && params.actor) {
+        hasWrite = await hasWritePermission(octokit, owner, repo, params.actor);
+        if (!hasWrite) {
+            lib_core.warning(`[review] Actor ${params.actor} lacks write permission — skipping APPROVE/REQUEST_CHANGES escalation (review still posted).`);
+        }
+    }
     const existingIds = await fetchExistingCommentIds(octokit, owner, repo, prNumber);
     const findings = result.findings.filter((finding) => !existingIds.has(dedupe_normalizeCommentId(finding)));
     const hasBlockingFinding = findings.some((finding) => finding.severity !== 'low');
@@ -35644,7 +35681,7 @@ async function publishReview(octokit, params) {
             filesExcluded: params.filesExcluded,
         }),
     });
-    if (findings.length === 0 || !hasBlockingFinding) {
+    if (hasWrite && (findings.length === 0 || !hasBlockingFinding)) {
         try {
             await octokit.rest.pulls.createReview({
                 owner,
@@ -36958,6 +36995,13 @@ function toPublisherOctokit(client) {
     return {
         rest: {
             pulls,
+            repos: {
+                getCollaboratorPermissionLevel: (args) => client.rest.repos.getCollaboratorPermissionLevel({
+                    owner: requiredString(args, 'owner'),
+                    repo: requiredString(args, 'repo'),
+                    username: requiredString(args, 'username'),
+                }),
+            },
             issues: {
                 createComment: (args) => client.rest.issues.createComment({
                     owner: requiredString(args, 'owner'),
@@ -37187,6 +37231,10 @@ async function main(argv) {
                 model: llmConfig.model,
                 blockOnIssues: legacyOptions.blockOnIssues,
                 minSeverity: legacyOptions.minSeverity,
+                requireWritePermissions: lib_core.getInput('require-write-permissions') === 'true',
+                actor: process.env.GITHUB_ACTOR ??
+                    github.context.payload.pull_request?.user?.login ??
+                    github.context.actor,
             });
             lib_core.setOutput('review-summary', `${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`);
         }

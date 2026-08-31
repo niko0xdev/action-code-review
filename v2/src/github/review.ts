@@ -4,6 +4,7 @@ import { normalizeCommentId } from '../review/dedupe.js';
 import type { Finding, ReviewResult } from '../types/finding.js';
 import type { ReplyParams, ReplyResult, ReviewReply } from '../types/reply.js';
 import { buildFindingBody, buildSummaryBody } from './comments.js';
+import { hasWritePermission } from './permissions.js';
 
 export { buildFindingBody, buildSummaryBody } from './comments.js';
 
@@ -42,6 +43,13 @@ export interface PublisherOctokit extends OctokitLike {
 				args: Record<string, unknown>
 			) => Promise<{ data: ReviewCommentRecord[] }>;
 		};
+		repos?: {
+			getCollaboratorPermissionLevel(args: {
+				owner: string;
+				repo: string;
+				username: string;
+			}): Promise<{ data: { permission: string } }>;
+		};
 		issues: {
 			createComment(args: Record<string, unknown>): Promise<{ data: unknown }>;
 		};
@@ -73,6 +81,8 @@ export interface PublishParams {
 	durationMs?: number;
 	filesTotal?: number;
 	filesExcluded?: number;
+	requireWritePermissions?: boolean;
+	actor?: string;
 }
 
 export function buildReviewPayload(
@@ -101,6 +111,15 @@ export async function publishReview(
 	params: PublishParams
 ): Promise<void> {
 	const { owner, repo, prNumber, headSha, result } = params;
+	let hasWrite = true;
+	if (params.requireWritePermissions && params.actor) {
+		hasWrite = await hasWritePermission(octokit, owner, repo, params.actor);
+		if (!hasWrite) {
+			core.warning(
+				`[review] Actor ${params.actor} lacks write permission — skipping APPROVE/REQUEST_CHANGES escalation (review still posted).`
+			);
+		}
+	}
 	const existingIds = await fetchExistingCommentIds(
 		octokit,
 		owner,
@@ -169,7 +188,7 @@ export async function publishReview(
 			filesExcluded: params.filesExcluded,
 		}),
 	});
-	if (findings.length === 0 || !hasBlockingFinding) {
+	if (hasWrite && (findings.length === 0 || !hasBlockingFinding)) {
 		try {
 			await octokit.rest.pulls.createReview({
 				owner,
