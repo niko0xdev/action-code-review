@@ -62,6 +62,14 @@ inputs:
     description: 'When true, skip APPROVE/REQUEST_CHANGES escalation if the PR actor lacks write permission (still posts review)'
     required: false
     default: 'false'
+  buffer-inline-comments:
+    description: 'Buffer inline findings to /tmp/ai-inline-buffer.jsonl and classify before posting (confirmed=false never posts)'
+    required: false
+    default: 'true'
+  classify-inline-comments:
+    description: 'Alias for buffer-inline-comments (CCA compat)'
+    required: false
+    default: 'true'
 
 outputs:
   review-summary:
@@ -99,3 +107,5 @@ runs:
         INPUT_MAX-CONTEXT-CHARS: ${{ inputs.max-context-chars }}
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_REQUIRE-WRITE-PERMISSIONS: ${{ inputs.require-write-permissions }}
+        INPUT_BUFFER-INLINE-COMMENTS: ${{ inputs.buffer-inline-comments }}
+        INPUT_CLASSIFY-INLINE-COMMENTS: ${{ inputs.classify-inline-comments }}

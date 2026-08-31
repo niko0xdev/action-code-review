@@ -100,6 +100,7 @@ export interface PublishParams {
     filesExcluded?: number;
     requireWritePermissions?: boolean;
     actor?: string;
+    bufferInlineComments?: boolean;
 }
 export declare function buildReviewPayload(findings: Finding[], headSha: string, options?: {
     blockOnIssues?: boolean;

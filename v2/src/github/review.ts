@@ -3,6 +3,7 @@ import type { OctokitLike } from '../context/pr.js';
 import { normalizeCommentId } from '../review/dedupe.js';
 import type { Finding, ReviewResult } from '../types/finding.js';
 import type { ReplyParams, ReplyResult, ReviewReply } from '../types/reply.js';
+import { appendToBuffer, classifyFindings } from './buffer.js';
 import { buildFindingBody, buildSummaryBody } from './comments.js';
 import { hasWritePermission } from './permissions.js';
 
@@ -83,6 +84,7 @@ export interface PublishParams {
 	filesExcluded?: number;
 	requireWritePermissions?: boolean;
 	actor?: string;
+	bufferInlineComments?: boolean;
 }
 
 export function buildReviewPayload(
@@ -132,8 +134,27 @@ export async function publishReview(
 	const hasBlockingFinding = findings.some(
 		(finding) => finding.severity !== 'low'
 	);
-	if (findings.length > 0) {
-		const payload = buildReviewPayload(findings, headSha, {
+	let findingsToPublish: Finding[] = findings;
+	if (params.bufferInlineComments) {
+		const buffered = findings.map(
+			(f) =>
+				({ ...f, ts: new Date().toISOString() }) as unknown as import(
+					'./buffer.js'
+				).BufferedFinding
+		);
+		try {
+			appendToBuffer(buffered);
+		} catch {}
+		const { real, probe } = classifyFindings(buffered);
+		if (probe.length > 0) {
+			core.warning(
+				`[buffer] ${probe.length} finding(s) filtered as test/probe — NOT posted`
+			);
+		}
+		findingsToPublish = real as unknown as Finding[];
+	}
+	if (findingsToPublish.length > 0) {
+		const payload = buildReviewPayload(findingsToPublish, headSha, {
 			blockOnIssues: hasBlockingFinding,
 		});
 		try {
