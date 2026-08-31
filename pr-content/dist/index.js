@@ -228,16 +228,37 @@ async function run() {
         const systemPrompt = (0, prompts_1.createSystemPrompt)(customInstructions, templateContent);
         const userPrompt = (0, prompts_1.buildUserPrompt)(pr.data.title, pr.data.body || '', validDiffs, includeFileList);
         // Generate content with AI
-        const completion = await openai.chat.completions.create({
-            model,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userPrompt },
-            ],
-            max_tokens: maxTokens,
-            temperature: 0.3,
-        });
-        const response = completion.choices[0]?.message?.content;
+        let response;
+        try {
+            const completion = await openai.chat.completions.create({
+                model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt },
+                ],
+                max_tokens: maxTokens,
+                temperature: 0.3,
+            });
+            response = completion.choices[0]?.message?.content;
+        }
+        catch (firstError) {
+            // Retry once with larger token budget if first call hit the limit.
+            // Some models (e.g. claude-sonnet-5) produce JSON >1000 tokens for
+            // non-trivial PRs and hit finish_reason=length, leaving an
+            // unterminated JSON string. This fallback preserves the V1 default
+            // for short PRs and only kicks in when the first call fails.
+            core.warning(`First AI call failed (${firstError instanceof Error ? firstError.message : String(firstError)}); retrying with max_tokens=4096`);
+            const completion = await openai.chat.completions.create({
+                model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt },
+                ],
+                max_tokens: 4096,
+                temperature: 0.3,
+            });
+            response = completion.choices[0]?.message?.content;
+        }
         if (!response) {
             core.setFailed('No response from OpenAI');
             return;
