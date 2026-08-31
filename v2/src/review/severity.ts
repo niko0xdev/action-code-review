@@ -4,6 +4,7 @@ import {
 	type FindingCounts,
 	type RiskLevel,
 	SEVERITY_ORDER,
+	type Severity,
 } from '../types/finding.js';
 
 /**
@@ -25,31 +26,19 @@ export function computeCounts(findings: Finding[]): FindingCounts {
 }
 
 export function capFindings(findings: Finding[]): Finding[] {
-	const perSeverity = new Map<number, Finding[]>();
+	const perSeverity = new Map<Severity, Finding[]>();
 	for (const finding of findings) {
-		const rank = SEVERITY_ORDER[finding.severity];
-		if (!perSeverity.has(rank)) {
-			perSeverity.set(rank, []);
-		}
-		perSeverity.get(rank)?.push(finding);
+		const bucket = perSeverity.get(finding.severity) ?? [];
+		bucket.push(finding);
+		perSeverity.set(finding.severity, bucket);
 	}
 
 	const kept: Finding[] = [];
-	for (const [rank, bucket] of [...perSeverity.entries()].sort(
-		(a, b) => b[0] - a[0]
+	for (const [severity, bucket] of [...perSeverity.entries()].sort(
+		(a, b) => SEVERITY_ORDER[b[0]] - SEVERITY_ORDER[a[0]]
 	)) {
-		const cap =
-			FINDING_LIMITS[
-				rank === SEVERITY_ORDER.critical
-					? 'critical'
-					: rank === SEVERITY_ORDER.high
-						? 'high'
-						: rank === SEVERITY_ORDER.medium
-							? 'medium'
-							: 'low'
-			];
 		bucket.sort((a, b) => b.confidence - a.confidence);
-		kept.push(...bucket.slice(0, cap));
+		kept.push(...bucket.slice(0, FINDING_LIMITS[severity]));
 	}
 
 	return kept.slice(0, FINDING_LIMITS.overall);

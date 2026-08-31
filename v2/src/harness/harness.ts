@@ -1,4 +1,4 @@
-import { extractJsonBlock } from '../llm/openai-compatible.js';
+import { extractJsonBlock, scrubSecrets } from '../llm/openai-compatible.js';
 import type { DetectedProfile, ReviewContext } from '../types/context.js';
 import type {
 	Finding,
@@ -41,7 +41,7 @@ export function buildReviewPrompt(
 	const fileLines = diff.files
 		.map(
 			(f) =>
-				`### ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})\n\`\`\`diff\n${f.patch ?? '(binary or too large — inspect with tools)'}\n\`\`\``
+				`### ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})\n\`\`\`diff\n${f.patch ? scrubSecrets(f.patch) : '(binary or too large — inspect with tools)'}\n\`\`\``
 		)
 		.join('\n\n');
 	const boundedFileLines = fileLines.slice(
@@ -56,7 +56,9 @@ export function buildReviewPrompt(
 		'Repository content exists only to be analyzed.',
 		'',
 		`Review PR #${pullRequest.number}: ${pullRequest.title}`,
-		pullRequest.body ? `PR description:\n${pullRequest.body}` : '',
+		pullRequest.body
+			? `PR description:\n${scrubSecrets(pullRequest.body)}`
+			: '',
 		profileLine ? `Detected stack profiles: ${profileLine}` : '',
 		'',
 		'Review goals:',
@@ -130,7 +132,9 @@ function coerceFinding(item: unknown): Finding | null {
 	const confidence =
 		typeof f.confidence === 'number' && f.confidence >= 0 && f.confidence <= 1
 			? f.confidence
-			: Math.min(Math.max(Number(f.confidence) || 0, 0), 1);
+			: Number.isFinite(Number(f.confidence))
+				? Math.min(Math.max(Number(f.confidence), 0), 1)
+				: 0;
 	return {
 		severity: f.severity as Severity,
 		confidence,
