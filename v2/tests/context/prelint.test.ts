@@ -67,6 +67,13 @@ describe('defaultTools', () => {
 		expect(ids).toContain('biome');
 		expect(ids).toContain('ruff');
 	});
+
+	it('includes swiftlint, ktlint, sqlfluff runners in defaultTools', () => {
+		const ids = defaultTools().map((t) => t.id);
+		expect(ids).toContain('swiftlint');
+		expect(ids).toContain('ktlint');
+		expect(ids).toContain('sqlfluff');
+	});
 });
 
 describe('runPrelint - no binary available', () => {

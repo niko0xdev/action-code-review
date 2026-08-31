@@ -35044,6 +35044,62 @@ const ruffRunner = {
         return parseRuffOutput(stdout);
     },
 };
+/**
+ * Swiftlint runner (Phase 4). Swiftlint emits JSON via `--reporter=json`.
+ * Graceful skip when binary missing (per ADR Q1: heavy binary, many
+ * consumers install it themselves).
+ */
+const swiftlintRunner = {
+    id: 'swiftlint',
+    isAvailable: (repo) => findBinary(repo, 'swiftlint') !== null,
+    matches: (file) => /\.swift$/i.test(file.filename),
+    run: async ({ repositoryPath, files, timeoutMs }) => {
+        const binary = findBinary(repositoryPath, 'swiftlint');
+        if (!binary)
+            return [];
+        const fileList = files.map((f) => f.filename);
+        const { stdout } = await spawnCollect(binary, ['lint', '--reporter=json', '--quiet', ...fileList], { cwd: repositoryPath, timeoutMs });
+        return parseSwiftlintOutput(stdout);
+    },
+};
+/**
+ * Ktlint runner (Phase 4). Ktlint 1.x supports `--reporter=json` for
+ * machine-readable output. Older 0.x does not - the parser tolerates
+ * either format and falls back to skipping the file if the JSON shape
+ * is unexpected. Graceful skip when binary missing.
+ */
+const ktlintRunner = {
+    id: 'ktlint',
+    isAvailable: (repo) => findBinary(repo, 'ktlint') !== null,
+    matches: (file) => /\.(kt|kts)$/i.test(file.filename) && !file.filename.includes('/build/'),
+    run: async ({ repositoryPath, files, timeoutMs }) => {
+        const binary = findBinary(repositoryPath, 'ktlint');
+        if (!binary)
+            return [];
+        const fileList = files.map((f) => f.filename);
+        const { stdout } = await spawnCollect(binary, ['--reporter=json', ...fileList], { cwd: repositoryPath, timeoutMs });
+        return parseKtlintOutput(stdout, fileList);
+    },
+};
+/**
+ * Sqlfluff runner (Phase 4). Emits JSON via `--format=json`. The CLI
+ * exits non-zero when violations are found, so we ignore the exit code
+ * and parse stdout regardless. Graceful skip when binary missing.
+ */
+const sqlfluffRunner = {
+    id: 'sqlfluff',
+    isAvailable: (repo) => findBinary(repo, 'sqlfluff') !== null,
+    matches: (file) => /\.sql$/i.test(file.filename),
+    run: async ({ repositoryPath, files, timeoutMs }) => {
+        const binary = findBinary(repositoryPath, 'sqlfluff');
+        if (!binary)
+            return [];
+        const fileList = files.map((f) => f.filename);
+        // sqlfluff returns non-zero on violations; we want the JSON anyway.
+        const { stdout } = await spawnCollect(binary, ['lint', '--format=json', '--disable-progress-bar', ...fileList], { cwd: repositoryPath, timeoutMs });
+        return parseSqlfluffOutput(stdout);
+    },
+};
 function parseBiomeOutput(stdout) {
     let parsed = null;
     try {
@@ -35133,8 +35189,129 @@ function mapRuffSeverity(sev) {
             return 'low';
     }
 }
+function parseSwiftlintOutput(stdout) {
+    let parsed = null;
+    try {
+        parsed = JSON.parse(stdout);
+    }
+    catch {
+        return [];
+    }
+    if (!Array.isArray(parsed))
+        return [];
+    const findings = [];
+    for (const d of parsed) {
+        const filename = d.file ?? '<unknown>';
+        const line = typeof d.line === 'number' && d.line > 0 ? d.line : 1;
+        const code = d.rule_id ?? d.type ?? 'swiftlint';
+        const severity = mapSwiftlintSeverity(d.severity);
+        findings.push({
+            tool: 'swiftlint',
+            code,
+            path: filename,
+            line,
+            severity,
+            message: d.reason ?? '(no message)',
+        });
+        if (findings.length >= MAX_FINDINGS_PER_TOOL)
+            break;
+    }
+    return findings;
+}
+function mapSwiftlintSeverity(sev) {
+    switch (sev) {
+        case 'error':
+            return 'high';
+        case 'warning':
+            return 'medium';
+        default:
+            return 'low';
+    }
+}
+function parseKtlintOutput(stdout, fileList) {
+    let parsed = null;
+    try {
+        parsed = JSON.parse(stdout);
+    }
+    catch {
+        return [];
+    }
+    if (!parsed)
+        return [];
+    const reports = Array.isArray(parsed) ? parsed : [parsed];
+    const findings = [];
+    const fileFallback = fileList[0] ?? '<unknown>';
+    for (const report of reports) {
+        const filename = report.filepath ?? fileFallback;
+        const violations = report.violations ?? [];
+        for (const v of violations) {
+            const line = typeof v.line === 'number' && v.line > 0 ? v.line : 1;
+            findings.push({
+                tool: 'ktlint',
+                code: v.rule ?? 'ktlint',
+                path: filename,
+                line,
+                severity: 'medium',
+                message: v.message ?? '(no message)',
+            });
+            if (findings.length >= MAX_FINDINGS_PER_TOOL)
+                break;
+        }
+        if (findings.length >= MAX_FINDINGS_PER_TOOL)
+            break;
+    }
+    return findings;
+}
+function parseSqlfluffOutput(stdout) {
+    let parsed = null;
+    try {
+        parsed = JSON.parse(stdout);
+    }
+    catch {
+        return [];
+    }
+    const files = parsed?.files ?? [];
+    const findings = [];
+    for (const file of files) {
+        const filename = file.filepath ?? '<unknown>';
+        const violations = file.violations ?? [];
+        for (const v of violations) {
+            const line = typeof v.line_no === 'number' && v.line_no > 0 ? v.line_no : 1;
+            findings.push({
+                tool: 'sqlfluff',
+                code: v.code ?? 'sqlfluff',
+                path: filename,
+                line,
+                severity: mapSqlfluffSeverity(v.severity),
+                message: v.description ?? '(no message)',
+            });
+            if (findings.length >= MAX_FINDINGS_PER_TOOL)
+                break;
+        }
+        if (findings.length >= MAX_FINDINGS_PER_TOOL)
+            break;
+    }
+    return findings;
+}
+function mapSqlfluffSeverity(sev) {
+    switch (sev?.toLowerCase()) {
+        case 'error':
+            return 'high';
+        case 'warning':
+        case 'warn':
+            return 'medium';
+        default:
+            return 'low';
+    }
+}
 function defaultTools() {
-    return [biomeRunner, ruffRunner];
+    return [
+        biomeRunner,
+        ruffRunner,
+        swiftlintRunner,
+        ktlintRunner,
+        sqlfluffRunner,
+    ];
 }
 async function runPrelint(options) {
     const timeoutMs = options.timeoutMs ?? PRELINT_TIMEOUT_MS;
