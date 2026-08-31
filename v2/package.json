@@ -5,7 +5,7 @@
 	"type": "module",
 	"main": "dist/cli.js",
 	"scripts": {
-		"build": "tsc",
+		"build": "tsc && rm -rf dist && mkdir -p dist/entry && npx ncc build src/entry/pr-review.ts -o dist/entry/pr-review --no-cache --quiet && mv dist/entry/pr-review/index.js dist/entry/pr-review.js && rm -rf dist/entry/pr-review && npx ncc build src/entry/pr-content.ts -o dist/entry/pr-content --no-cache --quiet && mv dist/entry/pr-content/index.js dist/entry/pr-content.js && rm -rf dist/entry/pr-content && npx ncc build src/cli.ts -o dist/cli.js --no-cache --quiet && echo 'Build complete'",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
@@ -29,6 +29,7 @@
 	"devDependencies": {
 		"@biomejs/biome": "^1.4.1",
 		"@types/node": "^20.10.0",
+		"@vercel/ncc": "^0.45.0",
 		"@vitest/coverage-v8": "^1.0.4",
 		"typescript": "^5.3.2",
 		"vitest": "^1.0.4",
