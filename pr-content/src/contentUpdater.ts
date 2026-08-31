@@ -21,13 +21,28 @@ export async function updatePullRequestContent(
 		let update: PRContentUpdate;
 		try {
 			update = JSON.parse(aiResponse);
-		} catch (parseError) {
-			// Try to extract JSON from response if it contains extra text
-			const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-			if (jsonMatch) {
-				update = JSON.parse(jsonMatch[0]);
-			} else {
-				throw new Error('Failed to parse AI response as JSON');
+		} catch {
+			// Try to extract JSON from response if it's wrapped in markdown code fence
+			// Pattern: ```json\n{...}\n``` or ```\n{...}\n``` or inline {...}
+			const fenceMatch = aiResponse.match(/```(?:json)?\s*\n?(\{[\s\S]*?\})\s*\n?```/i);
+			if (fenceMatch) {
+				try {
+					update = JSON.parse(fenceMatch[1]);
+				} catch {
+					// Fall through to inline match
+				}
+			}
+			if (!update) {
+				const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+				if (jsonMatch) {
+					try {
+						update = JSON.parse(jsonMatch[0]);
+					} catch {
+						throw new Error('Failed to parse AI response as JSON');
+					}
+				} else {
+					throw new Error('Failed to parse AI response as JSON');
+				}
 			}
 		}
 
