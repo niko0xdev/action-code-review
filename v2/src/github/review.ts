@@ -12,6 +12,8 @@ interface ReviewRecord {
 }
 interface ReviewCommentRecord {
 	body?: string | null;
+	pull_request_url?: string | null;
+	user?: { login?: string } | null;
 }
 
 export interface PublisherOctokit extends OctokitLike {
@@ -28,6 +30,9 @@ export interface PublisherOctokit extends OctokitLike {
 				comment_id: number;
 				body: string;
 			}): Promise<{ data: { id: number; html_url: string } }>;
+			getReviewComment(
+				args: Record<string, unknown>
+			): Promise<{ data: ReviewCommentRecord }>;
 			listReviews?: (
 				args: Record<string, unknown>
 			) => Promise<{ data: ReviewRecord[] }>;
@@ -229,6 +234,29 @@ export async function replyToReviewComment(
 		);
 	if (!Number.isFinite(params.commentId) || params.commentId <= 0)
 		throw new Error('A valid numeric review comment id is required to reply.');
+	const { data: target } = await octokit.rest.pulls.getReviewComment({
+		owner: params.owner,
+		repo: params.repo,
+		pull_number: params.prNumber,
+		comment_id: params.commentId,
+	});
+	const expectedUrl = `repos/${params.owner}/${params.repo}/pulls/${params.prNumber}`;
+	const targetBody = target.body ?? '';
+	const getAuthenticated =
+		octokit.users?.getAuthenticated ?? octokit.rest.users?.getAuthenticated;
+	const auth = getAuthenticated ? (await getAuthenticated()).data.login : '';
+	if (
+		!target.pull_request_url?.endsWith(expectedUrl) ||
+		!targetBody.includes('<!-- ai-review-id:') ||
+		!target.user?.login ||
+		target.user.login !== auth
+	)
+		throw new Error('Review comment target failed trust validation.');
+	if (
+		params.finding &&
+		!targetBody.includes(normalizeCommentId(params.finding))
+	)
+		throw new Error('Review comment target does not match finding identity.');
 	const { data } = await octokit.rest.pulls.createReplyForReviewComment({
 		owner: params.owner,
 		repo: params.repo,

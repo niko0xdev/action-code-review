@@ -36,6 +36,14 @@ function makeOctokit() {
 		rest: {
 			pulls: {
 				createReview: vi.fn(async () => ({ data: { id: 1 } })),
+				getReviewComment: vi.fn(async () => ({
+					data: {
+						pull_request_url:
+							'https://api.github.com/repos/acme/widget/pulls/7',
+						body: `<!-- ai-review-id:${normalizeCommentId(finding())} -->`,
+						user: { login: 'bot' },
+					},
+				})),
 				createReplyForReviewComment: vi.fn(async () => ({
 					data: {
 						id: ++nextCommentId,
@@ -46,6 +54,9 @@ function makeOctokit() {
 			issues: {
 				createComment: vi.fn(async () => ({ data: {} })),
 			},
+		},
+		users: {
+			getAuthenticated: vi.fn(async () => ({ data: { login: 'bot' } })),
 		},
 	};
 }

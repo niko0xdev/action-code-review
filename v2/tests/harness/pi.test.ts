@@ -30,7 +30,6 @@ function makeContext(): ReviewContext {
 			files: [],
 			totalAdditions: 0,
 			totalDeletions: 0,
-			truncated: false,
 		},
 		profiles: [],
 		repositoryPath: scratchRoot,

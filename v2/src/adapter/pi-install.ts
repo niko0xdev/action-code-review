@@ -17,7 +17,7 @@ export const PI_PACKAGE_PIN = '0.73.1';
  */
 export function buildInstallStepScript(): string {
 	return [
-		'if ! command -v pi >/dev/null 2>&1; then',
+		'if ! command -v pi >/dev/null 2>&1 || ! pi --version 2>/dev/null | grep -q "^0.73.1"; then',
 		`  npm install -g ${PI_PACKAGE}@${PI_PACKAGE_PIN} --no-audit --no-fund --ignore-scripts --silent`,
 		'fi',
 	].join('\n');
