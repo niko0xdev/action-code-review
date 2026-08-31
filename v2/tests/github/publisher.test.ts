@@ -80,7 +80,7 @@ describe('buildSummaryBody', () => {
 	it('includes risk, file count, and severity distribution (spec §20/§21)', () => {
 		const body = buildSummaryBody(result);
 		expect(body).toContain('**Risk:** High');
-		expect(body).toContain('**Reviewed files:** 3');
+		expect(body).toContain('**Files reviewed:** 3');
 		expect(body).toContain('Critical: 0');
 		expect(body).toContain('High: 1');
 		expect(body).toContain('Medium: 2');
@@ -213,7 +213,7 @@ describe('publishReview', () => {
 			},
 			blockOnIssues: true,
 		});
-		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
 		expect(octokit.rest.issues.createComment).toHaveBeenCalledOnce();
 	});
 });
