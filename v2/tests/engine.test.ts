@@ -66,9 +66,9 @@ describe('mapLegacyInputs (docs/v1-interface-contract.md)', () => {
 });
 
 describe('buildPiRuntimeModelsJson', () => {
-	it('registers a hubworx provider from the normalized config', () => {
+	it('registers a openai provider from the normalized config', () => {
 		const json = buildPiRuntimeModelsJson({
-			provider: 'hubworx',
+			provider: 'openai',
 			apiKey: 'sk-x',
 			baseUrl: 'https://gw.example.com/v1',
 			model: 'm1',
@@ -76,8 +76,8 @@ describe('buildPiRuntimeModelsJson', () => {
 		const parsed = JSON.parse(json) as {
 			providers: Record<string, unknown>;
 		};
-		expect(Object.keys(parsed.providers)).toEqual(['hubworx']);
-		const provider = parsed.providers.hubworx as Record<string, unknown>;
+		expect(Object.keys(parsed.providers)).toEqual(['openai']);
+		const provider = parsed.providers.openai as Record<string, unknown>;
 		expect(provider.baseUrl).toBe('https://gw.example.com/v1');
 		expect(provider.api).toBe('openai-completions');
 		expect(provider.apiKey).toBeUndefined();
@@ -90,7 +90,7 @@ describe('buildPiRuntimeModelsJson', () => {
 describe('preparePiRuntimeConfig', () => {
 	it('writes models.json into the runtime dir and returns it', async () => {
 		const { configDir, cleanup } = await preparePiRuntimeConfig({
-			provider: 'hubworx',
+			provider: 'openai',
 			apiKey: 'sk-runtime',
 			baseUrl: 'https://gw.example.com/v1',
 			model: 'm1',
@@ -99,7 +99,7 @@ describe('preparePiRuntimeConfig', () => {
 			const content = await import('node:fs/promises').then((fs) =>
 				fs.readFile(`${configDir}/models.json`, 'utf8')
 			);
-			expect(content).toContain('hubworx');
+			expect(content).toContain('openai');
 			expect(configDir).not.toContain('.pi');
 		} finally {
 			await cleanup();

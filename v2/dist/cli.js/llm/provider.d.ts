@@ -4,7 +4,7 @@
  * model-name conditionals (spec §30).
  */
 export interface LlmConfig {
-    /** Logical provider name; "hubworx" is the V2 default gateway profile. */
+    /** Logical provider name; "openai" is the V2 default (Pi built-in OpenAI-compatible provider). */
     provider: string;
     apiKey: string;
     /** OpenAI-compatible base URL, e.g. https://gateway.example.com/v1 */

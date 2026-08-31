@@ -26,7 +26,7 @@ export interface PiHarnessOptions {
 export function buildPiArgs(
 	repositoryPath: string,
 	model?: string,
-	provider = 'hubworx'
+	provider = 'openai'
 ): string[] {
 	const args = [
 		'-p',
@@ -102,7 +102,7 @@ export class PiHarness implements ReviewHarness {
 			args: buildPiArgs(
 				context.repositoryPath,
 				this.options.model ?? process.env.OPENAI_API_MODEL,
-				this.options.provider ?? 'hubworx'
+				this.options.provider ?? 'openai'
 			),
 			cwd: context.repositoryPath,
 			configDir: await resolveRuntimeConfigDir(),
@@ -120,7 +120,7 @@ export class PiHarness implements ReviewHarness {
 	}
 }
 async function resolveRuntimeConfigDir(): Promise<string> {
-	const configDir = process.env.PI_CONFIG_DIR;
+	const configDir = process.env.PI_CODING_AGENT_DIR;
 	if (configDir) return configDir;
 	return mkdtemp(join(tmpdir(), 'acr-v2-pi-test-'));
 }
