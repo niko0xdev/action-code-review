@@ -176,6 +176,24 @@ pnpm build         # tsc → dist/
 
 All optional; consumers providing none still work unchanged.
 
+## Patterns aligned with CCA
+
+Adopted from [anthropics/claude-code-action](https://github.com/anthropics/claude-code-action) (read-only clone `/tmp/claude-code-action`; Pi remains the harness — no Claude SDK import). Sources use `main` at audit time (2026-08-31).
+
+| # | CCA pattern | CCA source | V2 file:line |
+|---|-------------|------------|--------------|
+| 1 | Mode auto-detection (`detectMode`) | `src/modes/detector.ts:14`, `src/entrypoints/prepare.ts:30-34` | `v2/src/modes/detector.ts:1-`, `v2/src/cli.ts:26,289-298`, `pr-review/action.yml:57-60` |
+| 2 | Write-permission gating (`checkWritePermissions`) | `src/entrypoints/prepare.ts:40-54`, `src/github/validation/permissions.ts:56-130` | `v2/src/github/permissions.ts:1-`, `v2/src/github/review.ts:64-122`, `v2/src/cli.ts:430-460` |
+| 3 | Buffered inline comments + Haiku classification | `src/entrypoints/post-buffered-inline-comments.ts:1-235` | `v2/src/github/buffer.ts:1-`, `v2/src/github/review.ts:138-160`, `v2/src/cli.ts` buffer flag |
+| 4 | `allowed_bots` / actor allowlist (`include/exclude_comments_by_actor`) | `action.yml:30-54`, `src/github/validation/permissions.ts:9-30` | `v2/src/github/actor-filter.ts:1-`, `v2/src/cli.ts:315-330`, `pr-review/action.yml:73-80` |
+| 5 | `use_sticky_comment` (single summary) | `action.yml:112-115` | `v2/src/github/comments.ts:stickySummaryMarker`, `v2/src/github/review.ts:196-320`, `pr-review/action.yml:81-84` |
+| 6 | `track_progress` via `$GITHUB_STEP_SUMMARY` | `action.yml:136-139`, `src/modes/detector.ts:16-31` | `v2/src/github/progress.ts:1-`, `v2/src/cli.ts` phase hooks, `pr-review/action.yml:85-88` |
+| 7 | `prompt` as raw + template file | `action.yml:57-59` | `pr-review/action.yml:89-92`, `v2/src/cli.ts:readPromptFileIfNeeded` |
+| 8 | `claude_args` / `pi_args` passthrough (whitelisted) | `action.yml:104-107`, `src/create-prompt/index.ts:14-70` | `v2/src/harness/pi.ts:parsePiArgs/buildPiArgs`, `v2/src/cli.ts`, `pr-review/action.yml:93-96` |
+| 10 | `path_to_claude_code_executable` → `pi-binary-path` | `action.yml:144-148` | `pr-review/action.yml:93-96`, `v2/src/cli.ts:454-465` |
+
+Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic already; defer) · **#11** `include_fix_links` (defer) · **#12** `trigger_phrase` for issue-comments (REJECT, review-only) · **#13** dup of #8 (REJECT) · **#14** Bedrock/Vertex/Foundry providers (REJECT, OpenAI-compatible) · **#15** `track_progress` for issues (REJECT, PR-only) · **#16** ephemeral GitHub App (REJECT, composite action). Details in `docs/v2-tasks.md`.
+
 ## Known limitations / next steps
 
 1. **~~Pi binary provisioning~~ — DONE.** Both actions are now composite
