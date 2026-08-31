@@ -79,7 +79,8 @@ function toPublisherOctokit(
 			const event = requiredString(args, 'event');
 			if (!['REQUEST_CHANGES', 'COMMENT', 'APPROVE'].includes(event))
 				throw new Error('Invalid event');
-			if (!Array.isArray(args.comments)) throw new Error('Missing comments');
+			if (args.comments !== undefined && !Array.isArray(args.comments))
+				throw new Error('comments must be array');
 			return client.rest.pulls.createReview({
 				...repositoryArgs(args),
 				commit_id: requiredString(args, 'commit_id'),
@@ -355,9 +356,9 @@ export async function main(argv: string[]): Promise<void> {
 			process.env.AI_REVIEW_PROFILE
 		);
 		reviewContext.profiles = profiles;
-		const previousConfigDir = process.env.PI_CONFIG_DIR;
+		const previousConfigDir = process.env.PI_CODING_AGENT_DIR;
 		const runtimeConfig = await preparePiRuntimeConfig(llmConfig);
-		process.env.PI_CONFIG_DIR = runtimeConfig.configDir;
+		process.env.PI_CODING_AGENT_DIR = runtimeConfig.configDir;
 		try {
 			const harness = new PiHarness({
 				timeoutMs: positiveTimeout(
@@ -396,8 +397,8 @@ export async function main(argv: string[]): Promise<void> {
 		} finally {
 			await runtimeConfig.cleanup();
 			if (previousConfigDir === undefined)
-				Reflect.deleteProperty(process.env, 'PI_CONFIG_DIR');
-			else process.env.PI_CONFIG_DIR = previousConfigDir;
+				Reflect.deleteProperty(process.env, 'PI_CODING_AGENT_DIR');
+			else process.env.PI_CODING_AGENT_DIR = previousConfigDir;
 		}
 	} catch (error) {
 		core.setFailed(
