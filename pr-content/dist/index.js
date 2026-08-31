@@ -77,7 +77,7 @@ async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResp
             }
         }
         // Validate response
-        if (!update.title || !update.description) {
+        if (!update?.title || !update?.description) {
             throw new Error('AI response missing required fields: title and description');
         }
         // Get current PR to compare
@@ -87,26 +87,26 @@ async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResp
             pull_number: pullNumber,
         });
         // If we have a template, use the AI-generated description to fill it in
-        let finalDescription = update.description;
+        let finalDescription = update?.description;
         if (templateContent) {
             // Try to extract the description from the AI response if it's in a template format
             // Otherwise, use the description as is
-            if (update.description.includes('## Description')) {
-                finalDescription = update.description;
+            if (update?.description.includes('## Description')) {
+                finalDescription = update?.description;
             }
             else {
                 // Fill the template with the AI-generated description
-                finalDescription = templateContent.replace(/<!-- AI will fill this section with a description of what changed -->/, update.description);
+                finalDescription = templateContent.replace(/<!-- AI will fill this section with a description of what changed -->/, update?.description);
                 // Also fill in the testing section if the AI provided it
-                if (update.description.includes('## How Has This Been Tested')) {
-                    const testingMatch = update.description.match(/## How Has This Been Tested\s*\n([\s\S]*?)(?=\n##|\n\n|$)/);
+                if (update?.description.includes('## How Has This Been Tested')) {
+                    const testingMatch = update?.description.match(/## How Has This Been Tested\s*\n([\s\S]*?)(?=\n##|\n\n|$)/);
                     if (testingMatch) {
                         finalDescription = finalDescription.replace(/<!-- AI will fill this section with testing information -->/, testingMatch[1].trim());
                     }
                 }
             }
         }
-        const hasChanges = currentPR.data.title !== update.title ||
+        const hasChanges = currentPR.data.title !== update?.title ||
             currentPR.data.body !== finalDescription;
         if (!hasChanges) {
             core.info('No changes needed - PR content is already optimal');
@@ -117,10 +117,10 @@ async function updatePullRequestContent(octokit, owner, repo, pullNumber, aiResp
             owner,
             repo,
             pull_number: pullNumber,
-            title: update.title,
+            title: update?.title,
             body: finalDescription,
         });
-        core.info(`Updated PR title: "${update.title}"`);
+        core.info(`Updated PR title: "${update?.title}"`);
         core.info(`Updated PR description: ${finalDescription.substring(0, 100)}...`);
     }
     catch (error) {
@@ -174,9 +174,12 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(6966));
 const github = __importStar(__nccwpck_require__(401));
 const openai_1 = __nccwpck_require__(8109);
-const prompts_1 = __nccwpck_require__(4752);
 const contentUpdater_1 = __nccwpck_require__(6937);
+const prompts_1 = __nccwpck_require__(4752);
+const v2Delegate_1 = __nccwpck_require__(6504);
 async function run() {
+    if (await (0, v2Delegate_1.runViaV2IfAvailable)())
+        return;
     try {
         const githubToken = core.getInput('github-token', { required: true });
         const openaiApiKey = core.getInput('openai-api-key', { required: true });
@@ -188,7 +191,9 @@ async function run() {
         const templatePath = core.getInput('template-path') || '.github/pull_request_template.md';
         const octokit = github.getOctokit(githubToken);
         // Initialize OpenAI with custom base URL if provided
-        const openaiConfig = { apiKey: openaiApiKey };
+        const openaiConfig = {
+            apiKey: openaiApiKey,
+        };
         if (openaiBaseUrl) {
             openaiConfig.baseURL = openaiBaseUrl;
         }
@@ -205,7 +210,9 @@ async function run() {
             octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber }),
             octokit.rest.pulls.listFiles({ owner, repo, pull_number: pullNumber }),
             // Try to get the template file
-            octokit.rest.repos.getContent({ owner, repo, path: templatePath }).catch(() => null)
+            octokit.rest.repos
+                .getContent({ owner, repo, path: templatePath })
+                .catch(() => null),
         ]);
         // Extract template content if available
         let templateContent = '';
@@ -333,7 +340,7 @@ function createSystemPrompt(customInstructions, templateContent) {
         'Do not include markdown code fences in your response.',
     ];
     if (templateContent) {
-        basePrompt.push(`Use the following pull request template as the base for the description. `, `Fill in the template sections with appropriate content based on the code changes. `, `Preserve the template structure and formatting, only fill in the content sections.\n\n`, `Template:\n${templateContent}`);
+        basePrompt.push('Use the following pull request template as the base for the description. ', 'Fill in the template sections with appropriate content based on the code changes. ', 'Preserve the template structure and formatting, only fill in the content sections.\n\n', `Template:\n${templateContent}`);
     }
     if (customInstructions) {
         basePrompt.push(`Additional instructions: ${customInstructions}`);
@@ -360,6 +367,83 @@ function buildUserPrompt(currentTitle, currentDescription, diffs, includeFileLis
     return prompt;
 }
 //# sourceMappingURL=prompts.js.map
+
+/***/ }),
+
+/***/ 6504:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.resolveV2Entry = resolveV2Entry;
+exports.runViaV2IfAvailable = runViaV2IfAvailable;
+const node_fs_1 = __nccwpck_require__(3024);
+const node_path_1 = __nccwpck_require__(6760);
+const core = __importStar(__nccwpck_require__(6966));
+const V2_ENTRY_CANDIDATES = [
+    'v2/dist/entry/pr-content.js',
+    '../v2/dist/entry/pr-content.js',
+];
+function resolveV2Entry(baseDir) {
+    for (const candidate of V2_ENTRY_CANDIDATES) {
+        const full = (0, node_path_1.resolve)(baseDir ?? process.cwd(), candidate);
+        if ((0, node_fs_1.existsSync)(full))
+            return full;
+    }
+    return null;
+}
+async function runViaV2IfAvailable() {
+    const entry = resolveV2Entry();
+    if (!entry) {
+        core.info('V2 engine not present; running V1 content flow.');
+        return false;
+    }
+    core.info('Delegating PR content to the V2 engine.');
+    try {
+        const mod = await Promise.resolve(`${entry}`).then(s => __importStar(require(s)));
+        await (mod.main ?? mod.default)(['pr-content']);
+        return true;
+    }
+    catch (error) {
+        core.setFailed(`Action failed: ${error}`);
+        return true;
+    }
+}
+//# sourceMappingURL=v2Delegate.js.map
 
 /***/ }),
 
@@ -34806,6 +34890,14 @@ module.exports = require("node:events");
 
 "use strict";
 module.exports = require("node:fs");
+
+/***/ }),
+
+/***/ 6760:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("node:path");
 
 /***/ }),
 

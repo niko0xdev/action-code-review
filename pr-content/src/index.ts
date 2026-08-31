@@ -1,10 +1,12 @@
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { OpenAI } from 'openai';
-import { createSystemPrompt, buildUserPrompt } from './prompts';
 import { updatePullRequestContent } from './contentUpdater';
+import { buildUserPrompt, createSystemPrompt } from './prompts';
+import { runViaV2IfAvailable } from './v2Delegate';
 
 async function run(): Promise<void> {
+	if (await runViaV2IfAvailable()) return;
 	try {
 		const githubToken = core.getInput('github-token', { required: true });
 		const openaiApiKey = core.getInput('openai-api-key', { required: true });
@@ -13,12 +15,15 @@ async function run(): Promise<void> {
 		const maxTokens = Number.parseInt(core.getInput('max-tokens') || '1000');
 		const includeFileList = core.getInput('include-file-list') === 'true';
 		const customInstructions = core.getInput('custom-instructions');
-		const templatePath = core.getInput('template-path') || '.github/pull_request_template.md';
+		const templatePath =
+			core.getInput('template-path') || '.github/pull_request_template.md';
 
 		const octokit = github.getOctokit(githubToken);
-		
+
 		// Initialize OpenAI with custom base URL if provided
-		const openaiConfig: { apiKey: string; baseURL?: string } = { apiKey: openaiApiKey };
+		const openaiConfig: { apiKey: string; baseURL?: string } = {
+			apiKey: openaiApiKey,
+		};
 		if (openaiBaseUrl) {
 			openaiConfig.baseURL = openaiBaseUrl;
 		}
@@ -38,13 +43,18 @@ async function run(): Promise<void> {
 			octokit.rest.pulls.get({ owner, repo, pull_number: pullNumber }),
 			octokit.rest.pulls.listFiles({ owner, repo, pull_number: pullNumber }),
 			// Try to get the template file
-			octokit.rest.repos.getContent({ owner, repo, path: templatePath }).catch(() => null)
+			octokit.rest.repos
+				.getContent({ owner, repo, path: templatePath })
+				.catch(() => null),
 		]);
 
 		// Extract template content if available
 		let templateContent = '';
 		if (templateResponse && 'content' in templateResponse.data) {
-			templateContent = Buffer.from(templateResponse.data.content, 'base64').toString('utf8');
+			templateContent = Buffer.from(
+				templateResponse.data.content,
+				'base64'
+			).toString('utf8');
 		}
 
 		// Get diff for each file
@@ -66,7 +76,10 @@ async function run(): Promise<void> {
 		);
 
 		// Build prompts
-		const systemPrompt = createSystemPrompt(customInstructions, templateContent);
+		const systemPrompt = createSystemPrompt(
+			customInstructions,
+			templateContent
+		);
 		const userPrompt = buildUserPrompt(
 			pr.data.title,
 			pr.data.body || '',
@@ -132,7 +145,14 @@ async function run(): Promise<void> {
 		// in markdown code fences or surrounded by prose; if it still fails,
 		// retry once with the larger budget to recover from truncation.
 		try {
-			await updatePullRequestContent(octokit, owner, repo, pullNumber, response, templateContent);
+			await updatePullRequestContent(
+				octokit,
+				owner,
+				repo,
+				pullNumber,
+				response,
+				templateContent
+			);
 		} catch (parseError) {
 			core.warning(
 				`First parse failed (${parseError instanceof Error ? parseError.message : String(parseError)}); retrying with max_tokens=4096`
@@ -150,7 +170,14 @@ async function run(): Promise<void> {
 			if (!retryResponse) {
 				throw parseError;
 			}
-			await updatePullRequestContent(octokit, owner, repo, pullNumber, retryResponse, templateContent);
+			await updatePullRequestContent(
+				octokit,
+				owner,
+				repo,
+				pullNumber,
+				retryResponse,
+				templateContent
+			);
 		}
 
 		core.info('Successfully updated pull request content');
