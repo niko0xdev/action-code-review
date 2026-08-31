@@ -1,10 +1,13 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { preparePiRuntimeConfig } from '../../src/adapter/runtime.js';
-import { BUILT_IN_SKILLS, profilesWithSkills } from '../../src/skills/registry.js';
 import type { LlmConfig } from '../../src/llm/provider.js';
+import {
+	BUILT_IN_SKILLS,
+	profilesWithSkills,
+} from '../../src/skills/registry.js';
 
 const FAKE_LLM: LlmConfig = {
 	provider: 'openai',
@@ -37,10 +40,7 @@ describe('preparePiRuntimeConfig — skills', () => {
 
 			// Each skill dir contains a SKILL.md matching the compiled-in registry.
 			for (const profile of profiles) {
-				const body = readFileSync(
-					join(skillsDir, profile, 'SKILL.md'),
-					'utf8'
-				);
+				const body = readFileSync(join(skillsDir, profile, 'SKILL.md'), 'utf8');
 				expect(body).toBe(BUILT_IN_SKILLS[profile]);
 				// Required Pi skill frontmatter: name + description.
 				expect(body).toMatch(/^---\nname: /);
