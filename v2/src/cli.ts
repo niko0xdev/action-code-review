@@ -446,6 +446,9 @@ export async function main(argv: string[]): Promise<void> {
 				minSeverity: legacyOptions.minSeverity,
 				requireWritePermissions:
 					core.getInput('require-write-permissions') === 'true',
+				bufferInlineComments:
+					core.getInput('buffer-inline-comments') !== 'false' &&
+					core.getInput('classify-inline-comments') !== 'false',
 				actor:
 					process.env.GITHUB_ACTOR ??
 					(
