@@ -72,7 +72,10 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 		}
 
 		if (!response.ok) {
-			const detail = await safeErrorDetail(response);
+			const detail = (await safeErrorDetail(response)).replaceAll(
+				this.config.apiKey,
+				'[redacted]'
+			);
 			throw new LlmError(
 				`LLM endpoint returned ${response.status}: ${detail}`,
 				response.status
@@ -106,9 +109,12 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 }
 
 /** Extract response details without leaking Authorization material. */
-async function safeErrorDetail(response: Response): Promise<string> {
+export async function safeErrorDetail(response: Response): Promise<string> {
 	const text = await response.text().catch(() => '');
-	const sanitized = text.replace(/sk-[A-Za-z0-9_-]+/g, '[redacted]');
+	const sanitized = text.replace(
+		/(?:sk-|gh[opru]_|Bearer\s+)[A-Za-z0-9._~+/=-]+/gi,
+		'[redacted]'
+	);
 	return sanitized.slice(0, 500);
 }
 

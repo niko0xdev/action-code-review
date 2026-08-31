@@ -78,14 +78,14 @@ describe('validateFindings (spec §18)', () => {
 		expect(kept).toHaveLength(1);
 	});
 
-	it('drops duplicate findings for the same path+line+category', () => {
+	it('keeps distinct findings for dedupe stage', () => {
 		const files = [file('src/a.ts', PATCH)];
 		const kept = validateFindings(
 			[baseFinding(), baseFinding({ title: 'Different words, same issue' })],
 			files,
 			0.8
 		);
-		expect(kept).toHaveLength(1);
+		expect(kept).toHaveLength(2);
 	});
 });
 

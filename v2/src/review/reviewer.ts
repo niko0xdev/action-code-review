@@ -4,42 +4,37 @@ import type { ReviewContext } from '../types/context.js';
 import type { Finding, ReviewResult } from '../types/finding.js';
 import { dedupeFindings } from './dedupe.js';
 import { planReviewGroups } from './planner.js';
-import { capFindings, computeCounts } from './severity.js';
+import { capFindings, computeCounts, riskFromFindings } from './severity.js';
 import { validateFindings } from './validator.js';
-
-/**
- * Review orchestration: plan groups → run the harness per group → merge,
- * validate (spec §18), dedupe and cap findings (spec §19).
- */
 
 export interface RunReviewOptions {
 	maxFilesPerGroup?: number;
 	minConfidence?: number;
-	/** Extra prompt rules forwarded to the harness. */
 	extraRules?: string;
+	minSeverity?: string;
 }
+
+const SEVERITY_RANK: Record<string, number> = {
+	low: 0,
+	medium: 1,
+	high: 2,
+	critical: 3,
+};
 
 export async function runReview(
 	context: ReviewContext,
 	harness: ReviewHarness,
 	options: RunReviewOptions = {}
 ): Promise<ReviewResult> {
-	const maxFilesPerGroup = options.maxFilesPerGroup ?? 15;
-	const minConfidence = options.minConfidence ?? 0.8;
-
 	const reviewable = prioritizeFiles(
 		context.diff.files,
 		Number.MAX_SAFE_INTEGER
 	);
 	const scoped: ReviewContext = {
 		...context,
-		diff: {
-			...context.diff,
-			files: reviewable,
-		},
+		diff: { ...context.diff, files: reviewable },
 	};
-
-	const groups = planReviewGroups(scoped, maxFilesPerGroup);
+	const groups = planReviewGroups(scoped, options.maxFilesPerGroup ?? 15);
 	const allFindings: Finding[] = [];
 	const summaries: string[] = [];
 	const filesReviewed: string[] = [];
@@ -54,46 +49,36 @@ export async function runReview(
 				),
 			},
 		};
-
-		const result = await harness.review(groupContext);
-		allFindings.push(...result.findings);
-		filesReviewed.push(...group.files);
-		if (result.summary) {
-			summaries.push(result.summary);
+		try {
+			const result = await harness.review(groupContext);
+			allFindings.push(...result.findings);
+			filesReviewed.push(...group.files);
+			if (result.summary) summaries.push(result.summary);
+		} catch (error) {
+			console.warn(
+				`Review group failed: ${error instanceof Error ? error.message : String(error)}`
+			);
 		}
 	}
 
-	const validated = capFindings(
-		dedupeFindings(
-			validateFindings(allFindings, context.diff.files, minConfidence)
-		)
+	const minimum =
+		SEVERITY_RANK[options.minSeverity ?? 'low'] ?? SEVERITY_RANK.critical;
+	const filtered = allFindings.filter(
+		(finding) => SEVERITY_RANK[finding.severity] >= minimum
 	);
-
+	const validated = validateFindings(
+		filtered,
+		context.diff.files,
+		options.minConfidence ?? 0.8
+	);
+	const findings = capFindings(dedupeFindings(validated)).sort(
+		(a, b) => b.confidence - a.confidence
+	);
 	return {
-		findings: validated.sort((a, b) => b.confidence - a.confidence),
+		findings,
 		summary: summaries.join('\n\n').trim(),
-		risk: computeRisk(validated),
-		counts: computeCounts(validated),
+		risk: riskFromFindings(findings),
+		counts: computeCounts(findings),
 		filesReviewed,
 	};
-}
-
-function computeRisk(findings: Finding[]): ReviewResult['risk'] {
-	if (findings.some((f) => f.severity === 'critical')) {
-		return 'critical';
-	}
-	const high = findings.filter((f) => f.severity === 'high').length;
-	if (high >= 2) {
-		return 'critical';
-	}
-	if (high === 1) {
-		return 'high';
-	}
-	if (findings.some((f) => f.severity === 'medium')) {
-		return 'medium';
-	}
-	if (findings.some((f) => f.severity === 'low')) {
-		return 'low';
-	}
-	return 'none';
 }

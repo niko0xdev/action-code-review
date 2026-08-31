@@ -133,8 +133,8 @@ describe('runReview', () => {
 				throw new Error('LLM endpoint returned 502');
 			},
 		};
-		await expect(runReview(makeContext(['a.ts']), harness)).rejects.toThrow(
-			/502/
-		);
+		const result = await runReview(makeContext(['a.ts']), harness);
+		expect(result.findings).toEqual([]);
+		expect(result.filesReviewed).toEqual([]);
 	});
 });

@@ -92,7 +92,9 @@ describe.each([
 		expect(installStep?.run).toContain(
 			`@mariozechner/pi-coding-agent@${PI_PACKAGE_PIN}`
 		);
-		expect(installStep?.run).toContain('--no-audit --no-fund --silent');
+		expect(installStep?.run).toContain(
+			'--no-audit --no-fund --ignore-scripts --silent'
+		);
 	});
 
 	it('forwards every V1 input via env using the getInput convention', () => {

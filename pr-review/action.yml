@@ -58,6 +58,7 @@ inputs:
 outputs:
   review-summary:
     description: 'Summary of the code review'
+    value: ${{ steps.run-review.outputs.review-summary }}
 
 runs:
   using: composite
@@ -66,9 +67,10 @@ runs:
       shell: bash
       run: |
         if ! command -v pi >/dev/null 2>&1; then
-          npm install -g @mariozechner/pi-coding-agent@0.73.1 --no-audit --no-fund --silent
+          npm install -g @mariozechner/pi-coding-agent@0.73.1 --no-audit --no-fund --ignore-scripts --silent
         fi
     - name: Run AI Code Review
+      id: run-review
       shell: bash
       run: node ${{ github.action_path }}/dist/index.js
       env:

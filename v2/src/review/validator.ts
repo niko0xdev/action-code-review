@@ -41,19 +41,7 @@ export function validateFindings(
 	changedFiles: ChangedFile[],
 	minConfidence = 0.8
 ): Finding[] {
-	const seenSignatures = new Set<string>();
-	const kept: Finding[] = [];
-
-	for (const finding of findings) {
-		if (!validateFinding(finding, changedFiles, minConfidence)) {
-			continue;
-		}
-		const signature = `${finding.path}|${finding.line}|${finding.category}`;
-		if (seenSignatures.has(signature)) {
-			continue;
-		}
-		seenSignatures.add(signature);
-		kept.push(finding);
-	}
-	return kept;
+	return findings.filter((finding) =>
+		validateFinding(finding, changedFiles, minConfidence)
+	);
 }

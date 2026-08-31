@@ -126,7 +126,7 @@ describe('buildInstallStepScript', () => {
 	it('skips installation when pi already resolves on PATH', () => {
 		const script = buildInstallStepScript();
 		expect(script.startsWith('if ! command -v pi')).toBe(true);
-		expect(script).toContain('--no-audit --no-fund --silent');
+		expect(script).toContain('--no-audit --no-fund --ignore-scripts --silent');
 		expect(script).toContain(`@mariozechner/pi-coding-agent@${PI_PACKAGE_PIN}`);
 	});
 });
