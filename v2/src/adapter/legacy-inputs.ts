@@ -50,7 +50,7 @@ const PR_REVIEW_DEFAULTS = {
 
 const PR_CONTENT_DEFAULTS = {
 	openaiModel: 'gpt-4',
-	maxTokens: '1000',
+	maxTokens: '4096',
 	includeFileList: 'true',
 	templatePath: '.github/pull_request_template.md',
 } as const;
