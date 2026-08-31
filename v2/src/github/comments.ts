@@ -1,5 +1,10 @@
 import { commentIdentityBody, normalizeCommentId } from '../review/dedupe.js';
-import type { Finding, RiskLevel } from '../types/finding.js';
+import type {
+	Finding,
+	ReviewDiagnostics,
+	RiskLevel,
+	ToolFinding,
+} from '../types/finding.js';
 
 export function mdSafe(value: string): string {
 	return value
@@ -82,6 +87,8 @@ type SummaryResult = {
 	durationMs?: number;
 	filesTotal?: number;
 	filesExcluded?: number;
+	toolFindings?: ToolFinding[];
+	diagnostics?: ReviewDiagnostics;
 };
 
 function hasBlockingFindings(
@@ -215,6 +222,66 @@ export function buildSummaryBody(result: SummaryResult): string {
 		'',
 		...buildChecksTable(findings, result.counts),
 		'',
+		...(result.toolFindings && result.toolFindings.length > 0
+			? [
+					'<details><summary>Static analyzer findings</summary>',
+					'',
+					...result.toolFindings.slice(0, 20).map((finding) => {
+						const sev = mdSafe(finding.severity);
+						const code = mdSafe(finding.code);
+						const path = mdSafe(finding.path);
+						const line = finding.line;
+						const message = mdSafe(finding.message);
+						return `- [\`${mdSafe(finding.tool)}/${code}\`] \`${path}:${line}\` (${sev}) ${message}`;
+					}),
+					result.toolFindings.length > 20
+						? `- ... and ${result.toolFindings.length - 20} more`
+						: '',
+					'</details>',
+					'',
+				]
+			: []),
+		...(result.diagnostics &&
+		(result.diagnostics.prelintRan?.length ||
+			result.diagnostics.prelintSkipped?.length ||
+			result.diagnostics.bucketedUnknownCategories ||
+			result.diagnostics.crossFindingConflictsResolved ||
+			result.diagnostics.trivialPrFastPath)
+			? [
+					'<details><summary>Pipeline diagnostics</summary>',
+					'',
+					...(result.diagnostics.prelintRan?.length
+						? [`- **Tools ran:** ${result.diagnostics.prelintRan.join(', ')}`]
+						: []),
+					...(result.diagnostics.prelintSkipped?.length
+						? [
+								`- **Tools skipped:** ${result.diagnostics.prelintSkipped.join(', ')}`,
+							]
+						: []),
+					...(result.diagnostics.toolFindingsTotal !== undefined
+						? [
+								`- **Tool findings total:** ${result.diagnostics.toolFindingsTotal}`,
+							]
+						: []),
+					...(result.diagnostics.bucketedUnknownCategories !== undefined
+						? [
+								`- **Bucketed (unknown category -> low):** ${result.diagnostics.bucketedUnknownCategories}`,
+							]
+						: []),
+					...(result.diagnostics.crossFindingConflictsResolved !== undefined
+						? [
+								`- **Cross-finding conflicts resolved:** ${result.diagnostics.crossFindingConflictsResolved}`,
+							]
+						: []),
+					...(result.diagnostics.trivialPrFastPath !== undefined
+						? [
+								`- **Trivial-PR fast path:** ${result.diagnostics.trivialPrFastPath ? 'yes' : 'no'}`,
+							]
+						: []),
+					'</details>',
+					'',
+				]
+			: []),
 		'---',
 		footer
 	);
