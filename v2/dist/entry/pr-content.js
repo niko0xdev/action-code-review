@@ -37643,7 +37643,20 @@ async function main(argv) {
                 lib_core.info(`[prelint] Ran ${prelintResult.ran.join(', ')} — ${prelintResult.findings.length} findings`);
             }
             trackPhase('harness', 'Pi review start', { enabled: trackEnabled });
+            const piBinaryRaw = lib_core.getInput('pi-binary-path');
+            let piBinaryPath;
+            if (piBinaryRaw) {
+                try {
+                    const { accessSync, constants } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 3024, 23));
+                    accessSync(piBinaryRaw, constants.X_OK);
+                    piBinaryPath = piBinaryRaw;
+                }
+                catch {
+                    lib_core.warning(`[review] pi-binary-path ${piBinaryRaw} not executable — falling back to pi`);
+                }
+            }
             const harness = new PiHarness({
+                binaryPath: piBinaryPath,
                 piArgs: lib_core.getInput('pi-args'),
                 timeoutMs: positiveTimeout(process.env.AI_REVIEW_PI_TIMEOUT_MS, 15 * 60_000),
                 model: llmConfig.model,

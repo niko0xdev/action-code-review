@@ -94,6 +94,10 @@ inputs:
     description: 'Extra Pi CLI flags (whitelisted: --max-duration/--model-override/--no-session)'
     required: false
     default: ''
+  pi-binary-path:
+    description: 'Path to custom Pi binary (skip auto-install when set and executable; falls back with warning)'
+    required: false
+    default: ''
 
 outputs:
   review-summary:
@@ -104,6 +108,7 @@ runs:
   using: composite
   steps:
     - name: Install Pi coding agent
+      if: inputs.pi-binary-path == ''
       shell: bash
       run: |
         if ! command -v pi >/dev/null 2>&1 || ! pi --version 2>/dev/null | grep -q '^0.73.1'; then
@@ -139,3 +144,4 @@ runs:
         INPUT_TRACK-PROGRESS: ${{ inputs.track-progress }}
         INPUT_REVIEW-PROMPT-FILE: ${{ inputs.review-prompt-file }}
         INPUT_PI-ARGS: ${{ inputs.pi-args }}
+        INPUT_PI-BINARY-PATH: ${{ inputs.pi-binary-path }}
