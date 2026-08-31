@@ -12,6 +12,7 @@ import {
 import { preparePiRuntimeConfig } from './adapter/runtime.js';
 import { prioritizeFiles } from './context/files.js';
 import { fetchPrContext } from './context/pr.js';
+import { runPrelint } from './context/prelint.js';
 import { updatePrContent } from './github/pr-content.js';
 import { buildJobSummary, publishReview } from './github/review.js';
 import type { PublisherOctokit } from './github/review.js';
@@ -362,6 +363,26 @@ export async function main(argv: string[]): Promise<void> {
 		});
 		process.env.PI_CODING_AGENT_DIR = runtimeConfig.configDir;
 		try {
+			// Run deterministic static analyzers (V3 Phase 2) when opted
+			// in via env var. Cannot add a new action input because V1
+			// contract is frozen - see docs/v3-decisions.md Q1.
+			const enablePrelint = process.env.AI_REVIEW_ENABLE_PRELINT === 'true';
+			const prelintResult = enablePrelint
+				? await runPrelint({
+						repositoryPath: reviewContext.repositoryPath,
+						changedFiles: reviewContext.diff.files,
+					})
+				: { findings: [], ran: [], skipped: [] };
+			if (prelintResult.skipped.length > 0) {
+				core.info(
+					`[prelint] Skipped tools: ${prelintResult.skipped.join(', ')}`
+				);
+			}
+			if (prelintResult.ran.length > 0) {
+				core.info(
+					`[prelint] Ran ${prelintResult.ran.join(', ')} — ${prelintResult.findings.length} findings`
+				);
+			}
 			const harness = new PiHarness({
 				timeoutMs: positiveTimeout(
 					process.env.AI_REVIEW_PI_TIMEOUT_MS,
@@ -373,6 +394,7 @@ export async function main(argv: string[]): Promise<void> {
 				maxContextChars: legacyOptions.maxContextChars,
 				extraRules: rulesForProfiles(profiles),
 				provider: llmConfig.provider,
+				toolFindings: prelintResult.findings,
 			});
 			const result = await runReview(reviewContext, harness, {
 				minConfidence: Number.parseFloat(
@@ -383,6 +405,15 @@ export async function main(argv: string[]): Promise<void> {
 					.join('\n\n'),
 				minSeverity: legacyOptions.minSeverity,
 			});
+			// Surface tool findings + prelint diagnostics in the result
+			// so they can be rendered in the GitHub review summary
+			// (collapsible section per docs/v3-decisions.md Q3).
+			result.toolFindings = prelintResult.findings;
+			result.diagnostics = {
+				toolFindingsTotal: prelintResult.findings.length,
+				prelintRan: prelintResult.ran,
+				prelintSkipped: prelintResult.skipped,
+			};
 			await publishReview(octokit, {
 				owner: repoInfo.owner,
 				repo: repoInfo.repo,

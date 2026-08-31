@@ -1,5 +1,5 @@
 import type { ReviewContext } from '../types/context.js';
-import type { Finding, ReviewResult, RiskLevel } from '../types/finding.js';
+import type { Finding, ReviewResult, RiskLevel, ToolFinding } from '../types/finding.js';
 export interface ReviewHarness {
     readonly name: string;
     review(context: ReviewContext): Promise<ReviewResult>;
@@ -12,6 +12,7 @@ export interface HarnessOutput {
 export declare function buildReviewPrompt(context: ReviewContext, extraRules?: string, options?: {
     includeFullContent?: boolean;
     maxContextChars?: number;
+    toolFindings?: ToolFinding[];
 }): string;
 export declare function parseHarnessFindings(raw: string): HarnessOutput & {
     findings: Finding[];

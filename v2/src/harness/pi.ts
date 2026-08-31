@@ -3,7 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ReviewContext } from '../types/context.js';
-import type { ReviewResult } from '../types/finding.js';
+import type { ReviewResult, ToolFinding } from '../types/finding.js';
 import {
 	type ReviewHarness,
 	buildReviewPrompt,
@@ -22,6 +22,13 @@ export interface PiHarnessOptions {
 	extraRules?: string;
 	includeFullContent?: boolean;
 	maxContextChars?: number;
+	/**
+	 * Static-analyzer findings to inject as evidence in the LLM prompt.
+	 * Sourced from `context/prelint.ts`. Optional - when omitted, the
+	 * prompt is rendered without a tool-findings section (backward
+	 * compatible with V2 callers that don't run prelint).
+	 */
+	toolFindings?: ToolFinding[];
 }
 export function buildPiArgs(
 	repositoryPath: string,
@@ -120,6 +127,7 @@ export class PiHarness implements ReviewHarness {
 			prompt: buildReviewPrompt(context, this.options.extraRules, {
 				includeFullContent: this.options.includeFullContent,
 				maxContextChars: this.options.maxContextChars,
+				toolFindings: this.options.toolFindings,
 			}),
 			timeoutMs: this.options.timeoutMs ?? 15 * 60_000,
 		});
