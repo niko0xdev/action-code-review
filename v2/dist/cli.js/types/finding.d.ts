@@ -94,6 +94,16 @@ export interface ReviewDiagnostics {
     prelintSkipped?: string[];
     /** Tools that ran successfully (zero or more findings each). */
     prelintRan?: string[];
+    /** Phase 5: whether the verify pass was skipped (cost gate, no high/critical, etc). */
+    verifyPassSkipped?: boolean;
+    /** Phase 5: reason for skipping the verify pass. */
+    verifySkipReason?: string;
+    /** Phase 5: number of high/critical findings that survived verification. */
+    verifyVerifiedCount?: number;
+    /** Phase 5: number of high/critical findings dropped after verification. */
+    verifyDroppedCount?: number;
+    /** Phase 5: estimated cost (USD) of the verify pass. */
+    verifyEstimatedCostUsd?: number;
 }
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low' | 'none';
 export declare const SEVERITY_ORDER: Record<Severity, number>;
