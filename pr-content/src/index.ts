@@ -151,7 +151,8 @@ async function run(): Promise<void> {
 				repo,
 				pullNumber,
 				response,
-				templateContent
+				templateContent,
+				model
 			);
 		} catch (parseError) {
 			core.warning(
@@ -176,11 +177,12 @@ async function run(): Promise<void> {
 				repo,
 				pullNumber,
 				retryResponse,
-				templateContent
+				templateContent,
+				model
 			);
 		}
 
-		core.info('Successfully updated pull request content');
+		core.info(`Successfully updated pull request content (model: ${model})`);
 	} catch (error) {
 		if (error instanceof Error) {
 			core.setFailed(error.message);
