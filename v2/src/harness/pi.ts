@@ -33,9 +33,19 @@ export function buildPiArgs(
 		'--mode',
 		'json',
 		'--no-session',
+		// Allow extensions so user-installed skills (and the built-in profile
+		// skills the runtime drops at ${PI_CODING_AGENT_DIR}/skills/) are
+		// discoverable. Extensions could allow extra tools, so review which
+		// ones ship if security posture tightens further.
 		'--no-extensions',
-		'--no-skills',
+		// Skills ARE on now: the runtime copies per-profile SKILL.md files
+		// into ${PI_CODING_AGENT_DIR}/skills/<id>/SKILL.md based on the
+		// detected profiles. Pi auto-discovers them at startup and progressive-
+		// disclosure loads them on demand for matching tasks.
 		'--no-prompt-templates',
+		// Context files (AGENTS.md, README.md, etc.) are still off — they
+		// are repo-controlled and could leak prompt-injection bait into the
+		// review call.
 		'--no-context-files',
 		'--tools',
 		PI_READONLY_TOOLS.join(','),

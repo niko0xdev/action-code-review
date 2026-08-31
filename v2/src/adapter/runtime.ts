@@ -1,7 +1,9 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { LlmConfig } from '../llm/provider.js';
+import { BUILT_IN_SKILLS } from '../skills/registry.js';
+import type { ProfileId } from '../types/context.js';
 
 export function buildPiRuntimeModelsJson(config: LlmConfig): string {
 	return JSON.stringify(
@@ -39,16 +41,45 @@ export interface PiRuntimeConfig {
 	cleanup(): Promise<void>;
 }
 
+/**
+ * Write built-in skill SKILL.md files for each detected profile into the
+ * Pi config dir. Pi auto-discovers skills at `${PI_CODING_AGENT_DIR}/skills/`
+ * recursively, so dropping one directory per profile is enough.
+ *
+ * Skills are progressive-disclosure: Pi loads their descriptions into the
+ * system prompt (~1024 chars each), but only reads the body when the task
+ * matches. The full bodies are stored as compiled-in TypeScript strings
+ * (see `v2/src/skills/registry.ts`) so we ship self-contained — no external
+ * file reads at action runtime.
+ */
+async function writeSkillsForProfiles(
+	configDir: string,
+	profiles: readonly ProfileId[]
+): Promise<void> {
+	for (const profile of profiles) {
+		const content = BUILT_IN_SKILLS[profile];
+		if (!content) continue;
+		const skillDir = join(configDir, 'skills', profile);
+		await mkdir(skillDir, { recursive: true });
+		await writeFile(join(skillDir, 'SKILL.md'), content, 'utf8');
+	}
+}
+
 export async function preparePiRuntimeConfig(
-	config: LlmConfig
+	config: LlmConfig,
+	options?: { profiles?: readonly ProfileId[] }
 ): Promise<PiRuntimeConfig> {
 	const configDir = await mkdtemp(join(tmpdir(), 'acr-v2-pi-'));
 	try {
+		await mkdir(configDir, { recursive: true });
 		await writeFile(
 			join(configDir, 'models.json'),
 			buildPiRuntimeModelsJson(config),
 			'utf8'
 		);
+		if (options?.profiles && options.profiles.length > 0) {
+			await writeSkillsForProfiles(configDir, options.profiles);
+		}
 	} catch (error) {
 		await rm(configDir, { recursive: true, force: true });
 		throw error;
@@ -60,3 +91,6 @@ export async function preparePiRuntimeConfig(
 		},
 	};
 }
+
+// Re-export for tests
+export { dirname };

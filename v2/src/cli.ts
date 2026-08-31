@@ -357,7 +357,9 @@ export async function main(argv: string[]): Promise<void> {
 		);
 		reviewContext.profiles = profiles;
 		const previousConfigDir = process.env.PI_CODING_AGENT_DIR;
-		const runtimeConfig = await preparePiRuntimeConfig(llmConfig);
+		const runtimeConfig = await preparePiRuntimeConfig(llmConfig, {
+			profiles: profiles.map((p) => p.id),
+		});
 		process.env.PI_CODING_AGENT_DIR = runtimeConfig.configDir;
 		try {
 			const harness = new PiHarness({
