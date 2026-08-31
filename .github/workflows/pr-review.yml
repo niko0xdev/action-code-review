@@ -3,7 +3,6 @@ name: AI PR Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [ main, develop, dev ]
   workflow_dispatch:
 
 jobs:
@@ -27,7 +26,7 @@ jobs:
         if: github.event.pull_request.draft == false && github.event.pull_request.merged == false
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          openai-api-key: *** secrets.OPENAI_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           openai-base-url: ${{ secrets.OPENAI_API_URL }}
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
 
@@ -36,7 +35,7 @@ jobs:
         if: github.event.pull_request.draft == false && github.event.pull_request.merged == false
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          openai-api-key: *** secrets.OPENAI_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           openai-base-url: ${{ secrets.OPENAI_API_URL }}
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
           exclude-patterns: "*.md,*.txt,*.json,*.yml,*.yaml"
