@@ -35127,6 +35127,68 @@ function renderToolFindingsForPrompt(findings, maxLines = 50) {
     return lines.join('\n');
 }
 
+;// CONCATENATED MODULE: ./src/github/actor-filter.ts
+function isBotActor(actor) {
+    return actor.endsWith('[bot]');
+}
+function normalizeActor(actor) {
+    return actor.toLowerCase().replace(/\[bot\]$/, '');
+}
+function isAllowedBot(actor, allowedBots) {
+    const trimmed = allowedBots.trim();
+    if (trimmed === '*')
+        return true;
+    if (!trimmed)
+        return false;
+    const list = trimmed
+        .split(',')
+        .map((b) => b
+        .trim()
+        .toLowerCase()
+        .replace(/\[bot\]$/, ''))
+        .filter(Boolean);
+    return list.includes(normalizeActor(actor));
+}
+function matchesPattern(actor, pattern) {
+    const p = pattern.trim();
+    if (!p)
+        return false;
+    if (p === '*')
+        return true;
+    if (p === '*[bot]')
+        return isBotActor(actor);
+    if (p.endsWith('[bot]'))
+        return normalizeActor(actor) === p.toLowerCase().replace(/\[bot\]$/, '');
+    if (p.includes('*')) {
+        const re = new RegExp(`^${p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`, 'i');
+        return re.test(actor);
+    }
+    return actor.toLowerCase() === p.toLowerCase();
+}
+function isActorAllowed(actor, options) {
+    if (!actor)
+        return { allowed: true };
+    const excludeList = (options.excludeActors ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    for (const pat of excludeList) {
+        if (matchesPattern(actor, pat)) {
+            return {
+                allowed: false,
+                reason: `actor ${actor} matched exclude-actors pattern "${pat}"`,
+            };
+        }
+    }
+    if (isBotActor(actor) && !isAllowedBot(actor, options.allowedBots ?? '')) {
+        return { allowed: false, reason: `bot actor ${actor} not in allowed-bots` };
+    }
+    if (!isBotActor(actor) && excludeList.length === 0)
+        return { allowed: true };
+    // Non-bot actors not in exclude → allowed (no allowlist for humans)
+    return { allowed: true };
+}
+
 ;// CONCATENATED MODULE: ./src/llm/provider.ts
 /**
  * LLM provider abstraction. V2 treats the endpoint as an OpenAI-compatible
@@ -35709,13 +35771,13 @@ async function flushBuffer(octokit, owner, repo, prNumber, headSha, provider) {
 
 ;// CONCATENATED MODULE: ./src/github/permissions.ts
 
-function isBotActor(actor) {
+function permissions_isBotActor(actor) {
     return actor.endsWith('[bot]');
 }
 async function hasWritePermission(octokit, owner, repo, actor) {
     if (!actor)
         return true;
-    if (isBotActor(actor))
+    if (permissions_isBotActor(actor))
         return true;
     const repos = octokit.rest?.repos;
     const method = repos?.getCollaboratorPermissionLevel;
@@ -37047,6 +37109,7 @@ async function runReview(context, harness, options = {}) {
 
 
 
+
 function positiveTimeout(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -37281,6 +37344,18 @@ async function main(argv) {
         }
         const options = parseArgs(argv);
         lib_core.info(`[review] V2 initialized (action: ${options.action}, mode: ${mode})`);
+        const actorForFilter = process.env.GITHUB_ACTOR ??
+            github.context.payload.pull_request?.user?.login ??
+            github.context.actor ??
+            '';
+        const actorCheck = isActorAllowed(actorForFilter, {
+            allowedBots: lib_core.getInput('allowed-bots'),
+            excludeActors: lib_core.getInput('exclude-actors'),
+        });
+        if (!actorCheck.allowed) {
+            lib_core.info(`[review] Skipping review: ${actorCheck.reason}`);
+            return;
+        }
         if (options.action === 'pr-content') {
             const contentOptions = mapPrContentInputs({
                 'github-token': lib_core.getInput('github-token'),

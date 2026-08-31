@@ -13,6 +13,7 @@ import { preparePiRuntimeConfig } from './adapter/runtime.js';
 import { prioritizeFiles } from './context/files.js';
 import { fetchPrContext } from './context/pr.js';
 import { runPrelint } from './context/prelint.js';
+import { isActorAllowed } from './github/actor-filter.js';
 import { updatePrContent } from './github/pr-content.js';
 import { buildJobSummary, publishReview } from './github/review.js';
 import type { PublisherOctokit } from './github/review.js';
@@ -306,6 +307,23 @@ export async function main(argv: string[]): Promise<void> {
 		core.info(
 			`[review] V2 initialized (action: ${options.action}, mode: ${mode})`
 		);
+		const actorForFilter =
+			process.env.GITHUB_ACTOR ??
+			(
+				github.context.payload.pull_request?.user as
+					| { login?: string }
+					| undefined
+			)?.login ??
+			(github.context.actor as string | undefined) ??
+			'';
+		const actorCheck = isActorAllowed(actorForFilter, {
+			allowedBots: core.getInput('allowed-bots'),
+			excludeActors: core.getInput('exclude-actors'),
+		});
+		if (!actorCheck.allowed) {
+			core.info(`[review] Skipping review: ${actorCheck.reason}`);
+			return;
+		}
 		if (options.action === 'pr-content') {
 			const contentOptions = mapPrContentInputs({
 				'github-token': core.getInput('github-token'),
