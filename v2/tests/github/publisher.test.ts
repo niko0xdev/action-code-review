@@ -233,8 +233,9 @@ describe('publishReview', () => {
 			},
 			blockOnIssues: true,
 		});
-		const callArgs = (octokit.rest.pulls.createReview as ReturnType<typeof vi.fn>).mock
-			.calls[0]?.[0];
+		const callArgs = (
+			octokit.rest.pulls.createReview as ReturnType<typeof vi.fn>
+		).mock.calls[0]?.[0];
 		expect(callArgs).toMatchObject({ event: 'APPROVE', pull_number: 7 });
 		// APPROVE event MUST NOT carry inline comments — GitHub API rejects
 		// `comments` on an APPROVE review.
@@ -257,8 +258,9 @@ describe('publishReview', () => {
 			},
 			blockOnIssues: true,
 		});
-		const callArgs = (octokit.rest.pulls.createReview as ReturnType<typeof vi.fn>).mock
-			.calls[0]?.[0];
+		const callArgs = (
+			octokit.rest.pulls.createReview as ReturnType<typeof vi.fn>
+		).mock.calls[0]?.[0];
 		expect(callArgs.event).toBe('REQUEST_CHANGES');
 	});
 

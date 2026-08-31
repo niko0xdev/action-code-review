@@ -63,7 +63,9 @@ export type ProfileId =
 	| 'nodejs'
 	| 'python'
 	| 'swift'
-	| 'kotlin';
+	| 'kotlin'
+	| 'postgres'
+	| 'mysql';
 
 export interface ReviewContext {
 	repository: RepositoryInfo;
