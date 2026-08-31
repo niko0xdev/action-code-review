@@ -80,7 +80,8 @@ describe('buildPiRuntimeModelsJson', () => {
 		const provider = parsed.providers.hubworx as Record<string, unknown>;
 		expect(provider.baseUrl).toBe('https://gw.example.com/v1');
 		expect(provider.api).toBe('openai-completions');
-		expect(provider.apiKey).toBe('sk-x');
+		expect(provider.apiKey).toBeUndefined();
+		expect(json).not.toContain('sk-x');
 		const models = provider.models as Array<{ id: string }>;
 		expect(models.map((m) => m.id)).toContain('m1');
 	});
