@@ -15,6 +15,7 @@ import { fetchPrContext } from './context/pr.js';
 import { runPrelint } from './context/prelint.js';
 import { isActorAllowed } from './github/actor-filter.js';
 import { updatePrContent } from './github/pr-content.js';
+import { trackPhase } from './github/progress.js';
 import { buildJobSummary, publishReview } from './github/review.js';
 import type { PublisherOctokit } from './github/review.js';
 import { PiHarness } from './harness/pi.js';
@@ -380,6 +381,8 @@ export async function main(argv: string[]): Promise<void> {
 		);
 		const prNumber = context.payload.pull_request.number;
 		const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
+		const trackEnabled = core.getInput('track-progress') === 'true';
+		trackPhase('fetch', `PR #${prNumber}`, { enabled: trackEnabled });
 		const reviewContext = await fetchPrContext(octokit, repoInfo, prNumber);
 		reviewContext.repositoryPath =
 			process.env.GITHUB_WORKSPACE || process.cwd();
@@ -401,6 +404,11 @@ export async function main(argv: string[]): Promise<void> {
 			),
 			maxFiles
 		);
+		trackPhase(
+			'filter',
+			`${reviewContext.diff.files.length} files after filter`,
+			{ enabled: trackEnabled }
+		);
 		if (reviewContext.diff.files.length === 0) {
 			core.info('[review] No files to review after filtering');
 			return;
@@ -411,6 +419,9 @@ export async function main(argv: string[]): Promise<void> {
 			process.env.AI_REVIEW_PROFILE
 		);
 		reviewContext.profiles = profiles;
+		trackPhase('profiles', profiles.map((p) => p.id).join(', ') || 'auto', {
+			enabled: trackEnabled,
+		});
 		const previousConfigDir = process.env.PI_CODING_AGENT_DIR;
 		const runtimeConfig = await preparePiRuntimeConfig(llmConfig, {
 			profiles: profiles.map((p) => p.id),
@@ -437,6 +448,7 @@ export async function main(argv: string[]): Promise<void> {
 					`[prelint] Ran ${prelintResult.ran.join(', ')} — ${prelintResult.findings.length} findings`
 				);
 			}
+			trackPhase('harness', 'Pi review start', { enabled: trackEnabled });
 			const harness = new PiHarness({
 				timeoutMs: positiveTimeout(
 					process.env.AI_REVIEW_PI_TIMEOUT_MS,
@@ -468,6 +480,11 @@ export async function main(argv: string[]): Promise<void> {
 				prelintRan: prelintResult.ran,
 				prelintSkipped: prelintResult.skipped,
 			};
+			trackPhase(
+				'harness',
+				`Pi review done: ${result.findings.length} findings`,
+				{ enabled: trackEnabled }
+			);
 			await publishReview(octokit, {
 				owner: repoInfo.owner,
 				repo: repoInfo.repo,
@@ -492,6 +509,7 @@ export async function main(argv: string[]): Promise<void> {
 					)?.login ??
 					(github.context.actor as string | undefined),
 			});
+			trackPhase('publish', 'review published', { enabled: trackEnabled });
 			core.setOutput(
 				'review-summary',
 				`${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`
