@@ -221,6 +221,14 @@ export function buildSummaryBody(result: SummaryResult): string {
 	return lines.join('\n');
 }
 
+export function stickySummaryMarker(
+	owner: string,
+	repo: string,
+	prNumber: number
+): string {
+	return `<!-- ai-review-summary:${owner}/${repo}#${prNumber} -->`;
+}
+
 function footerLine(model: string): string {
 	const repository = process.env.GITHUB_REPOSITORY;
 	const runId = process.env.GITHUB_RUN_ID;
