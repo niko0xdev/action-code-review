@@ -23,7 +23,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Correct PR Description
-        uses: ./pr-content
+        uses: niko0xdev/action-code-review/pr-content@main
         if: github.event.pull_request.draft == false && github.event.pull_request.merged == false
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -32,7 +32,7 @@ jobs:
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
 
       - name: Run AI Code Review
-        uses: ./pr-review
+        uses: niko0xdev/action-code-review/pr-review@main
         if: github.event.pull_request.draft == false && github.event.pull_request.merged == false
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
