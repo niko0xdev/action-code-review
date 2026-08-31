@@ -462,11 +462,18 @@ export async function main(argv: string[]): Promise<void> {
 				provider: llmConfig.provider,
 				toolFindings: prelintResult.findings,
 			});
+			const promptFile = await readPromptFileIfNeeded(
+				reviewContext.repositoryPath
+			);
 			const result = await runReview(reviewContext, harness, {
 				minConfidence: Number.parseFloat(
 					process.env.AI_REVIEW_MIN_CONFIDENCE || '0.8'
 				),
-				extraRules: [legacyOptions.reviewPrompt, rulesForProfiles(profiles)]
+				extraRules: [
+					promptFile,
+					legacyOptions.reviewPrompt,
+					rulesForProfiles(profiles),
+				]
 					.filter(Boolean)
 					.join('\n\n'),
 				minSeverity: legacyOptions.minSeverity,
@@ -524,6 +531,32 @@ export async function main(argv: string[]): Promise<void> {
 		core.setFailed(
 			`Action failed: ${error instanceof Error ? error.message : String(error)}`
 		);
+	}
+}
+
+async function readPromptFileIfNeeded(
+	repoPath: string
+): Promise<string | undefined> {
+	const file = core.getInput('review-prompt-file');
+	if (!file) return undefined;
+	try {
+		const { readFileSync, statSync } = await import('node:fs');
+		const { resolve } = await import('node:path');
+		const full = resolve(repoPath, file);
+		const stat = statSync(full);
+		if (stat.size > 50 * 1024) {
+			core.warning(
+				`[review] review-prompt-file ${file} exceeds 50 KiB — ignored`
+			);
+			return undefined;
+		}
+		const content = readFileSync(full, 'utf8');
+		return content.trim() || undefined;
+	} catch (error) {
+		core.warning(
+			`[review] review-prompt-file read failed: ${error instanceof Error ? error.message : String(error)}`
+		);
+		return undefined;
 	}
 }
 
