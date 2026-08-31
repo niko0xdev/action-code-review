@@ -3,6 +3,7 @@ name: AI PR Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    branches: [ main, develop, dev ]
   workflow_dispatch:
 
 jobs:
@@ -13,19 +14,30 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-      
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+
+      - name: Correct PR Description
+        uses: niko0xdev/action-code-review/pr-content@main
+        if: github.event.pull_request.draft == false && github.event.pull_request.merged == false
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-base-url: ${{ secrets.OPENAI_API_URL }}
+          openai-model: ${{ secrets.OPENAI_API_MODEL }}
+
       - name: Run AI Code Review
-        uses: ./pr-review
+        uses: niko0xdev/action-code-review/pr-review@main
+        if: github.event.pull_request.draft == false && github.event.pull_request.merged == false
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           openai-base-url: ${{ secrets.OPENAI_API_URL }}
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
           exclude-patterns: "*.md,*.txt,*.json,*.yml,*.yaml"
+          min-severity: 'high'  # Only post high severity
