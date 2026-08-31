@@ -57,9 +57,7 @@ export interface PublisherOctokit extends OctokitLike {
 		};
 		issues: {
 			createComment(args: Record<string, unknown>): Promise<{ data: unknown }>;
-			listComments?(
-				args: Record<string, unknown>
-			): Promise<{
+			listComments?(args: Record<string, unknown>): Promise<{
 				data: Array<{
 					id: number;
 					body?: string | null;
@@ -286,9 +284,7 @@ async function findStickyComment(
 			: null;
 		const selfLogin = auth?.data?.login;
 		const comments = await listAll(
-			listComments as (
-				args: Record<string, unknown>
-			) => Promise<{
+			listComments as (args: Record<string, unknown>) => Promise<{
 				data: Array<{
 					id: number;
 					body?: string | null;
