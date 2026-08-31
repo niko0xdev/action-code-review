@@ -35615,6 +35615,9 @@ function buildSummaryBody(result) {
     lines.push('', '## Findings', '', '| Severity | Count | Status |', '|----------|------:|:------:|', `| 🚨 Critical | ${result.counts.critical} | ${result.counts.critical ? '❌' : '✅'} |`, `| 🔥 High | ${result.counts.high} | ${result.counts.high ? '❌' : '✅'} |`, `| ⚠️ Medium | ${result.counts.medium} | ${result.counts.medium ? '❌' : '✅'} |`, `| ✅ Low | ${result.counts.low} | ${result.counts.low ? '❌' : '✅'} |`, '', '## Decision', '', decision, '', ...findingLines(findings), '', ...buildChecksTable(findings, result.counts), '', '---', footer);
     return lines.join('\n');
 }
+function stickySummaryMarker(owner, repo, prNumber) {
+    return `<!-- ai-review-summary:${owner}/${repo}#${prNumber} -->`;
+}
 function footerLine(model) {
     const repository = process.env.GITHUB_REPOSITORY;
     const runId = process.env.GITHUB_RUN_ID;
@@ -35884,22 +35887,45 @@ async function publishReview(octokit, params) {
             }
         }
     }
-    await octokit.rest.issues.createComment({
-        owner,
-        repo,
-        issue_number: prNumber,
-        body: buildSummaryBody({
-            risk: result.risk,
-            counts: result.counts,
-            filesReviewed: result.filesReviewed,
-            summary: result.summary,
-            findings,
-            model: params.model,
-            durationMs: params.durationMs,
-            filesTotal: params.filesTotal,
-            filesExcluded: params.filesExcluded,
-        }),
-    });
+    const marker = stickySummaryMarker(owner, repo, prNumber);
+    const summaryBody = `${buildSummaryBody({
+        risk: result.risk,
+        counts: result.counts,
+        filesReviewed: result.filesReviewed,
+        summary: result.summary,
+        findings,
+        model: params.model,
+        durationMs: params.durationMs,
+        filesTotal: params.filesTotal,
+        filesExcluded: params.filesExcluded,
+    })}\n\n${marker}`;
+    if (params.stickySummary) {
+        const existing = await findStickyComment(octokit, owner, repo, prNumber, marker);
+        if (existing) {
+            await octokit.rest.issues.updateComment?.({
+                owner,
+                repo,
+                comment_id: existing,
+                body: summaryBody,
+            });
+        }
+        else {
+            await octokit.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: summaryBody,
+            });
+        }
+    }
+    else {
+        await octokit.rest.issues.createComment({
+            owner,
+            repo,
+            issue_number: prNumber,
+            body: summaryBody,
+        });
+    }
     if (hasWrite && (findings.length === 0 || !hasBlockingFinding)) {
         try {
             await octokit.rest.pulls.createReview({
@@ -35915,6 +35941,27 @@ async function publishReview(octokit, params) {
             lib_core.warning(`Approve review failed: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
+}
+async function findStickyComment(octokit, owner, repo, prNumber, marker) {
+    const listComments = octokit.rest.issues.listComments;
+    if (!listComments)
+        return null;
+    try {
+        const auth = octokit.users
+            ? await octokit.users.getAuthenticated().catch(() => null)
+            : null;
+        const selfLogin = auth?.data?.login;
+        const comments = await listAll(listComments, { owner, repo, issue_number: prNumber });
+        for (const c of comments) {
+            if (selfLogin &&
+                c.user?.login !== selfLogin)
+                continue;
+            if (typeof c.body === 'string' && c.body.includes(marker))
+                return c.id;
+        }
+    }
+    catch { }
+    return null;
 }
 async function listAll(method, args) {
     if (!method)
@@ -37223,6 +37270,19 @@ function toPublisherOctokit(client) {
                 }),
             },
             issues: {
+                listComments: (args) => client.rest.issues.listComments({
+                    owner: requiredString(args, 'owner'),
+                    repo: requiredString(args, 'repo'),
+                    issue_number: requiredNumber(args, 'issue_number'),
+                    page: requiredNumber(args, 'page'),
+                    per_page: requiredNumber(args, 'per_page'),
+                }),
+                updateComment: (args) => client.rest.issues.updateComment({
+                    owner: requiredString(args, 'owner'),
+                    repo: requiredString(args, 'repo'),
+                    comment_id: requiredNumber(args, 'comment_id'),
+                    body: requiredString(args, 'body'),
+                }),
                 createComment: (args) => client.rest.issues.createComment({
                     owner: requiredString(args, 'owner'),
                     repo: requiredString(args, 'repo'),
@@ -37464,6 +37524,7 @@ async function main(argv) {
                 blockOnIssues: legacyOptions.blockOnIssues,
                 minSeverity: legacyOptions.minSeverity,
                 requireWritePermissions: lib_core.getInput('require-write-permissions') === 'true',
+                stickySummary: lib_core.getInput('sticky-summary') !== 'false',
                 bufferInlineComments: lib_core.getInput('buffer-inline-comments') !== 'false' &&
                     lib_core.getInput('classify-inline-comments') !== 'false',
                 actor: process.env.GITHUB_ACTOR ??
