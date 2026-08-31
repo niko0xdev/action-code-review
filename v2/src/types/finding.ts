@@ -103,6 +103,10 @@ export interface ReviewDiagnostics {
 	toolFindingsTotal?: number;
 	/** Number of LLM findings dropped because the category was unknown. */
 	bucketedUnknownCategories?: number;
+	/** Number of cross-finding pairs where the lower-confidence side was dropped. */
+	crossFindingConflictsResolved?: number;
+	/** True when the trivial-PR fast-path was applied (caps to top-3 findings). */
+	trivialPrFastPath?: boolean;
 	/** Tools that were requested but skipped (missing binary, timeout, ...). */
 	prelintSkipped?: string[];
 	/** Tools that ran successfully (zero or more findings each). */

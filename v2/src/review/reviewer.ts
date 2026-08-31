@@ -10,6 +10,13 @@ import {
 import { dedupeFindings } from './dedupe.js';
 import { planReviewGroups } from './planner.js';
 import { capFindings, computeCounts, riskFromFindings } from './severity.js';
+import {
+	hasTestFileChanges,
+	normalizeCategories,
+	resolveCrossFindingConflicts,
+	sanitizeReplacements,
+	trivialPrFastPath,
+} from './validation.js';
 import { validateFindings } from './validator.js';
 
 export interface RunReviewOptions {
@@ -84,14 +91,46 @@ export async function runReview(
 		context.diff.files,
 		options.minConfidence ?? 0.8
 	);
-	const findings = capFindings(dedupeFindings(validated)).sort(
+
+	// Phase 3 pipeline additions (V3 decision Q2 + spec §18):
+	// 1) category vocabulary -> bucket unknown to low
+	// 2) suggestion safety -> strip unsafe replacements
+	// 3) dedupe -> cross-finding consistency -> cap
+	const normalized = normalizeCategories(validated);
+	const sanitized = sanitizeReplacements(normalized.findings);
+	const deduped = dedupeFindings(sanitized);
+	const crossChecked = resolveCrossFindingConflicts(deduped);
+	const fastPathed = trivialPrFastPath(crossChecked.findings, {
+		totalChanges: context.diff.totalAdditions + context.diff.totalDeletions,
+		hasTestFileChanges: hasTestFileChanges(
+			context.diff.files.map((f) => f.filename)
+		),
+	});
+	const findings = capFindings(fastPathed.findings).sort(
 		(a, b) => b.confidence - a.confidence
 	);
-	return {
+
+	const result: ReviewResult = {
 		findings,
 		summary: summaries.join('\n\n').trim(),
 		risk: riskFromFindings(findings),
 		counts: computeCounts(findings),
 		filesReviewed,
 	};
+	// Phase 3 diagnostics: bucket count + conflict drop count + trivial flag.
+	// Preserve any toolFindings already set by cli.ts so reviewers don't
+	// overwrite upstream phases.
+	if (
+		normalized.bucketedCount > 0 ||
+		crossChecked.droppedCount > 0 ||
+		fastPathed.trivialPr
+	) {
+		result.diagnostics = {
+			...result.diagnostics,
+			bucketedUnknownCategories: normalized.bucketedCount,
+			crossFindingConflictsResolved: crossChecked.droppedCount,
+			trivialPrFastPath: fastPathed.trivialPr,
+		};
+	}
+	return result;
 }
