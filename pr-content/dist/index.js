@@ -275,6 +275,8 @@ async function run() {
             core.setFailed('No response from OpenAI');
             return;
         }
+        core.warning(`[pr-content] AI response length: ${response.length}`);
+        core.warning(`[pr-content] AI response first 500 chars: ${response.slice(0, 500)}`);
         // Parse and update PR. updatePullRequestContent tolerates JSON wrapped
         // in markdown code fences or surrounded by prose; if it still fails,
         // retry once with the larger budget to recover from truncation.
