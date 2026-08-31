@@ -49,6 +49,47 @@ export interface ReviewResult {
     counts: FindingCounts;
     /** Files actually included in the review pass. */
     filesReviewed: string[];
+    /** Static-analyzer findings surfaced as evidence for the LLM review. */
+    toolFindings?: ToolFinding[];
+    /** Diagnostics about the review pipeline (counts, dropped findings, etc). */
+    diagnostics?: ReviewDiagnostics;
+}
+/**
+ * A single finding emitted by a deterministic static-analysis tool
+ * (biome, ruff, mypy, swiftlint, ktlint, sqlfluff, semgrep, ...).
+ * These are NOT published as PR comments directly - they are injected
+ * into the LLM review prompt as evidence so the model can confirm,
+ * contradict, or extend them with higher-level reasoning.
+ */
+export interface ToolFinding {
+    /** Identifier of the static-analysis tool (e.g. "biome", "ruff"). */
+    tool: string;
+    /** Stable rule code from the tool (e.g. "B904", "no-unused-vars"). */
+    code: string;
+    /** Path of the file the finding targets (relative to repo root). */
+    path: string;
+    /** 1-based line number in the file (post-change side if applicable). */
+    line: number;
+    /** Tool-assigned severity - mapped to our severity scale on ingestion. */
+    severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
+    /** Short message from the tool describing the issue. */
+    message: string;
+    /** Optional tool-specific rule documentation URL. */
+    docUrl?: string;
+}
+/**
+ * Diagnostics about the review pipeline (not published inline, surfaced
+ * only in tool output / job summary for debugging).
+ */
+export interface ReviewDiagnostics {
+    /** Number of tool findings emitted across all tools. */
+    toolFindingsTotal?: number;
+    /** Number of LLM findings dropped because the category was unknown. */
+    bucketedUnknownCategories?: number;
+    /** Tools that were requested but skipped (missing binary, timeout, ...). */
+    prelintSkipped?: string[];
+    /** Tools that ran successfully (zero or more findings each). */
+    prelintRan?: string[];
 }
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low' | 'none';
 export declare const SEVERITY_ORDER: Record<Severity, number>;

@@ -48,6 +48,36 @@ describe('buildReviewPrompt', () => {
 		expect(prompt).toContain('nodejs');
 	});
 
+	it('injects toolFindings section when provided', () => {
+		const prompt = buildReviewPrompt(makeContext(), undefined, {
+			toolFindings: [
+				{
+					tool: 'biome',
+					code: 'no-unused-vars',
+					path: 'src/auth.ts',
+					line: 42,
+					severity: 'medium',
+					message: 'unused variable x',
+				},
+			],
+		});
+		expect(prompt).toContain('Static analyzer evidence');
+		expect(prompt).toContain('[biome/no-unused-vars] src/auth.ts:42');
+		expect(prompt).toContain('treat as evidence, not as your output');
+	});
+
+	it('omits toolFindings section when not provided', () => {
+		const prompt = buildReviewPrompt(makeContext());
+		expect(prompt).not.toContain('Static analyzer evidence');
+	});
+
+	it('omits toolFindings section when empty array', () => {
+		const prompt = buildReviewPrompt(makeContext(), undefined, {
+			toolFindings: [],
+		});
+		expect(prompt).not.toContain('Static analyzer evidence');
+	});
+
 	it('embeds the file patch', () => {
 		const prompt = buildReviewPrompt(makeContext());
 		expect(prompt).toContain('+new');
