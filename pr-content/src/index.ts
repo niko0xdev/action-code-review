@@ -75,24 +75,83 @@ async function run(): Promise<void> {
 		);
 
 		// Generate content with AI
-		const completion = await openai.chat.completions.create({
-			model,
-			messages: [
-				{ role: 'system', content: systemPrompt },
-				{ role: 'user', content: userPrompt },
-			],
-			max_tokens: maxTokens,
-			temperature: 0.3,
-		});
+		let response: string | null | undefined;
+		let finishReason: string | undefined;
+		try {
+			const completion = await openai.chat.completions.create({
+				model,
+				messages: [
+					{ role: 'system', content: systemPrompt },
+					{ role: 'user', content: userPrompt },
+				],
+				max_tokens: maxTokens,
+				temperature: 0.3,
+			});
+			response = completion.choices[0]?.message?.content;
+			finishReason = completion.choices[0]?.finish_reason;
+		} catch (firstError) {
+			core.warning(
+				`First AI call failed (${firstError instanceof Error ? firstError.message : String(firstError)}); retrying with max_tokens=4096`
+			);
+			const completion = await openai.chat.completions.create({
+				model,
+				messages: [
+					{ role: 'system', content: systemPrompt },
+					{ role: 'user', content: userPrompt },
+				],
+				max_tokens: 4096,
+				temperature: 0.3,
+			});
+			response = completion.choices[0]?.message?.content;
+			finishReason = completion.choices[0]?.finish_reason;
+		}
 
-		const response = completion.choices[0]?.message?.content;
+		// If first call was truncated or empty, retry once with larger budget.
+		if (!response || finishReason === 'length') {
+			core.warning(
+				`AI response ${finishReason === 'length' ? 'truncated (finish_reason=length)' : 'empty'}; retrying with max_tokens=4096`
+			);
+			const completion = await openai.chat.completions.create({
+				model,
+				messages: [
+					{ role: 'system', content: systemPrompt },
+					{ role: 'user', content: userPrompt },
+				],
+				max_tokens: 4096,
+				temperature: 0.3,
+			});
+			response = completion.choices[0]?.message?.content;
+		}
+
 		if (!response) {
 			core.setFailed('No response from OpenAI');
 			return;
 		}
 
-		// Parse and update PR
-		await updatePullRequestContent(octokit, owner, repo, pullNumber, response, templateContent);
+		// Parse and update PR. updatePullRequestContent tolerates JSON wrapped
+		// in markdown code fences or surrounded by prose; if it still fails,
+		// retry once with the larger budget to recover from truncation.
+		try {
+			await updatePullRequestContent(octokit, owner, repo, pullNumber, response, templateContent);
+		} catch (parseError) {
+			core.warning(
+				`First parse failed (${parseError instanceof Error ? parseError.message : String(parseError)}); retrying with max_tokens=4096`
+			);
+			const retry = await openai.chat.completions.create({
+				model,
+				messages: [
+					{ role: 'system', content: systemPrompt },
+					{ role: 'user', content: userPrompt },
+				],
+				max_tokens: 4096,
+				temperature: 0.3,
+			});
+			const retryResponse = retry.choices[0]?.message?.content;
+			if (!retryResponse) {
+				throw parseError;
+			}
+			await updatePullRequestContent(octokit, owner, repo, pullNumber, retryResponse, templateContent);
+		}
 
 		core.info('Successfully updated pull request content');
 	} catch (error) {
