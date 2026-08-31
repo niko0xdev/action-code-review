@@ -1,11 +1,11 @@
 {
 	"name": "action-code-review-v2",
-	"version": "3.0.0",
-	"description": "V2 AI code review engine: repository-aware review via a coding harness over an OpenAI-compatible endpoint. V3 adds prelint layer, validation hardening, two-pass verify, and PR summary diagnostics.",
+	"version": "2.0.0",
+	"description": "V2 AI code review engine: repository-aware review via a coding harness over an OpenAI-compatible endpoint",
 	"type": "module",
 	"main": "dist/cli.js",
 	"scripts": {
-		"build": "tsc && rm -rf dist && mkdir -p dist/entry && npx ncc build src/entry/pr-review.ts -o dist/entry/pr-review --no-cache --quiet && mv dist/entry/pr-review/index.js dist/entry/pr-review.js && rm -rf dist/entry/pr-review && npx ncc build src/entry/pr-content.ts -o dist/entry/pr-content --no-cache --quiet && mv dist/entry/pr-content/index.js dist/entry/pr-content.js && rm -rf dist/entry/pr-content && npx ncc build src/cli.ts -o dist/cli.js --no-cache --quiet && echo 'Build complete'",
+		"build": "rm -rf dist && tsc && mkdir -p dist/entry && npx ncc build src/entry/pr-review.ts -o dist/entry/pr-review --no-cache --quiet && mv dist/entry/pr-review/index.js dist/entry/pr-review.js && rm -rf dist/entry/pr-review && npx ncc build src/entry/pr-content.ts -o dist/entry/pr-content --no-cache --quiet && mv dist/entry/pr-content/index.js dist/entry/pr-content.js && rm -rf dist/entry/pr-content && npx ncc build src/cli.ts -o dist/cli-bundle --no-cache --quiet && mv dist/cli-bundle/index.js dist/cli.js && rm -rf dist/cli-bundle && echo 'Build complete'",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",

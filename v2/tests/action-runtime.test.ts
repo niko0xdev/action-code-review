@@ -122,9 +122,22 @@ describe.each([
 });
 
 describe('pr-review outputs survive the composite conversion', () => {
-	it('still exposes the frozen review-summary output', () => {
+	it('still exposes the frozen review-summary output (additive security outputs allowed)', () => {
 		const parsed = loadAction('pr-review/action.yml');
-		expect(Object.keys(parsed.outputs ?? {})).toEqual(['review-summary']);
+		expect(Object.keys(parsed.outputs ?? {})).toContain('review-summary');
+	});
+	it('exposes additive security outputs', () => {
+		const parsed = loadAction('pr-review/action.yml');
+		for (const k of [
+			'security_findings',
+			'security_findings_count',
+			'security_risk',
+			'security_sarif_path',
+			'security_report_path',
+			'security_conclusion',
+		]) {
+			expect(Object.keys(parsed.outputs ?? {})).toContain(k);
+		}
 	});
 });
 

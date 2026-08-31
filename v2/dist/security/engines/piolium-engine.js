@@ -1,0 +1,57 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { normalizeSecurityFinding } from '../findings/normalizer.js';
+/**
+ * Piolium Deep Security Audit Engine Adapter.
+ * Spec reference: §8, §19.
+ */
+export class PioliumSecurityEngine {
+    name = 'piolium';
+    async diff(ctx) {
+        return this.audit(ctx, 'lite');
+    }
+    async audit(ctx, profile) {
+        const tempWorkDir = await mkdtemp(join(tmpdir(), 'piolium-audit-'));
+        try {
+            // Dynamic import to avoid hard crash if @vigolium/piolium is optional/custom installed
+            let pioliumModule = null;
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                pioliumModule = (await import('@vigolium/piolium'));
+            }
+            catch {
+                // Piolium package not installed in environment, fallback to structured audit synthesis
+            }
+            if (pioliumModule && typeof pioliumModule.runAudit === 'function') {
+                const auditRes = await pioliumModule.runAudit({
+                    repositoryPath: ctx.repositoryPath,
+                    outputDir: tempWorkDir,
+                    profile,
+                    model: ctx.options.model,
+                    apiKey: ctx.options.apiKey,
+                    baseUrl: ctx.options.baseUrl,
+                });
+                const rawFindings = Array.isArray(auditRes?.findings)
+                    ? auditRes.findings
+                    : [];
+                return rawFindings
+                    .map((f) => normalizeSecurityFinding(f, ctx.repo, 'piolium'))
+                    .filter((f) => f !== null);
+            }
+            // Fallback: use PiSecurityEngine for audit if Piolium native CLI is unavailable
+            const { PiSecurityEngine } = await import('./pi-security-engine.js');
+            const fallbackEngine = new PiSecurityEngine();
+            return fallbackEngine.diff(ctx);
+        }
+        finally {
+            await rm(tempWorkDir, { recursive: true, force: true }).catch(() => { });
+        }
+    }
+    async confirm(ctx, findings) {
+        const { PiSecurityEngine } = await import('./pi-security-engine.js');
+        const piEngine = new PiSecurityEngine();
+        return piEngine.confirm(ctx, findings);
+    }
+}
+//# sourceMappingURL=piolium-engine.js.map
