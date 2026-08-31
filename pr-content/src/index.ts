@@ -76,6 +76,7 @@ async function run(): Promise<void> {
 
 		// Generate content with AI
 		let response: string | null | undefined;
+		let finishReason: string | undefined;
 		try {
 			const completion = await openai.chat.completions.create({
 				model,
@@ -87,14 +88,28 @@ async function run(): Promise<void> {
 				temperature: 0.3,
 			});
 			response = completion.choices[0]?.message?.content;
+			finishReason = completion.choices[0]?.finish_reason;
 		} catch (firstError) {
-			// Retry once with larger token budget if first call hit the limit.
-			// Some models (e.g. claude-sonnet-5) produce JSON >1000 tokens for
-			// non-trivial PRs and hit finish_reason=length, leaving an
-			// unterminated JSON string. This fallback preserves the V1 default
-			// for short PRs and only kicks in when the first call fails.
 			core.warning(
 				`First AI call failed (${firstError instanceof Error ? firstError.message : String(firstError)}); retrying with max_tokens=4096`
+			);
+			const completion = await openai.chat.completions.create({
+				model,
+				messages: [
+					{ role: 'system', content: systemPrompt },
+					{ role: 'user', content: userPrompt },
+				],
+				max_tokens: 4096,
+				temperature: 0.3,
+			});
+			response = completion.choices[0]?.message?.content;
+			finishReason = completion.choices[0]?.finish_reason;
+		}
+
+		// If first call was truncated, retry once with larger budget.
+		if (!response || finishReason === 'length') {
+			core.warning(
+				`AI response ${finishReason === 'length' ? 'truncated (finish_reason=length)' : 'empty'}; retrying with max_tokens=4096`
 			);
 			const completion = await openai.chat.completions.create({
 				model,
