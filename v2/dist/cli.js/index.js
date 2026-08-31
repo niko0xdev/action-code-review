@@ -34393,7 +34393,7 @@ function loadLlmConfigFromEnv(env = process.env) {
         throw new Error('Missing required environment variable OPENAI_API_MODEL. Set it to the model id served by your OpenAI-compatible endpoint.');
     }
     return {
-        provider: 'hubworx',
+        provider: 'openai',
         apiKey,
         baseUrl: normalizeBaseUrl(env.OPENAI_API_URL || DEFAULT_BASE_URL),
         model,
@@ -34421,7 +34421,7 @@ function resolveEngineConfig(input) {
     }
     const rawBaseUrl = input.baseUrl || process.env.OPENAI_API_URL || 'https://api.openai.com/v1';
     return {
-        provider: 'hubworx',
+        provider: 'openai',
         apiKey,
         baseUrl: normalizeBaseUrl(rawBaseUrl),
         model,
@@ -35489,7 +35489,7 @@ function coerceFinding(item) {
 
 const PI_READONLY_TOOLS = ['read', 'grep', 'find', 'ls'];
 const MAX_OUTPUT_BYTES = 50 * 1024 * 1024;
-function buildPiArgs(repositoryPath, model, provider = 'hubworx') {
+function buildPiArgs(repositoryPath, model, provider = 'openai') {
     const args = [
         '-p',
         '--mode',
@@ -35555,7 +35555,7 @@ class PiHarness {
     async review(context) {
         const stdout = await runPi({
             binaryPath: this.options.binaryPath ?? 'pi',
-            args: buildPiArgs(context.repositoryPath, this.options.model ?? process.env.OPENAI_API_MODEL, this.options.provider ?? 'hubworx'),
+            args: buildPiArgs(context.repositoryPath, this.options.model ?? process.env.OPENAI_API_MODEL, this.options.provider ?? 'openai'),
             cwd: context.repositoryPath,
             configDir: await resolveRuntimeConfigDir(),
             apiKey: this.options.apiKey,
@@ -35569,7 +35569,7 @@ class PiHarness {
     }
 }
 async function resolveRuntimeConfigDir() {
-    const configDir = process.env.PI_CONFIG_DIR;
+    const configDir = process.env.PI_CODING_AGENT_DIR;
     if (configDir)
         return configDir;
     return (0,promises_namespaceObject.mkdtemp)((0,external_node_path_namespaceObject.join)((0,external_node_os_namespaceObject.tmpdir)(), 'acr-v2-pi-test-'));
@@ -36349,8 +36349,8 @@ function toPublisherOctokit(client) {
             const event = requiredString(args, 'event');
             if (!['REQUEST_CHANGES', 'COMMENT', 'APPROVE'].includes(event))
                 throw new Error('Invalid event');
-            if (!Array.isArray(args.comments))
-                throw new Error('Missing comments');
+            if (args.comments !== undefined && !Array.isArray(args.comments))
+                throw new Error('comments must be array');
             return client.rest.pulls.createReview({
                 ...repositoryArgs(args),
                 commit_id: requiredString(args, 'commit_id'),
@@ -36574,9 +36574,9 @@ async function main(argv) {
         }
         const profiles = resolveProfiles(reviewContext.repositoryPath, process.env.AI_REVIEW_PROFILE);
         reviewContext.profiles = profiles;
-        const previousConfigDir = process.env.PI_CONFIG_DIR;
+        const previousConfigDir = process.env.PI_CODING_AGENT_DIR;
         const runtimeConfig = await preparePiRuntimeConfig(llmConfig);
-        process.env.PI_CONFIG_DIR = runtimeConfig.configDir;
+        process.env.PI_CODING_AGENT_DIR = runtimeConfig.configDir;
         try {
             const harness = new PiHarness({
                 timeoutMs: positiveTimeout(process.env.AI_REVIEW_PI_TIMEOUT_MS, 15 * 60_000),
@@ -36608,9 +36608,9 @@ async function main(argv) {
         finally {
             await runtimeConfig.cleanup();
             if (previousConfigDir === undefined)
-                Reflect.deleteProperty(process.env, 'PI_CONFIG_DIR');
+                Reflect.deleteProperty(process.env, 'PI_CODING_AGENT_DIR');
             else
-                process.env.PI_CONFIG_DIR = previousConfigDir;
+                process.env.PI_CODING_AGENT_DIR = previousConfigDir;
         }
     }
     catch (error) {

@@ -46,7 +46,7 @@ describe('loadLlmConfigFromEnv', () => {
 		withEnv(BASE_ENV);
 		const config = loadLlmConfigFromEnv();
 		expect(config).toEqual<LlmConfig>({
-			provider: 'hubworx',
+			provider: 'openai',
 			apiKey: 'sk-test-key',
 			baseUrl: 'https://llm.example.com/v1',
 			model: 'gpt-4o-mini',

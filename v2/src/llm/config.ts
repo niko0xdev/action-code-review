@@ -46,7 +46,7 @@ export function loadLlmConfigFromEnv(
 	}
 
 	return {
-		provider: 'hubworx',
+		provider: 'openai',
 		apiKey,
 		baseUrl: normalizeBaseUrl(env.OPENAI_API_URL || DEFAULT_BASE_URL),
 		model,

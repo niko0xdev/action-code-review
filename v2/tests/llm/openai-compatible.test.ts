@@ -8,7 +8,7 @@ import { safeErrorDetail } from '../../src/llm/openai-compatible.js';
 import type { LlmConfig } from '../../src/llm/provider.js';
 
 const CONFIG: LlmConfig = {
-	provider: 'hubworx',
+	provider: 'openai',
 	apiKey: 'sk-test-key',
 	baseUrl: 'https://llm.example.com/v1',
 	model: 'gpt-4o-mini',

@@ -67,10 +67,10 @@ describe('buildPiArgs', () => {
 		expect(args).toContain('--no-context-files');
 	});
 
-	it('selects the hubworx provider and configured model', () => {
+	it('selects the openai provider and configured model', () => {
 		const args = buildPiArgs('/repo', 'gpt-4o-mini');
 		expect(args).toContain('--provider');
-		expect(args).toContain('hubworx');
+		expect(args).toContain('openai');
 		expect(args).toContain('--model');
 		expect(args).toContain('gpt-4o-mini');
 	});

@@ -30,7 +30,7 @@ export function resolveEngineConfig(input: EngineConfigInput): LlmConfig {
 		input.baseUrl || process.env.OPENAI_API_URL || 'https://api.openai.com/v1';
 
 	return {
-		provider: 'hubworx',
+		provider: 'openai',
 		apiKey,
 		baseUrl: normalizeBaseUrl(rawBaseUrl),
 		model,

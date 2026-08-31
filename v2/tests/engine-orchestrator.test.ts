@@ -21,7 +21,7 @@ describe('resolveEngineConfig', () => {
 		});
 
 		expect(config).toEqual({
-			provider: 'hubworx',
+			provider: 'openai',
 			apiKey: 'input-key',
 			baseUrl: 'https://gw.example.com/v1',
 			model: 'input-model',
