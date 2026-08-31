@@ -35159,6 +35159,7 @@ function footerLine(model) {
 
 
 
+
 function buildReviewPayload(findings, headSha, options = {}) {
     const comments = findings.map((finding) => ({
         path: finding.path,
@@ -35194,7 +35195,7 @@ async function publishReview(octokit, params) {
             });
         }
         catch (error) {
-            console.warn(`Batch review failed: ${error instanceof Error ? error.message : String(error)}`);
+            lib_core.warning(`Batch review failed: ${error instanceof Error ? error.message : String(error)}`);
             for (const comment of payload.comments) {
                 try {
                     await octokit.rest.pulls.createReviewComment({
@@ -35247,7 +35248,7 @@ async function publishReview(octokit, params) {
             });
         }
         catch (error) {
-            console.warn(`Approve review failed: ${error instanceof Error ? error.message : String(error)}`);
+            lib_core.warning(`Approve review failed: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 }
@@ -35294,7 +35295,7 @@ async function fetchExistingCommentIds(octokit, owner, repo, prNumber) {
         }
     }
     catch (error) {
-        console.warn(`Failed to fetch existing review comments: ${error instanceof Error ? error.message : String(error)}`);
+        lib_core.warning(`Failed to fetch existing review comments: ${error instanceof Error ? error.message : String(error)}`);
     }
     return ids;
 }

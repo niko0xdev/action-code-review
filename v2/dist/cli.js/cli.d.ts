@@ -6,4 +6,3 @@ export declare function applyLegacyFilters(filenames: string[], options: {
     excludePatterns: string[];
     includeDirs?: string[];
 }): string[];
-//# sourceMappingURL=cli.d.ts.map
