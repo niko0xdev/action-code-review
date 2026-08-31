@@ -48,7 +48,7 @@ export async function updatePullRequestContent(
 		}
 
 		// Validate response
-		if (!update.title || !update.description) {
+		if (!update!.title || !update!.description) {
 			throw new Error(
 				'AI response missing required fields: title and description'
 			);
@@ -62,22 +62,22 @@ export async function updatePullRequestContent(
 		});
 
 		// If we have a template, use the AI-generated description to fill it in
-		let finalDescription = update.description;
+		let finalDescription = update!.description;
 		if (templateContent) {
 			// Try to extract the description from the AI response if it's in a template format
 			// Otherwise, use the description as is
-			if (update.description.includes('## Description')) {
-				finalDescription = update.description;
+			if (update!.description.includes('## Description')) {
+				finalDescription = update!.description;
 			} else {
 				// Fill the template with the AI-generated description
 				finalDescription = templateContent.replace(
 					/<!-- AI will fill this section with a description of what changed -->/,
-					update.description
+					update!.description
 				);
 				
 				// Also fill in the testing section if the AI provided it
-				if (update.description.includes('## How Has This Been Tested')) {
-					const testingMatch = update.description.match(/## How Has This Been Tested\s*\n([\s\S]*?)(?=\n##|\n\n|$)/);
+				if (update!.description.includes('## How Has This Been Tested')) {
+					const testingMatch = update!.description.match(/## How Has This Been Tested\s*\n([\s\S]*?)(?=\n##|\n\n|$)/);
 					if (testingMatch) {
 						finalDescription = finalDescription.replace(
 							/<!-- AI will fill this section with testing information -->/,
@@ -89,7 +89,7 @@ export async function updatePullRequestContent(
 		}
 
 		const hasChanges =
-			currentPR.data.title !== update.title ||
+			currentPR.data.title !== update!.title ||
 			currentPR.data.body !== finalDescription;
 
 		if (!hasChanges) {
@@ -102,11 +102,11 @@ export async function updatePullRequestContent(
 			owner,
 			repo,
 			pull_number: pullNumber,
-			title: update.title,
+			title: update!.title,
 			body: finalDescription,
 		});
 
-		core.info(`Updated PR title: "${update.title}"`);
+		core.info(`Updated PR title: "${update!.title}"`);
 		core.info(
 			`Updated PR description: ${finalDescription.substring(0, 100)}...`
 		);
