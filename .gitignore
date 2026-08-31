@@ -29,5 +29,11 @@ coverage/
 examples/nextjs/.next/
 .aider*
 
-# V2 build output (rebuilt from source with pnpm build)
-v2/dist/
+# V2 build output (rebuilt from source with pnpm build).
+# Ignore the entire v2/dist tree EXCEPT v2/dist/entry/ — entry bundles MUST
+# be committed so the delegation bridge can find them at runtime without
+# requiring a build step in the consumer's checkout. These are the actual
+# entry points invoked via runViaV2IfAvailable() in
+# pr-review/src/v2Delegate.ts and pr-content/src/v2Delegate.ts.
+v2/dist/*
+!v2/dist/entry/
