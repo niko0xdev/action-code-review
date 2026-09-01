@@ -33,7 +33,10 @@ import { resolveProfiles, rulesForProfiles } from './profiles/index.js';
 import { runReview } from './review/reviewer.js';
 import { runSecurityWorkflow } from './security/orchestrator.js';
 import { publishSecurityReview } from './security/reporters/security-publisher.js';
+import { CURATED_SECURITY_SKILLS } from './security/skills/registry.js';
+import { renderSkillsForPrompt } from './security/skills/selector.js';
 import type { SecurityContext } from './security/types.js';
+import { profilesWithSkills } from './skills/registry.js';
 
 function positiveTimeout(value: string | undefined, fallback: number): number {
 	const parsed = Number(value);
@@ -549,10 +552,15 @@ export async function main(argv: string[]): Promise<void> {
 			return;
 		}
 
-		const profiles = resolveProfiles(
+		const detected = resolveProfiles(
 			reviewContext.repositoryPath,
 			process.env.AI_REVIEW_PROFILE
 		);
+		// ponytail: default=all — trade ~9k system-prompt chars for full coverage; revert to `detected` to save cost.
+		const profiles =
+			process.env.AI_REVIEW_PROFILE == null
+				? profilesWithSkills().map((id) => ({ id, evidence: ['default:all'] }))
+				: detected;
 		reviewContext.profiles = profiles;
 		trackPhase('profiles', profiles.map((p) => p.id).join(', ') || 'auto', {
 			enabled: trackEnabled,
@@ -597,6 +605,8 @@ export async function main(argv: string[]): Promise<void> {
 					);
 				}
 			}
+			// ponytail: all security skills into default review (8 domains, ~4k chars); filter by domain when cost matters.
+			const allSecurityPrompt = renderSkillsForPrompt(CURATED_SECURITY_SKILLS);
 			const harness = new PiHarness({
 				binaryPath: piBinaryPath,
 				piArgs: core.getInput('pi-args'),
@@ -608,7 +618,9 @@ export async function main(argv: string[]): Promise<void> {
 				apiKey: llmConfig.apiKey,
 				includeFullContent: legacyOptions.includeFullContent,
 				maxContextChars: legacyOptions.maxContextChars,
-				extraRules: rulesForProfiles(profiles),
+				extraRules: [allSecurityPrompt, rulesForProfiles(profiles)]
+					.filter(Boolean)
+					.join('\n\n'),
 				provider: llmConfig.provider,
 				toolFindings: prelintResult.findings,
 			});
@@ -621,6 +633,7 @@ export async function main(argv: string[]): Promise<void> {
 				),
 				extraRules: [
 					promptFile,
+					allSecurityPrompt,
 					legacyOptions.reviewPrompt,
 					rulesForProfiles(profiles),
 				]
