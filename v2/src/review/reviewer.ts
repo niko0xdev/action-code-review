@@ -44,6 +44,7 @@ export async function runReview(
 	const allFindings: Finding[] = [];
 	const summaries: string[] = [];
 	const filesReviewed: string[] = [];
+	let failedGroups = 0;
 
 	for (let start = 0; start < groups.length; start += 3) {
 		const outcomes = await Promise.allSettled(
@@ -72,6 +73,7 @@ export async function runReview(
 				if (outcome.value.result.summary)
 					summaries.push(outcome.value.result.summary);
 			} else {
+				failedGroups += 1;
 				console.warn(
 					`Review group failed: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`
 				);
@@ -125,14 +127,18 @@ export async function runReview(
 	if (
 		normalized.bucketedCount > 0 ||
 		crossChecked.droppedCount > 0 ||
-		fastPathed.trivialPr
+		fastPathed.trivialPr ||
+		failedGroups > 0
 	) {
 		result.diagnostics = {
 			...result.diagnostics,
 			bucketedUnknownCategories: normalized.bucketedCount,
 			crossFindingConflictsResolved: crossChecked.droppedCount,
 			trivialPrFastPath: fastPathed.trivialPr,
+			...(failedGroups > 0 ? { failedGroups } : {}),
 		};
+	} else if (failedGroups > 0) {
+		result.diagnostics = { ...result.diagnostics, failedGroups };
 	}
 	return result;
 }

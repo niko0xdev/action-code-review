@@ -165,6 +165,30 @@ function toPublisherOctokit(
 				})),
 			};
 		},
+		listThreads: async (args: Record<string, unknown>) => {
+			const anyOctokit = client as unknown as {
+				paginate?: (
+					route: string,
+					params: Record<string, unknown>
+				) => Promise<unknown[]>;
+				rest?: { pulls?: unknown };
+			};
+			if (anyOctokit.paginate) {
+				const threads = await anyOctokit.paginate(
+					'GET /repos/{owner}/{repo}/pulls/{pull_number}/threads',
+					{
+						owner: requiredString(args, 'owner'),
+						repo: requiredString(args, 'repo'),
+						pull_number: requiredNumber(args, 'pull_number'),
+					}
+				);
+				return threads as Array<{
+					resolved?: boolean;
+					comments?: Array<{ user?: { login?: string } | null }>;
+				}>;
+			}
+			return [];
+		},
 	};
 	return {
 		rest: {
@@ -697,6 +721,7 @@ export async function main(argv: string[]): Promise<void> {
 				bufferInlineComments:
 					core.getInput('buffer-inline-comments') !== 'false' &&
 					core.getInput('classify-inline-comments') !== 'false',
+				autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
 				actor:
 					process.env.GITHUB_ACTOR ??
 					(
@@ -733,10 +758,32 @@ async function readPromptFileIfNeeded(
 ): Promise<string | undefined> {
 	const file = core.getInput('review-prompt-file');
 	if (!file) return undefined;
+	if (file.includes('\0')) {
+		core.warning(
+			`[review] review-prompt-file ${file} contains null byte — ignored`
+		);
+		return undefined;
+	}
 	try {
 		const { readFileSync, statSync } = await import('node:fs');
-		const { resolve } = await import('node:path');
+		const { isAbsolute, relative, resolve } = await import('node:path');
+		// Repo-relative contract: must be inside the workspace root.
+		if (isAbsolute(file)) {
+			core.warning(
+				`[review] review-prompt-file ${file} must be repo-relative — ignored`
+			);
+			return undefined;
+		}
 		const full = resolve(repoPath, file);
+		if (full !== repoPath) {
+			const rel = relative(repoPath, full);
+			if (rel.startsWith('..') || isAbsolute(rel)) {
+				core.warning(
+					`[review] review-prompt-file ${file} escapes repository — ignored`
+				);
+				return undefined;
+			}
+		}
 		const stat = statSync(full);
 		if (stat.size > 50 * 1024) {
 			core.warning(
