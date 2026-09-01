@@ -97,6 +97,7 @@ export async function publishReview(octokit, params) {
         filesExcluded: params.filesExcluded,
         toolFindings: result.toolFindings,
         diagnostics: result.diagnostics,
+        ruleCoverage: result.ruleCoverage,
     })}\n\n${marker}`;
     if (params.stickySummary) {
         const existing = await findStickyComment(octokit, owner, repo, prNumber, marker);
@@ -262,7 +263,6 @@ export function buildJobSummary(input) {
     const lines = [
         '## AI Review V2',
         '',
-        `- **Model:** ${input.model ?? 'unknown'}`,
         '- **Detected stack:** see review comment',
         `- **Review duration:** ${seconds}`,
         `- **Files reviewed:** ${input.filesReviewed.length}`,

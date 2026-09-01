@@ -68,6 +68,14 @@ export interface ReviewResult {
 	toolFindings?: ToolFinding[];
 	/** Diagnostics about the review pipeline (counts, dropped findings, etc). */
 	diagnostics?: ReviewDiagnostics;
+	/** Rule-level pass/fail coverage, derived deterministically from profiles + findings. */
+	ruleCoverage?: RuleCoverage;
+}
+
+export interface RuleCoverage {
+	total: number;
+	passed: number;
+	failedRules: string[];
 }
 
 /**

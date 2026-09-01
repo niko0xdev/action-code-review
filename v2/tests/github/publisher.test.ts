@@ -302,7 +302,7 @@ describe('publishReview', () => {
 });
 
 describe('buildJobSummary (spec §39)', () => {
-	it('exposes model, duration, files and findings', () => {
+	it('exposes duration, files and findings without visible Model line', () => {
 		const text = buildJobSummary({
 			model: 'gpt-4o-mini',
 			durationMs: 61_000,
@@ -315,7 +315,8 @@ describe('buildJobSummary (spec §39)', () => {
 				filesReviewed: ['a.ts', 'b.ts'],
 			},
 		});
-		expect(text).toContain('gpt-4o-mini');
+		expect(text).not.toContain('Model:');
+		expect(text).not.toContain('gpt-4o-mini');
 		expect(text).toContain('2');
 		expect(text).toContain('High');
 	});
