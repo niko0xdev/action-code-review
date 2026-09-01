@@ -219,6 +219,7 @@ export async function publishReview(
 		filesExcluded: params.filesExcluded,
 		toolFindings: result.toolFindings,
 		diagnostics: result.diagnostics,
+		ruleCoverage: result.ruleCoverage,
 	})}\n\n${marker}`;
 	if (params.stickySummary) {
 		const existing = await findStickyComment(
@@ -449,7 +450,6 @@ export function buildJobSummary(input: {
 	const lines: string[] = [
 		'## AI Review V2',
 		'',
-		`- **Model:** ${input.model ?? 'unknown'}`,
 		'- **Detected stack:** see review comment',
 		`- **Review duration:** ${seconds}`,
 		`- **Files reviewed:** ${input.filesReviewed.length}`,
