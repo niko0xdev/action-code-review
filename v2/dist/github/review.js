@@ -97,6 +97,7 @@ export async function publishReview(octokit, params) {
         filesExcluded: params.filesExcluded,
         toolFindings: result.toolFindings,
         diagnostics: result.diagnostics,
+        ruleCoverage: result.ruleCoverage,
     })}\n\n${marker}`;
     if (params.stickySummary) {
         const existing = await findStickyComment(octokit, owner, repo, prNumber, marker);
