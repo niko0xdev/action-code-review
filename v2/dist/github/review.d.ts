@@ -48,6 +48,18 @@ export interface PublisherOctokit extends OctokitLike {
             listCommentsForReview?: (args: Record<string, unknown>) => Promise<{
                 data: ReviewCommentRecord[];
             }>;
+            listThreads?: (args: {
+                owner: string;
+                repo: string;
+                pull_number: number;
+            }) => Promise<Array<{
+                resolved?: boolean;
+                comments?: Array<{
+                    user?: {
+                        login?: string;
+                    } | null;
+                }>;
+            }>>;
         };
         repos?: {
             getCollaboratorPermissionLevel(args: {
@@ -114,6 +126,12 @@ export interface PublishParams {
     actor?: string;
     bufferInlineComments?: boolean;
     stickySummary?: boolean;
+    /**
+     * Frozen V1 contract (docs/v1-interface-contract.md): approve only when
+     * the caller opts in AND every AI-authored review thread is resolved.
+     * Undefined/false keeps historical behavior of never auto-approving.
+     */
+    autoApproveWhenResolved?: boolean;
 }
 export declare function buildReviewPayload(findings: Finding[], headSha: string, options?: {
     blockOnIssues?: boolean;

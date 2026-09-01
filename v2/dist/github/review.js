@@ -52,8 +52,12 @@ export async function publishReview(octokit, params) {
         findingsToPublish = real;
     }
     if (findingsToPublish.length > 0) {
+        // Honor the frozen block-on-issues contract: when the caller turns
+        // blocking off, findings are posted as plain COMMENTs instead of
+        // REQUEST_CHANGES (docs/v1-interface-contract.md).
+        const shouldBlock = params.blockOnIssues !== false && hasBlockingFinding;
         const payload = buildReviewPayload(findingsToPublish, headSha, {
-            blockOnIssues: hasBlockingFinding,
+            blockOnIssues: shouldBlock,
         });
         try {
             await octokit.rest.pulls.createReview({
@@ -61,7 +65,7 @@ export async function publishReview(octokit, params) {
                 repo,
                 pull_number: prNumber,
                 commit_id: payload.commit_id,
-                event: hasBlockingFinding ? 'REQUEST_CHANGES' : 'COMMENT',
+                event: shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT',
                 comments: payload.comments,
             });
         }
@@ -133,20 +137,64 @@ export async function publishReview(octokit, params) {
             body: summaryBody,
         });
     }
-    if (hasWrite && (findings.length === 0 || !hasBlockingFinding)) {
-        try {
-            await octokit.rest.pulls.createReview({
-                owner,
-                repo,
-                pull_number: prNumber,
-                commit_id: headSha,
-                event: 'APPROVE',
-                body: '✅ AI Code Review: no blocking issues found. Auto-approving.',
-            });
+    // Frozen V1 contract: approval is opt-in. Never approve a review whose
+    // groups partially failed — an LLM/Pi outage must not look "clean".
+    if (params.autoApproveWhenResolved === true &&
+        hasWrite &&
+        !hasBlockingFinding &&
+        !reviewFailed(params.result)) {
+        const resolved = await areAiThreadsResolved(octokit, owner, repo, prNumber);
+        if (resolved) {
+            try {
+                await octokit.rest.pulls.createReview({
+                    owner,
+                    repo,
+                    pull_number: prNumber,
+                    commit_id: headSha,
+                    event: 'APPROVE',
+                    body: 'All AI-generated review comments have been resolved. Auto-approving PR.',
+                });
+            }
+            catch (error) {
+                core.warning(`Approve review failed: ${error instanceof Error ? error.message : String(error)}`);
+            }
         }
-        catch (error) {
-            core.warning(`Approve review failed: ${error instanceof Error ? error.message : String(error)}`);
-        }
+    }
+}
+/**
+ * True when the review pipeline reported failed harness groups. A failed
+ * group means part of the PR was never reviewed, so the result is not a
+ * clean bill of health.
+ */
+function reviewFailed(result) {
+    return (result.diagnostics?.failedGroups ?? 0) > 0;
+}
+/**
+ * Resolve whether every AI-authored review thread on the PR is resolved.
+ * Mirrors pr-review/src/approvalManager.ts:areAiCommentsResolved but uses
+ * the structural PublisherOctokit so V2 tests stay transport-agnostic.
+ * Fails closed: unknown/errored state is never "resolved".
+ */
+async function areAiThreadsResolved(octokit, owner, repo, prNumber) {
+    const listThreads = octokit.rest.pulls.listThreads;
+    if (!listThreads)
+        return false;
+    try {
+        const auth = octokit.users
+            ? await octokit.users.getAuthenticated().catch(() => null)
+            : null;
+        const selfLogin = auth?.data?.login;
+        if (!selfLogin)
+            return false;
+        const threads = await listThreads({ owner, repo, pull_number: prNumber });
+        const aiThreads = (threads ?? []).filter((thread) => (thread.comments ?? []).some((comment) => comment.user?.login === selfLogin));
+        if (aiThreads.length === 0)
+            return false;
+        return aiThreads.every((thread) => thread.resolved === true);
+    }
+    catch (error) {
+        core.warning(`[review] thread resolution check failed: ${error instanceof Error ? error.message : String(error)}`);
+        return false;
     }
 }
 async function findStickyComment(octokit, owner, repo, prNumber, marker) {

@@ -37094,8 +37094,12 @@ async function publishReview(octokit, params) {
         findingsToPublish = real;
     }
     if (findingsToPublish.length > 0) {
+        // Honor the frozen block-on-issues contract: when the caller turns
+        // blocking off, findings are posted as plain COMMENTs instead of
+        // REQUEST_CHANGES (docs/v1-interface-contract.md).
+        const shouldBlock = params.blockOnIssues !== false && hasBlockingFinding;
         const payload = buildReviewPayload(findingsToPublish, headSha, {
-            blockOnIssues: hasBlockingFinding,
+            blockOnIssues: shouldBlock,
         });
         try {
             await octokit.rest.pulls.createReview({
@@ -37103,7 +37107,7 @@ async function publishReview(octokit, params) {
                 repo,
                 pull_number: prNumber,
                 commit_id: payload.commit_id,
-                event: hasBlockingFinding ? 'REQUEST_CHANGES' : 'COMMENT',
+                event: shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT',
                 comments: payload.comments,
             });
         }
@@ -37175,20 +37179,64 @@ async function publishReview(octokit, params) {
             body: summaryBody,
         });
     }
-    if (hasWrite && (findings.length === 0 || !hasBlockingFinding)) {
-        try {
-            await octokit.rest.pulls.createReview({
-                owner,
-                repo,
-                pull_number: prNumber,
-                commit_id: headSha,
-                event: 'APPROVE',
-                body: '✅ AI Code Review: no blocking issues found. Auto-approving.',
-            });
+    // Frozen V1 contract: approval is opt-in. Never approve a review whose
+    // groups partially failed — an LLM/Pi outage must not look "clean".
+    if (params.autoApproveWhenResolved === true &&
+        hasWrite &&
+        !hasBlockingFinding &&
+        !reviewFailed(params.result)) {
+        const resolved = await areAiThreadsResolved(octokit, owner, repo, prNumber);
+        if (resolved) {
+            try {
+                await octokit.rest.pulls.createReview({
+                    owner,
+                    repo,
+                    pull_number: prNumber,
+                    commit_id: headSha,
+                    event: 'APPROVE',
+                    body: 'All AI-generated review comments have been resolved. Auto-approving PR.',
+                });
+            }
+            catch (error) {
+                lib_core.warning(`Approve review failed: ${error instanceof Error ? error.message : String(error)}`);
+            }
         }
-        catch (error) {
-            lib_core.warning(`Approve review failed: ${error instanceof Error ? error.message : String(error)}`);
-        }
+    }
+}
+/**
+ * True when the review pipeline reported failed harness groups. A failed
+ * group means part of the PR was never reviewed, so the result is not a
+ * clean bill of health.
+ */
+function reviewFailed(result) {
+    return (result.diagnostics?.failedGroups ?? 0) > 0;
+}
+/**
+ * Resolve whether every AI-authored review thread on the PR is resolved.
+ * Mirrors pr-review/src/approvalManager.ts:areAiCommentsResolved but uses
+ * the structural PublisherOctokit so V2 tests stay transport-agnostic.
+ * Fails closed: unknown/errored state is never "resolved".
+ */
+async function areAiThreadsResolved(octokit, owner, repo, prNumber) {
+    const listThreads = octokit.rest.pulls.listThreads;
+    if (!listThreads)
+        return false;
+    try {
+        const auth = octokit.users
+            ? await octokit.users.getAuthenticated().catch(() => null)
+            : null;
+        const selfLogin = auth?.data?.login;
+        if (!selfLogin)
+            return false;
+        const threads = await listThreads({ owner, repo, pull_number: prNumber });
+        const aiThreads = (threads ?? []).filter((thread) => (thread.comments ?? []).some((comment) => comment.user?.login === selfLogin));
+        if (aiThreads.length === 0)
+            return false;
+        return aiThreads.every((thread) => thread.resolved === true);
+    }
+    catch (error) {
+        lib_core.warning(`[review] thread resolution check failed: ${error instanceof Error ? error.message : String(error)}`);
+        return false;
     }
 }
 async function findStickyComment(octokit, owner, repo, prNumber, marker) {
@@ -38832,6 +38880,7 @@ async function runReview(context, harness, options = {}) {
     const allFindings = [];
     const summaries = [];
     const filesReviewed = [];
+    let failedGroups = 0;
     for (let start = 0; start < groups.length; start += 3) {
         const outcomes = await Promise.allSettled(groups.slice(start, start + 3).map(async (group) => {
             const groupContext = {
@@ -38852,6 +38901,7 @@ async function runReview(context, harness, options = {}) {
                     summaries.push(outcome.value.result.summary);
             }
             else {
+                failedGroups += 1;
                 console.warn(`Review group failed: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`);
             }
         }
@@ -38888,13 +38938,18 @@ async function runReview(context, harness, options = {}) {
     // overwrite upstream phases.
     if (normalized.bucketedCount > 0 ||
         crossChecked.droppedCount > 0 ||
-        fastPathed.trivialPr) {
+        fastPathed.trivialPr ||
+        failedGroups > 0) {
         result.diagnostics = {
             ...result.diagnostics,
             bucketedUnknownCategories: normalized.bucketedCount,
             crossFindingConflictsResolved: crossChecked.droppedCount,
             trivialPrFastPath: fastPathed.trivialPr,
+            ...(failedGroups > 0 ? { failedGroups } : {}),
         };
+    }
+    else if (failedGroups > 0) {
+        result.diagnostics = { ...result.diagnostics, failedGroups };
     }
     return result;
 }
@@ -40480,6 +40535,18 @@ function toPublisherOctokit(client) {
                 })),
             };
         },
+        listThreads: async (args) => {
+            const anyOctokit = client;
+            if (anyOctokit.paginate) {
+                const threads = await anyOctokit.paginate('GET /repos/{owner}/{repo}/pulls/{pull_number}/threads', {
+                    owner: requiredString(args, 'owner'),
+                    repo: requiredString(args, 'repo'),
+                    pull_number: requiredNumber(args, 'pull_number'),
+                });
+                return threads;
+            }
+            return [];
+        },
     };
     return {
         rest: {
@@ -40896,6 +40963,7 @@ async function main(argv) {
                 stickySummary: lib_core.getInput('sticky-summary') !== 'false',
                 bufferInlineComments: lib_core.getInput('buffer-inline-comments') !== 'false' &&
                     lib_core.getInput('classify-inline-comments') !== 'false',
+                autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
                 actor: process.env.GITHUB_ACTOR ??
                     github.context.payload.pull_request?.user?.login ??
                     github.context.actor,
@@ -40925,10 +40993,26 @@ async function readPromptFileIfNeeded(repoPath) {
     const file = lib_core.getInput('review-prompt-file');
     if (!file)
         return undefined;
+    if (file.includes('\0')) {
+        lib_core.warning(`[review] review-prompt-file ${file} contains null byte — ignored`);
+        return undefined;
+    }
     try {
         const { readFileSync, statSync } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 3024, 23));
-        const { resolve } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 6760, 23));
+        const { isAbsolute, relative, resolve } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 6760, 23));
+        // Repo-relative contract: must be inside the workspace root.
+        if (isAbsolute(file)) {
+            lib_core.warning(`[review] review-prompt-file ${file} must be repo-relative — ignored`);
+            return undefined;
+        }
         const full = resolve(repoPath, file);
+        if (full !== repoPath) {
+            const rel = relative(repoPath, full);
+            if (rel.startsWith('..') || isAbsolute(rel)) {
+                lib_core.warning(`[review] review-prompt-file ${file} escapes repository — ignored`);
+                return undefined;
+            }
+        }
         const stat = statSync(full);
         if (stat.size > 50 * 1024) {
             lib_core.warning(`[review] review-prompt-file ${file} exceeds 50 KiB — ignored`);

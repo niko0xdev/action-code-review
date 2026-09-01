@@ -101,6 +101,8 @@ export interface ReviewDiagnostics {
     prelintSkipped?: string[];
     /** Tools that ran successfully (zero or more findings each). */
     prelintRan?: string[];
+    /** Number of review groups that failed (outage/parse failure). Non-zero blocks auto-approval. */
+    failedGroups?: number;
 }
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low' | 'none';
 export declare const SEVERITY_ORDER: Record<Severity, number>;

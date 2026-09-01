@@ -167,11 +167,38 @@ describe('publishReview', () => {
 			rest: {
 				pulls: {
 					createReview: vi.fn(async () => ({ data: {} })),
+					listThreads: vi.fn(async () => []),
 				},
 				issues: {
 					createComment: vi.fn(async () => ({ data: {} })),
 					listComments: vi.fn(async () => ({ data: [] })),
 				},
+			},
+			users: {
+				getAuthenticated: vi.fn(async () => ({ data: { login: 'bot' } })),
+			},
+			paginate: vi.fn(async () => []),
+		};
+	}
+
+	function makeApprovalOctokit(
+		threads: unknown[] = [
+			{ resolved: true, comments: [{ user: { login: 'bot' } }] },
+		]
+	) {
+		return {
+			rest: {
+				pulls: {
+					createReview: vi.fn(async () => ({ data: {} })),
+					listThreads: vi.fn(async () => threads),
+				},
+				issues: {
+					createComment: vi.fn(async () => ({ data: {} })),
+					listComments: vi.fn(async () => ({ data: [] })),
+				},
+			},
+			users: {
+				getAuthenticated: vi.fn(async () => ({ data: { login: 'bot' } })),
 			},
 			paginate: vi.fn(async () => []),
 		};
@@ -213,11 +240,37 @@ describe('publishReview', () => {
 			},
 			blockOnIssues: true,
 		});
-		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
 		expect(octokit.rest.issues.createComment).toHaveBeenCalledOnce();
 	});
 
-	it('submits an APPROVE event when there are no findings', async () => {
+	it('submits an APPROVE event only when autoApproveWhenResolved and threads resolved', async () => {
+		const octokit = makeApprovalOctokit();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result: {
+				findings: [],
+				summary: 'clean',
+				risk: 'none',
+				counts: { critical: 0, high: 0, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+			},
+			blockOnIssues: true,
+			autoApproveWhenResolved: true,
+		});
+		const callArgs = (
+			octokit.rest.pulls.createReview as ReturnType<typeof vi.fn>
+		).mock.calls[0]?.[0];
+		expect(callArgs).toMatchObject({ event: 'APPROVE', pull_number: 7 });
+		// APPROVE event MUST NOT carry inline comments — GitHub API rejects
+		// `comments` on an APPROVE review.
+		expect(callArgs.comments).toBeUndefined();
+	});
+
+	it('does not auto-approve when autoApproveWhenResolved is false', async () => {
 		const octokit = makeOctokit();
 		await publishReview(octokit as never, {
 			owner: 'acme',
@@ -232,14 +285,107 @@ describe('publishReview', () => {
 				filesReviewed: ['src/a.ts'],
 			},
 			blockOnIssues: true,
+			autoApproveWhenResolved: false,
+		});
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('does not auto-approve when only low-severity findings and resolved threads exist but flag is off', async () => {
+		const octokit = makeApprovalOctokit();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result: {
+				findings: [finding({ severity: 'low' })],
+				summary: 'one low',
+				risk: 'low',
+				counts: { critical: 0, high: 0, medium: 0, low: 1 },
+				filesReviewed: ['src/a.ts'],
+			},
+			blockOnIssues: true,
+			autoApproveWhenResolved: false,
+		});
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+		expect(
+			(octokit.rest.pulls.createReview as ReturnType<typeof vi.fn>).mock
+				.calls[0][0].event
+		).toBe('COMMENT');
+	});
+
+	it('does not auto-approve when threads are unresolved', async () => {
+		const octokit = {
+			...makeOctokit(),
+			rest: {
+				...makeOctokit().rest,
+				pulls: {
+					...makeOctokit().rest.pulls,
+					listThreads: vi.fn(async () => [
+						{ resolved: false, comments: [{ user: { login: 'bot' } }] },
+					]),
+				},
+			},
+		} as never;
+		await publishReview(octokit, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result: {
+				findings: [],
+				summary: 'clean',
+				risk: 'none',
+				counts: { critical: 0, high: 0, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+			},
+			blockOnIssues: true,
+			autoApproveWhenResolved: true,
+		});
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('honors blockOnIssues=false by posting COMMENT even for blocking findings', async () => {
+		const octokit = makeOctokit();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 8,
+			headSha: 'sha-block-false',
+			result: {
+				findings: [finding({ severity: 'high' })],
+				summary: 'one high',
+				risk: 'high',
+				counts: { critical: 0, high: 1, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+			},
+			blockOnIssues: false,
 		});
 		const callArgs = (
 			octokit.rest.pulls.createReview as ReturnType<typeof vi.fn>
 		).mock.calls[0]?.[0];
-		expect(callArgs).toMatchObject({ event: 'APPROVE', pull_number: 7 });
-		// APPROVE event MUST NOT carry inline comments — GitHub API rejects
-		// `comments` on an APPROVE review.
-		expect(callArgs.comments).toBeUndefined();
+		expect(callArgs.event).toBe('COMMENT');
+	});
+
+	it('suppresses approval when review had failed groups', async () => {
+		const octokit = makeApprovalOctokit();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result: {
+				findings: [],
+				summary: 'clean',
+				risk: 'none',
+				counts: { critical: 0, high: 0, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+				diagnostics: { failedGroups: 1 },
+			},
+			blockOnIssues: true,
+			autoApproveWhenResolved: true,
+		});
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
 	});
 
 	it('does not submit APPROVE when a blocking finding is present', async () => {
@@ -267,14 +413,21 @@ describe('publishReview', () => {
 	it('logs approval errors via core.warning, not console.warn', async () => {
 		const warn = vi.fn();
 		const octokit = {
-			...makeOctokit(),
+			...makeApprovalOctokit(),
 			rest: {
-				...makeOctokit().rest,
+				...makeApprovalOctokit().rest,
 				pulls: {
-					...makeOctokit().rest.pulls,
+					...makeApprovalOctokit().rest.pulls,
 					createReview: vi.fn(async () => {
 						throw new Error('GitHub API down');
 					}),
+					listThreads: vi.fn(async () => [
+						{ resolved: true, comments: [{ user: { login: 'bot' } }] },
+					]),
+				},
+				issues: {
+					createComment: vi.fn(async () => ({ data: {} })),
+					listComments: vi.fn(async () => ({ data: [] })),
 				},
 			},
 		};
@@ -295,6 +448,7 @@ describe('publishReview', () => {
 				filesReviewed: ['src/a.ts'],
 			},
 			blockOnIssues: true,
+			autoApproveWhenResolved: true,
 		});
 		expect(warn).toHaveBeenCalled();
 		spy.mockRestore();
