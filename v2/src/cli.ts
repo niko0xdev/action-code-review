@@ -20,7 +20,11 @@ import { updatePrContent } from './github/pr-content.js';
 import { trackPhase } from './github/progress.js';
 import { buildJobSummary, publishReview } from './github/review.js';
 import type { PublisherOctokit } from './github/review.js';
-import { PiHarness } from './harness/pi.js';
+import {
+	PiHarness,
+	type PiRunLog,
+	buildAgentDebugSection,
+} from './harness/pi.js';
 import { REVIEW_OPTION_DEFAULTS } from './llm/config.js';
 import { OpenAiCompatibleProvider } from './llm/openai-compatible.js';
 import {
@@ -210,6 +214,27 @@ export function parseArgs(args: string[]): { action: string } {
 		action:
 			(args[0] ?? 'pr-review') === 'pr-content' ? 'pr-content' : 'pr-review',
 	};
+}
+
+let agentDebugWritten = false;
+async function appendAgentDebugToSummary(
+	runs: readonly PiRunLog[]
+): Promise<void> {
+	if (!core.isDebug() || agentDebugWritten) return;
+	const section = buildAgentDebugSection(runs);
+	if (!section) return;
+	core.info(
+		`[debug] agent runtime log: ${runs.length} run(s), ${section.length} chars`
+	);
+	try {
+		core.summary.addRaw(`\n\n${section}\n`);
+		await core.summary.write();
+		agentDebugWritten = true;
+	} catch (error) {
+		core.warning(
+			`[debug] failed to write agent log to summary: ${error instanceof Error ? error.message : String(error)}`
+		);
+	}
 }
 
 async function runPrContent(options: PrContentEngineOptions): Promise<void> {
@@ -566,6 +591,7 @@ export async function main(argv: string[]): Promise<void> {
 			enabled: trackEnabled,
 		});
 		const previousConfigDir = process.env.PI_CODING_AGENT_DIR;
+		let harness: PiHarness | undefined;
 		const runtimeConfig = await preparePiRuntimeConfig(llmConfig, {
 			profiles: profiles.map((p) => p.id),
 		});
@@ -607,7 +633,7 @@ export async function main(argv: string[]): Promise<void> {
 			}
 			// ponytail: all security skills into default review (8 domains, ~4k chars); filter by domain when cost matters.
 			const allSecurityPrompt = renderSkillsForPrompt(CURATED_SECURITY_SKILLS);
-			const harness = new PiHarness({
+			harness = new PiHarness({
 				binaryPath: piBinaryPath,
 				piArgs: core.getInput('pi-args'),
 				timeoutMs: positiveTimeout(
@@ -650,6 +676,7 @@ export async function main(argv: string[]): Promise<void> {
 				prelintRan: prelintResult.ran,
 				prelintSkipped: prelintResult.skipped,
 			};
+			await appendAgentDebugToSummary(harness.runs);
 			trackPhase(
 				'harness',
 				`Pi review done: ${result.findings.length} findings`,
@@ -685,6 +712,10 @@ export async function main(argv: string[]): Promise<void> {
 				`${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`
 			);
 		} finally {
+			// Ensure agent debug log attached even if review/publish failed
+			try {
+				if (harness) await appendAgentDebugToSummary(harness.runs);
+			} catch {}
 			await runtimeConfig.cleanup();
 			if (previousConfigDir === undefined)
 				Reflect.deleteProperty(process.env, 'PI_CODING_AGENT_DIR');

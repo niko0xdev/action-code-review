@@ -168,30 +168,80 @@ export function extractAssistantText(stdout: string): string {
 	}
 	return texts.join('\n');
 }
+export interface PiRunLog {
+	stdout: string;
+	stderr: string;
+}
+
+export const AGENT_DEBUG_MAX_CHARS = 60 * 1024;
+
+export function buildAgentDebugSection(
+	runs: readonly PiRunLog[]
+): string | null {
+	if (runs.length === 0) return null;
+	const combined = runs
+		.map((r, i) => {
+			const header =
+				runs.length > 1 ? `--- run ${i + 1}/${runs.length} ---\n` : '';
+			const err = r.stderr ? `\n[stderr]\n${r.stderr}` : '';
+			return `${header}${r.stdout}${err}`;
+		})
+		.join('\n\n');
+	if (!combined.trim()) return null;
+	// Break markdown fence injection from untrusted PR content: \`\`\` and </details> would escape the block.
+	let body = combined
+		.replaceAll('```', '\\`\\`\\`')
+		.replaceAll('</details>', '&lt;/details&gt;');
+	let truncated = false;
+	if (body.length > AGENT_DEBUG_MAX_CHARS) {
+		body = `${body.slice(0, AGENT_DEBUG_MAX_CHARS)}\n\n... truncated (${combined.length - AGENT_DEBUG_MAX_CHARS} chars omitted, total ${combined.length} chars) -- full log in action logs`;
+		truncated = true;
+	}
+	const note = truncated ? ' _(truncated)_' : '';
+	return `<details><summary>Agent runtime log (debug)${note}</summary>\n\n\`\`\`\n${body}\n\`\`\`\n\n</details>`;
+}
+
 export class PiHarness implements ReviewHarness {
 	readonly name = 'pi';
+	private _runs: PiRunLog[] = [];
 	constructor(private readonly options: PiHarnessOptions = {}) {}
+	get runs(): readonly PiRunLog[] {
+		return this._runs;
+	}
+	get lastRun(): PiRunLog | null {
+		return this._runs.length ? this._runs[this._runs.length - 1] : null;
+	}
 	async review(context: ReviewContext): Promise<ReviewResult> {
-		const stdout = await runPi({
-			binaryPath: this.options.binaryPath ?? 'pi',
-			args: buildPiArgs(
-				context.repositoryPath,
-				this.options.model ?? process.env.OPENAI_API_MODEL,
-				this.options.provider ?? 'openai',
-				parsePiArgs(this.options.piArgs ?? '')
-			),
-			cwd: context.repositoryPath,
-			configDir: await resolveRuntimeConfigDir(),
-			apiKey: this.options.apiKey,
-			prompt: buildReviewPrompt(context, this.options.extraRules, {
-				includeFullContent: this.options.includeFullContent,
-				maxContextChars: this.options.maxContextChars,
-				toolFindings: this.options.toolFindings,
-			}),
-			timeoutMs: this.options.timeoutMs ?? 15 * 60_000,
-		});
+		let run: PiRunLog;
+		try {
+			run = await runPi({
+				binaryPath: this.options.binaryPath ?? 'pi',
+				args: buildPiArgs(
+					context.repositoryPath,
+					this.options.model ?? process.env.OPENAI_API_MODEL,
+					this.options.provider ?? 'openai',
+					parsePiArgs(this.options.piArgs ?? '')
+				),
+				cwd: context.repositoryPath,
+				configDir: await resolveRuntimeConfigDir(),
+				apiKey: this.options.apiKey,
+				prompt: buildReviewPrompt(context, this.options.extraRules, {
+					includeFullContent: this.options.includeFullContent,
+					maxContextChars: this.options.maxContextChars,
+					toolFindings: this.options.toolFindings,
+				}),
+				timeoutMs: this.options.timeoutMs ?? 15 * 60_000,
+			});
+		} catch (error) {
+			const maybeLog = (error as unknown as Record<string, unknown>)?.piLog as
+				| PiRunLog
+				| undefined;
+			if (maybeLog) this._runs.push(maybeLog);
+			throw error;
+		}
+		this._runs.push(run);
 		return toReviewResult(
-			parseHarnessFindings(extractAssistantText(stdout)),
+			parseHarnessFindings(extractAssistantText(run.stdout)),
 			context.diff.files.map((f) => f.filename)
 		);
 	}
@@ -210,7 +260,7 @@ interface RunPiParams {
 	prompt: string;
 	timeoutMs: number;
 }
-function runPi(params: RunPiParams): Promise<string> {
+function runPi(params: RunPiParams): Promise<PiRunLog> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(params.binaryPath, params.args, {
 			cwd: params.cwd,
@@ -227,7 +277,13 @@ function runPi(params: RunPiParams): Promise<string> {
 			settled = true;
 			clearTimeout(timer);
 			if (killTimer) clearTimeout(killTimer);
-			error ? reject(error) : resolve(stdout);
+			if (error) {
+				(error as unknown as Record<string, unknown>).piLog = {
+					stdout,
+					stderr,
+				} satisfies PiRunLog;
+				reject(error);
+			} else resolve({ stdout, stderr });
 		};
 		const timer = setTimeout(() => {
 			if (settled) return;

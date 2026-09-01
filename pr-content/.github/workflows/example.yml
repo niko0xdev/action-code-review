@@ -14,7 +14,7 @@ jobs:
     name: Update PR Content
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Update PR Content with Template
         uses: ./
