@@ -4,6 +4,13 @@ import { appendToBuffer, classifyFindings } from './buffer.js';
 import { buildFindingBody, buildSummaryBody, stickySummaryMarker, } from './comments.js';
 import { hasWritePermission } from './permissions.js';
 export { buildFindingBody, buildSummaryBody } from './comments.js';
+function isPermissionError(error) {
+    const err = error;
+    if (err?.status === 403 || err?.response?.status === 403)
+        return true;
+    const msg = error instanceof Error ? error.message : String(error);
+    return msg.includes('Resource not accessible by integration');
+}
 export function buildReviewPayload(findings, headSha, options = {}) {
     const comments = findings.map((finding) => ({
         path: finding.path,
@@ -206,7 +213,14 @@ async function fetchExistingCommentIds(octokit, owner, repo, prNumber) {
         }
     }
     catch (error) {
-        core.warning(`Failed to fetch existing review comments: ${error instanceof Error ? error.message : String(error)}`);
+        if (isPermissionError(error)) {
+            core.info('Skipping duplicate check — missing pull-requests: write permission. ' +
+                'Add `permissions: { contents: read, pull-requests: write }` to the workflow, ' +
+                'or ensure the token has PR write access. For fork PRs, GITHUB_TOKEN is read-only.');
+        }
+        else {
+            core.warning(`Failed to fetch existing review comments: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
     return ids;
 }

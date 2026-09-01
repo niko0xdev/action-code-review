@@ -26,7 +26,7 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: niko0xdev/action-code-review/pr-review@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

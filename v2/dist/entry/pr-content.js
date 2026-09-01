@@ -37046,6 +37046,13 @@ async function hasWritePermission(octokit, owner, repo, actor) {
 
 
 
+function isPermissionError(error) {
+    const err = error;
+    if (err?.status === 403 || err?.response?.status === 403)
+        return true;
+    const msg = error instanceof Error ? error.message : String(error);
+    return msg.includes('Resource not accessible by integration');
+}
 function buildReviewPayload(findings, headSha, options = {}) {
     const comments = findings.map((finding) => ({
         path: finding.path,
@@ -37248,7 +37255,14 @@ async function fetchExistingCommentIds(octokit, owner, repo, prNumber) {
         }
     }
     catch (error) {
-        lib_core.warning(`Failed to fetch existing review comments: ${error instanceof Error ? error.message : String(error)}`);
+        if (isPermissionError(error)) {
+            lib_core.info('Skipping duplicate check — missing pull-requests: write permission. ' +
+                'Add `permissions: { contents: read, pull-requests: write }` to the workflow, ' +
+                'or ensure the token has PR write access. For fork PRs, GITHUB_TOKEN is read-only.');
+        }
+        else {
+            lib_core.warning(`Failed to fetch existing review comments: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
     return ids;
 }
@@ -37631,27 +37645,69 @@ function extractAssistantText(stdout) {
     }
     return texts.join('\n');
 }
+const AGENT_DEBUG_MAX_CHARS = 60 * 1024;
+function buildAgentDebugSection(runs) {
+    if (runs.length === 0)
+        return null;
+    const combined = runs
+        .map((r, i) => {
+        const header = runs.length > 1 ? `--- run ${i + 1}/${runs.length} ---\n` : '';
+        const err = r.stderr ? `\n[stderr]\n${r.stderr}` : '';
+        return `${header}${r.stdout}${err}`;
+    })
+        .join('\n\n');
+    if (!combined.trim())
+        return null;
+    // Break markdown fence injection from untrusted PR content: \`\`\` and </details> would escape the block.
+    let body = combined
+        .replaceAll('```', '\\`\\`\\`')
+        .replaceAll('</details>', '&lt;/details&gt;');
+    let truncated = false;
+    if (body.length > AGENT_DEBUG_MAX_CHARS) {
+        body = `${body.slice(0, AGENT_DEBUG_MAX_CHARS)}\n\n... truncated (${combined.length - AGENT_DEBUG_MAX_CHARS} chars omitted, total ${combined.length} chars) -- full log in action logs`;
+        truncated = true;
+    }
+    const note = truncated ? ' _(truncated)_' : '';
+    return `<details><summary>Agent runtime log (debug)${note}</summary>\n\n\`\`\`\n${body}\n\`\`\`\n\n</details>`;
+}
 class PiHarness {
     options;
     name = 'pi';
+    _runs = [];
     constructor(options = {}) {
         this.options = options;
     }
+    get runs() {
+        return this._runs;
+    }
+    get lastRun() {
+        return this._runs.length ? this._runs[this._runs.length - 1] : null;
+    }
     async review(context) {
-        const stdout = await runPi({
-            binaryPath: this.options.binaryPath ?? 'pi',
-            args: buildPiArgs(context.repositoryPath, this.options.model ?? process.env.OPENAI_API_MODEL, this.options.provider ?? 'openai', parsePiArgs(this.options.piArgs ?? '')),
-            cwd: context.repositoryPath,
-            configDir: await resolveRuntimeConfigDir(),
-            apiKey: this.options.apiKey,
-            prompt: buildReviewPrompt(context, this.options.extraRules, {
-                includeFullContent: this.options.includeFullContent,
-                maxContextChars: this.options.maxContextChars,
-                toolFindings: this.options.toolFindings,
-            }),
-            timeoutMs: this.options.timeoutMs ?? 15 * 60_000,
-        });
-        return toReviewResult(parseHarnessFindings(extractAssistantText(stdout)), context.diff.files.map((f) => f.filename));
+        let run;
+        try {
+            run = await runPi({
+                binaryPath: this.options.binaryPath ?? 'pi',
+                args: buildPiArgs(context.repositoryPath, this.options.model ?? process.env.OPENAI_API_MODEL, this.options.provider ?? 'openai', parsePiArgs(this.options.piArgs ?? '')),
+                cwd: context.repositoryPath,
+                configDir: await resolveRuntimeConfigDir(),
+                apiKey: this.options.apiKey,
+                prompt: buildReviewPrompt(context, this.options.extraRules, {
+                    includeFullContent: this.options.includeFullContent,
+                    maxContextChars: this.options.maxContextChars,
+                    toolFindings: this.options.toolFindings,
+                }),
+                timeoutMs: this.options.timeoutMs ?? 15 * 60_000,
+            });
+        }
+        catch (error) {
+            const maybeLog = error?.piLog;
+            if (maybeLog)
+                this._runs.push(maybeLog);
+            throw error;
+        }
+        this._runs.push(run);
+        return toReviewResult(parseHarnessFindings(extractAssistantText(run.stdout)), context.diff.files.map((f) => f.filename));
     }
 }
 async function resolveRuntimeConfigDir() {
@@ -37679,7 +37735,15 @@ function runPi(params) {
             clearTimeout(timer);
             if (killTimer)
                 clearTimeout(killTimer);
-            error ? reject(error) : resolve(stdout);
+            if (error) {
+                error.piLog = {
+                    stdout,
+                    stderr,
+                };
+                reject(error);
+            }
+            else
+                resolve({ stdout, stderr });
         };
         const timer = setTimeout(() => {
             if (settled)
@@ -40460,6 +40524,23 @@ function parseArgs(args) {
         action: (args[0] ?? 'pr-review') === 'pr-content' ? 'pr-content' : 'pr-review',
     };
 }
+let agentDebugWritten = false;
+async function appendAgentDebugToSummary(runs) {
+    if (!lib_core.isDebug() || agentDebugWritten)
+        return;
+    const section = buildAgentDebugSection(runs);
+    if (!section)
+        return;
+    lib_core.info(`[debug] agent runtime log: ${runs.length} run(s), ${section.length} chars`);
+    try {
+        lib_core.summary.addRaw(`\n\n${section}\n`);
+        await lib_core.summary.write();
+        agentDebugWritten = true;
+    }
+    catch (error) {
+        lib_core.warning(`[debug] failed to write agent log to summary: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
 async function runPrContent(options) {
     const started = external_node_perf_hooks_namespaceObject.performance.now();
     const context = github.context;
@@ -40727,6 +40808,7 @@ async function main(argv) {
             enabled: trackEnabled,
         });
         const previousConfigDir = process.env.PI_CODING_AGENT_DIR;
+        let harness;
         const runtimeConfig = await preparePiRuntimeConfig(llmConfig, {
             profiles: profiles.map((p) => p.id),
         });
@@ -40763,7 +40845,7 @@ async function main(argv) {
             }
             // ponytail: all security skills into default review (8 domains, ~4k chars); filter by domain when cost matters.
             const allSecurityPrompt = (0,selector/* renderSkillsForPrompt */.a)(registry/* CURATED_SECURITY_SKILLS */.J);
-            const harness = new PiHarness({
+            harness = new PiHarness({
                 binaryPath: piBinaryPath,
                 piArgs: lib_core.getInput('pi-args'),
                 timeoutMs: positiveTimeout(process.env.AI_REVIEW_PI_TIMEOUT_MS, 15 * 60_000),
@@ -40799,6 +40881,7 @@ async function main(argv) {
                 prelintRan: prelintResult.ran,
                 prelintSkipped: prelintResult.skipped,
             };
+            await appendAgentDebugToSummary(harness.runs);
             trackPhase('harness', `Pi review done: ${result.findings.length} findings`, { enabled: trackEnabled });
             await publishReview(octokit, {
                 owner: repoInfo.owner,
@@ -40821,6 +40904,12 @@ async function main(argv) {
             lib_core.setOutput('review-summary', `${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`);
         }
         finally {
+            // Ensure agent debug log attached even if review/publish failed
+            try {
+                if (harness)
+                    await appendAgentDebugToSummary(harness.runs);
+            }
+            catch { }
             await runtimeConfig.cleanup();
             if (previousConfigDir === undefined)
                 Reflect.deleteProperty(process.env, 'PI_CODING_AGENT_DIR');

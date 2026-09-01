@@ -9,6 +9,16 @@ import type { OctokitType } from './types';
 
 const REVIEW_ID_MARKER_PATTERN = /<!-- ai-review-id:([a-f0-9]{12}) -->/;
 
+function isPermissionError(error: unknown): boolean {
+	const err = error as {
+		status?: number;
+		response?: { status?: number };
+	};
+	if (err?.status === 403 || err?.response?.status === 403) return true;
+	const msg = error instanceof Error ? error.message : String(error);
+	return msg.includes('Resource not accessible by integration');
+}
+
 // ============================================================================
 // Duplicate Detection & Comment Posting
 // ============================================================================
@@ -57,7 +67,15 @@ async function fetchExistingCommentIds(
 			`Found ${existingCommentIds.size} existing AI review comments`
 		);
 	} catch (error) {
-		core.warning(`Failed to fetch existing comments: ${error}`);
+		if (isPermissionError(error)) {
+			core.info(
+				'Skipping duplicate check — missing pull-requests: write permission. ' +
+					'Add `permissions: { contents: read, pull-requests: write }` to the workflow, ' +
+					'or ensure the token has PR write access. For fork PRs, GITHUB_TOKEN is read-only.'
+			);
+		} else {
+			core.warning(`Failed to fetch existing comments: ${error}`);
+		}
 	}
 
 	return existingCommentIds;
@@ -70,7 +88,13 @@ export async function getAuthenticatedLogin(
 		const { data } = await octokit.rest.users.getAuthenticated();
 		return data.login;
 	} catch (error) {
-		core.error(`Failed to fetch authenticated user: ${error}`);
+		if (isPermissionError(error)) {
+			core.info(
+				'Skipping authenticated user lookup — missing permission (Resource not accessible by integration).'
+			);
+		} else {
+			core.warning(`Failed to fetch authenticated user: ${error}`);
+		}
 		return null;
 	}
 }
