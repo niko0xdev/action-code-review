@@ -29,7 +29,7 @@ jobs:
   update-pr:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
       - name: Update PR Content
         uses: ./
         with:
@@ -49,7 +49,7 @@ jobs:
   update-pr:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
       - name: Update PR Content
         uses: ./
         with:
@@ -99,7 +99,7 @@ jobs:
   update-pr:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
       - name: Update PR Content
         uses: ./
         with:
@@ -120,7 +120,7 @@ jobs:
   update-pr:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
       - name: Update PR Content
         uses: ./
         with:
