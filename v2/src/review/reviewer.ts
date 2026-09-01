@@ -1,5 +1,6 @@
 import { prioritizeFiles } from '../context/files.js';
 import type { ReviewHarness } from '../harness/harness.js';
+import { combinedRules } from '../profiles/rules.js';
 import type { ReviewContext } from '../types/context.js';
 import {
 	FINDING_LIMITS,
@@ -116,6 +117,7 @@ export async function runReview(
 		risk: riskFromFindings(findings),
 		counts: computeCounts(findings),
 		filesReviewed,
+		ruleCoverage: deriveRuleCoverage(context, findings),
 	};
 	// Phase 3 diagnostics: bucket count + conflict drop count + trivial flag.
 	// Preserve any toolFindings already set by cli.ts so reviewers don't
@@ -133,4 +135,24 @@ export async function runReview(
 		};
 	}
 	return result;
+}
+
+function deriveRuleCoverage(
+	context: ReviewContext,
+	findings: Finding[]
+): ReviewResult['ruleCoverage'] {
+	const rulesText = combinedRules(context.profiles.map((p) => p.id));
+	const total = rulesText
+		.split('\n')
+		.filter((line) => line.trim().startsWith('-')).length;
+	if (total === 0) return undefined;
+	const failedRules = [
+		...new Set(
+			findings
+				.map((f) => f.ruleId?.trim())
+				.filter((id): id is string => Boolean(id && id.length > 0))
+		),
+	];
+	const passed = Math.max(total - failedRules.length, 0);
+	return { total, passed, failedRules };
 }

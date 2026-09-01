@@ -73,18 +73,28 @@ export function formatDecisionBanner(risk, findings = [], counts = { critical: 0
         ? '> ⚠️ **CHANGES REQUESTED**'
         : '> ✨ **APPROVED**';
 }
-export function buildChecksTable(findings, _counts) {
+export function buildChecksTable(findings, _counts, ruleCoverage) {
     const categoryCounts = new Map();
     for (const finding of findings)
         categoryCounts.set(finding.category, (categoryCounts.get(finding.category) ?? 0) + 1);
+    const rulesCell = ruleCoverage
+        ? `${ruleCoverage.passed}/${ruleCoverage.total} passed`
+        : 'N/A';
+    const failedCell = ruleCoverage && ruleCoverage.failedRules.length > 0
+        ? ruleCoverage.failedRules
+            .map((rule) => `- ${mdSafe(rule)
+            .replaceAll('|', '\\|')
+            .replaceAll(/[\r\n]/g, ' ')}`)
+            .join('<br>')
+        : '—';
     return [
         '## Checks performed',
         '',
-        '| Check | Status |',
-        '|-------|:------:|',
+        '| Check | Status | Rules | Failed rule |',
+        '|-------|:------:|:-----:|-------------|',
         ...CATEGORIES.map((category) => {
             const count = categoryCounts.get(category) ?? 0;
-            return `| ${count ? '❌' : '✅'} ${CATEGORY_LABEL[category]} | ${count ? `${count} issue${count === 1 ? '' : 's'}` : 'passed'} |`;
+            return `| ${count ? '❌' : '✅'} ${CATEGORY_LABEL[category]} | ${count ? `${count} issue${count === 1 ? '' : 's'}` : 'passed'} | ${rulesCell} | ${failedCell} |`;
         }),
     ];
 }
@@ -133,14 +143,13 @@ export function buildSummaryBody(result) {
             ? '❌ **Changes requested** — critical findings block merge.'
             : `❌ **Changes requested** — ${findings.filter((finding) => finding.severity !== 'low').length || result.counts.critical + result.counts.high + result.counts.medium} blocking finding(s). Please address before merge.`
         : '✅ **All clear** — no blocking findings. Approving.';
-    const footer = footerLine(result.model ?? process.env.OPENAI_API_MODEL ?? 'unknown');
+    const footer = footerComment(result.model ?? process.env.OPENAI_API_MODEL ?? 'unknown');
     const lines = [
         '# ✨ AI Code Review',
         '',
         formatDecisionBanner(result.risk, findings, result.counts),
         '',
         `**Risk:** ${RISK_LABEL[result.risk]}`,
-        `**Model:** \`${mdSafe(result.model ?? process.env.OPENAI_API_MODEL ?? 'unknown')}\``,
         `**Duration:** ${formatDuration(result.durationMs)}`,
         filesLine,
         `**Reviewed files:** ${reviewed}`,
@@ -148,7 +157,7 @@ export function buildSummaryBody(result) {
     ];
     if (result.summary)
         lines.push('', result.summary);
-    lines.push('', '## Findings', '', '| Severity | Count | Status |', '|----------|------:|:------:|', `| 🚨 Critical | ${result.counts.critical} | ${result.counts.critical ? '❌' : '✅'} |`, `| 🔥 High | ${result.counts.high} | ${result.counts.high ? '❌' : '✅'} |`, `| ⚠️ Medium | ${result.counts.medium} | ${result.counts.medium ? '❌' : '✅'} |`, `| ✅ Low | ${result.counts.low} | ${result.counts.low ? '❌' : '✅'} |`, '', '## Decision', '', decision, '', ...findingLines(findings), '', ...buildChecksTable(findings, result.counts), '', ...(result.toolFindings && result.toolFindings.length > 0
+    lines.push('', '## Findings', '', '| Severity | Count | Status |', '|----------|------:|:------:|', `| 🚨 Critical | ${result.counts.critical} | ${result.counts.critical ? '❌' : '✅'} |`, `| 🔥 High | ${result.counts.high} | ${result.counts.high ? '❌' : '✅'} |`, `| ⚠️ Medium | ${result.counts.medium} | ${result.counts.medium ? '❌' : '✅'} |`, `| ✅ Low | ${result.counts.low} | ${result.counts.low ? '❌' : '✅'} |`, '', '## Decision', '', decision, '', ...findingLines(findings), '', ...buildChecksTable(findings, result.counts, result.ruleCoverage), '', ...(result.toolFindings && result.toolFindings.length > 0
         ? [
             '<details><summary>Static analyzer findings</summary>',
             '',
@@ -206,18 +215,21 @@ export function buildSummaryBody(result) {
             '</details>',
             '',
         ]
-        : []), '---', footer);
+        : []), footer);
     return lines.join('\n');
 }
 export function stickySummaryMarker(owner, repo, prNumber) {
     return `<!-- ai-review-summary:${owner}/${repo}#${prNumber} -->`;
 }
-function footerLine(model) {
+function footerComment(model) {
     const repository = process.env.GITHUB_REPOSITORY;
     const runId = process.env.GITHUB_RUN_ID;
-    const run = repository && runId
-        ? `[view logs](https://github.com/${repository}/actions/runs/${runId})`
-        : 'view logs';
-    return `_Auto-generated with \`${mdSafe(model)}\` by [AI Code Review](https://github.com/niko0xdev/action-code-review) · ${run}_`;
+    const runUrl = repository && runId
+        ? `https://github.com/${repository}/actions/runs/${runId}`
+        : 'n/a';
+    const safe = (value) => mdSafe(value)
+        .replaceAll('--', '- -')
+        .replaceAll(/[\r\n]/g, ' ');
+    return `<!-- Auto-generated by AI Code Review (https://github.com/niko0xdev/action-code-review) · model: ${safe(model)} · run: ${safe(runUrl)} -->`;
 }
 //# sourceMappingURL=comments.js.map

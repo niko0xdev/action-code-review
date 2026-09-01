@@ -262,7 +262,6 @@ export function buildJobSummary(input) {
     const lines = [
         '## AI Review V2',
         '',
-        `- **Model:** ${input.model ?? 'unknown'}`,
         '- **Detected stack:** see review comment',
         `- **Review duration:** ${seconds}`,
         `- **Files reviewed:** ${input.filesReviewed.length}`,
