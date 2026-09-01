@@ -39,7 +39,7 @@
 
 | # | Task | Branch | Status | PR | Evidence |
 |---|------|--------|--------|----|----------|
-| 1 | `block-on-issues` + approval contract + harness failure + prompt-file containment | `fix/publisher-contract-flags` | `in_progress` | — | this file + diff `v2/src/github/review.ts`, `v2/src/cli.ts`, `v2/src/review/reviewer.ts`, `v2/src/types/finding.ts` |
+| 1 | `block-on-issues` + approval contract + harness failure + prompt-file containment | `fix/publisher-contract-flags` | `done` | https://github.com/niko0xdev/action-code-review/pull/74 | `fbc7e47` — gates: V2 409 pass, typecheck + lint clean within worktree, `v2/dist` rebuilt |
 | 2 | Remaining Phase-1 clusters (C1..C20 audit) | `feat/v2-audit-phase-1-blockers` | `deferred` | — | `.orchestration/audit/PHASE-1-SPEC.md` — requires single commit + contract pin tests; out of scope for smallest high-value fix |
 | 3 | Additive inputs from comparables (#1 commitable suggestions, #4 fail-level) | — | `pending` | — | queued until task 1 merges |
 
