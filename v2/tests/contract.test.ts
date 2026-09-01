@@ -139,8 +139,21 @@ describe('V1 contract: pr-review/action.yml', () => {
 		}
 	});
 
-	it('exposes the frozen review-summary output', () => {
-		expect(Object.keys(action.outputs ?? {})).toEqual(['review-summary']);
+	it('exposes at least the frozen review-summary output (additive security outputs allowed)', () => {
+		expect(Object.keys(action.outputs ?? {})).toContain('review-summary');
+	});
+	it('exposes expected additive security outputs when security mode is enabled', () => {
+		const outs = Object.keys(action.outputs ?? {});
+		for (const key of [
+			'security_findings',
+			'security_findings_count',
+			'security_risk',
+			'security_sarif_path',
+			'security_report_path',
+			'security_conclusion',
+		]) {
+			expect(outs, `missing security output ${key}`).toContain(key);
+		}
 	});
 });
 

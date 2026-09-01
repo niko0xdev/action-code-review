@@ -464,7 +464,9 @@ export function buildJobSummary(input: {
 		input.diagnostics
 	) {
 		lines.push('');
-		lines.push(renderToolFindingsSection(input.toolFindings, input.diagnostics));
+		lines.push(
+			renderToolFindingsSection(input.toolFindings, input.diagnostics)
+		);
 	}
 	return lines.join('\n');
 }
@@ -485,9 +487,7 @@ export function renderToolFindingsSection(
 	if (diagnostics) {
 		const diagLines: string[] = [];
 		if (diagnostics.prelintRan?.length) {
-			diagLines.push(
-				`- **Tools ran:** ${diagnostics.prelintRan.join(', ')}`
-			);
+			diagLines.push(`- **Tools ran:** ${diagnostics.prelintRan.join(', ')}`);
 		}
 		if (diagnostics.prelintSkipped?.length) {
 			diagLines.push(
@@ -495,7 +495,9 @@ export function renderToolFindingsSection(
 			);
 		}
 		if (diagnostics.toolFindingsTotal !== undefined) {
-			diagLines.push(`- **Tool findings total:** ${diagnostics.toolFindingsTotal}`);
+			diagLines.push(
+				`- **Tool findings total:** ${diagnostics.toolFindingsTotal}`
+			);
 		}
 		if (diagnostics.bucketedUnknownCategories !== undefined) {
 			diagLines.push(

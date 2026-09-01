@@ -55,9 +55,45 @@ inputs:
     required: false
     default: '30000'
   mode:
-    description: 'Review mode (only "review" is supported; unknown values fall back to "review")'
+    description: 'Execution mode: auto | review | security | agent'
     required: false
-    default: 'review'
+    default: 'auto'
+  security-profile:
+    description: 'Security profile: diff | lite | balanced | deep | confirm'
+    required: false
+    default: 'diff'
+  security-min-severity:
+    description: 'Minimum severity to publish: critical | high | medium | low | info'
+    required: false
+    default: 'medium'
+  security-fail-on:
+    description: 'Fail the action when a finding reaches this severity'
+    required: false
+    default: 'critical'
+  security-confirm-findings:
+    description: 'Run validation/confirmation for eligible findings'
+    required: false
+    default: 'true'
+  security-inline-comments:
+    description: 'Publish validated findings as inline PR comments when possible'
+    required: false
+    default: 'true'
+  security-sticky-comment:
+    description: 'Publish/update a single security summary comment'
+    required: false
+    default: 'true'
+  security-sarif:
+    description: 'Generate SARIF output'
+    required: false
+    default: 'true'
+  security-max-findings:
+    description: 'Maximum number of findings to publish to the PR'
+    required: false
+    default: '20'
+  security-risk-threshold:
+    description: 'Risk threshold for escalating to deeper security analysis'
+    required: false
+    default: 'high'
   require-write-permissions:
     description: 'When true, skip APPROVE/REQUEST_CHANGES escalation if the PR actor lacks write permission (still posts review)'
     required: false
@@ -103,6 +139,24 @@ outputs:
   review-summary:
     description: 'Summary of the code review'
     value: ${{ steps.run-review.outputs.review-summary }}
+  security_findings:
+    description: 'Validated security findings as JSON array'
+    value: ${{ steps.run-review.outputs.security_findings }}
+  security_findings_count:
+    description: 'Count of validated security findings'
+    value: ${{ steps.run-review.outputs.security_findings_count }}
+  security_risk:
+    description: 'Overall security risk level'
+    value: ${{ steps.run-review.outputs.security_risk }}
+  security_sarif_path:
+    description: 'Filesystem path to generated SARIF report'
+    value: ${{ steps.run-review.outputs.security_sarif_path }}
+  security_report_path:
+    description: 'Filesystem path to generated audit report'
+    value: ${{ steps.run-review.outputs.security_report_path }}
+  security_conclusion:
+    description: 'JSON-encoded security conclusion with scanner metadata'
+    value: ${{ steps.run-review.outputs.security_conclusion }}
 
 runs:
   using: composite
@@ -135,6 +189,15 @@ runs:
         INPUT_INCLUDE-FULL-CONTENT: ${{ inputs.include-full-content }}
         INPUT_MAX-CONTEXT-CHARS: ${{ inputs.max-context-chars }}
         INPUT_MODE: ${{ inputs.mode }}
+        INPUT_SECURITY-PROFILE: ${{ inputs.security-profile }}
+        INPUT_SECURITY-MIN-SEVERITY: ${{ inputs.security-min-severity }}
+        INPUT_SECURITY-FAIL-ON: ${{ inputs.security-fail-on }}
+        INPUT_SECURITY-CONFIRM-FINDINGS: ${{ inputs.security-confirm-findings }}
+        INPUT_SECURITY-INLINE-COMMENTS: ${{ inputs.security-inline-comments }}
+        INPUT_SECURITY-STICKY-COMMENT: ${{ inputs.security-sticky-comment }}
+        INPUT_SECURITY-SARIF: ${{ inputs.security-sarif }}
+        INPUT_SECURITY-MAX-FINDINGS: ${{ inputs.security-max-findings }}
+        INPUT_SECURITY-RISK-THRESHOLD: ${{ inputs.security-risk-threshold }}
         INPUT_REQUIRE-WRITE-PERMISSIONS: ${{ inputs.require-write-permissions }}
         INPUT_BUFFER-INLINE-COMMENTS: ${{ inputs.buffer-inline-comments }}
         INPUT_CLASSIFY-INLINE-COMMENTS: ${{ inputs.classify-inline-comments }}

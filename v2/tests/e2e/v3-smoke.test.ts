@@ -11,10 +11,10 @@
 import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { buildSummaryBody } from '../../src/github/comments.js';
 import { detectProfiles } from '../../src/profiles/index.js';
 import { resolveProfiles } from '../../src/profiles/index.js';
 import { rulesForProfiles } from '../../src/profiles/index.js';
-import { buildSummaryBody } from '../../src/github/comments.js';
 
 const SAMPLE_REPO = new URL(
 	'../../../examples/nextjs',
@@ -70,9 +70,7 @@ describe('V3 e2e smoke against examples/nextjs', () => {
 		};
 		try {
 			resolveProfiles(SAMPLE_REPO, 'kotlin,bogus-value');
-			expect(
-				warnings.some((w) => w.includes('bogus-value'))
-			).toBe(true);
+			expect(warnings.some((w) => w.includes('bogus-value'))).toBe(true);
 		} finally {
 			console.warn = originalWarn;
 		}

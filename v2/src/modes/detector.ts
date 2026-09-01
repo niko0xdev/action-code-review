@@ -1,8 +1,13 @@
 import * as core from '@actions/core';
 
-export type ReviewMode = 'review';
+export type ReviewMode = 'auto' | 'review' | 'security' | 'agent';
 
-const SUPPORTED_EVENTS = new Set(['pull_request', 'pull_request_target']);
+const SUPPORTED_EVENTS = new Set([
+	'pull_request',
+	'pull_request_target',
+	'workflow_dispatch',
+	'schedule',
+]);
 const SUPPORTED_ACTIONS = new Set([
 	'opened',
 	'synchronize',
@@ -12,8 +17,9 @@ const SUPPORTED_ACTIONS = new Set([
 
 export function resolveReviewMode(raw: string | undefined): ReviewMode {
 	if (!raw || raw === 'review') return 'review';
+	if (raw === 'auto' || raw === 'security' || raw === 'agent') return raw;
 	core.warning(
-		`Unknown mode "${raw}" — falling back to "review" (only "review" is supported).`
+		`Unknown mode "${raw}" — falling back to "review" (only "auto", "review", "security", "agent" are supported).`
 	);
 	return 'review';
 }
