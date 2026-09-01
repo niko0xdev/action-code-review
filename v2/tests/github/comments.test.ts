@@ -128,7 +128,9 @@ describe('buildSummaryBody - tool findings + diagnostics (Q3)', () => {
 				},
 			],
 		});
-		expect(body).toContain('<details><summary>Static analyzer findings</summary>');
+		expect(body).toContain(
+			'<details><summary>Static analyzer findings</summary>'
+		);
 		expect(body).toContain('[`biome/no-unused`]');
 		expect(body).toContain('src/a.ts:4');
 		expect(body).toContain('</details>');

@@ -14,7 +14,13 @@ describe('resolveReviewMode', () => {
 
 	it('falls back for unknown values', () => {
 		expect(resolveReviewMode('tag')).toBe('review');
-		expect(resolveReviewMode('agent')).toBe('review');
+		expect(resolveReviewMode('invalid_mode_xyz')).toBe('review');
+	});
+
+	it('supports security modes', () => {
+		expect(resolveReviewMode('auto')).toBe('auto');
+		expect(resolveReviewMode('security')).toBe('security');
+		expect(resolveReviewMode('agent')).toBe('agent');
 	});
 });
 

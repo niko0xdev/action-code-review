@@ -22,22 +22,24 @@ Open-source monorepo that powers the **AI Code Review GitHub Action** and ships 
 ## Key Features
 
 - **AI-powered reviews** – Uses OpenAI (GPT-4 by default) to inspect diffs for correctness, security, performance, and style issues.
+- **Security Review & Audit Profiles** – Dedicated security diff review and repository audit modes (`mode: security`) with curated AppSec skills, static scanners (Semgrep, secrets, dependencies), false-positive gating, and SARIF output.
 - **Line-specific comments** – Publishes review threads directly on the affected lines so teams can address feedback quickly.
 - **Review summaries** – Leaves a human-readable overview of the PR health plus machine-readable outputs for further automation.
 - **Configurable scope** – Limit the number of files, exclude paths, or inject your own prompts to tailor what the model inspects.
 - **Auto-approval option** – Let the bot approve once all of the issues it opened have been resolved.
 
-## V2 (in progress)
+## V2 & Security Engine
 
 V2 replaces the engine, not the interface: consumer workflows stay untouched while reviews become repository-aware. Highlights:
 
 - **Coding-harness review** – a coding agent inspects callers, interfaces and tests before judging a change, not just the raw diff.
+- **Security review profiles** – `diff`, `lite`, `balanced`, `deep`, `confirm` modes for fast PR diff scanning or deep scheduled repository security audits.
 - **Any OpenAI-compatible endpoint** – OpenAI, LiteLLM, vLLM, zrouter or any gateway speaking chat/completions; configured through the existing `OPENAI_API_*` variables.
-- **Stack profiles** – deterministic detection plus tailored review rules for React/NextJS, NestJS/NodeJS, Python/uv, Swift/iOS and Kotlin/Android.
-- **Validated findings** – every candidate is checked (path in the PR? line touched? confidence ≥ 0.8?) before publishing; duplicates are suppressed; counts are capped to avoid review spam.
+- **Stack profiles & Cybersecurity skills** – deterministic detection plus tailored review rules for React/NextJS, NestJS/NodeJS, Python/uv, Swift/iOS and Kotlin/Android, plus curated cybersecurity skills.
+- **Validated findings & SARIF** – every candidate is checked (path in the PR? line touched? confidence ≥ 0.8?) before publishing; duplicates are suppressed; SARIF v2.1.0 report generated automatically.
 - **Suggested changes** – small high-confidence fixes render as one-click GitHub suggestions.
 
-See `docs/v2-design-spec.md`, `docs/v1-interface-contract.md`, `docs/v2-architecture.md` and [`CHANGELOG-V2.md`](CHANGELOG-V2.md).
+See `docs/security-review.md`, `docs/security-model.md`, `docs/v2-design-spec.md`, `docs/v1-interface-contract.md`, `docs/v2-architecture.md` and [`CHANGELOG-V2.md`](CHANGELOG-V2.md).
 
 ## Quick Start
 
