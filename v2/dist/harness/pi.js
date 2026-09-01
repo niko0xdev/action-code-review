@@ -47,11 +47,10 @@ export function buildPiArgs(repositoryPath, model, provider = 'openai', extraArg
         '--mode',
         'json',
         '--no-session',
-        // Allow extensions so user-installed skills (and the built-in profile
-        // skills the runtime drops at ${PI_CODING_AGENT_DIR}/skills/) are
-        // discoverable. Extensions could allow extra tools, so review which
-        // ones ship if security posture tightens further.
-        '--no-extensions',
+        // Extensions ON so built-in profile skills at
+        // ${PI_CODING_AGENT_DIR}/skills/<id>/SKILL.md are discoverable
+        // (Pi progressive-disclosure). Keep --no-context-files below to
+        // block repo-controlled prompt injection via AGENTS.md/README.md.
         // Skills ARE on now: the runtime copies per-profile SKILL.md files
         // into ${PI_CODING_AGENT_DIR}/skills/<id>/SKILL.md based on the
         // detected profiles. Pi auto-discovers them at startup and progressive-
