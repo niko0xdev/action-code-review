@@ -212,5 +212,6 @@ describe('runReview', () => {
 		const result = await runReview(makeContext(['a.ts']), harness);
 		expect(result.findings).toEqual([]);
 		expect(result.filesReviewed).toEqual([]);
+		expect(result.diagnostics?.failedGroups).toBeGreaterThan(0);
 	});
 });

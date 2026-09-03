@@ -137,8 +137,6 @@ export async function runReview(
 			trivialPrFastPath: fastPathed.trivialPr,
 			...(failedGroups > 0 ? { failedGroups } : {}),
 		};
-	} else if (failedGroups > 0) {
-		result.diagnostics = { ...result.diagnostics, failedGroups };
 	}
 	return result;
 }
