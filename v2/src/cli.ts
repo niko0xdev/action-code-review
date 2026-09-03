@@ -696,6 +696,7 @@ export async function main(argv: string[]): Promise<void> {
 			// (collapsible section per docs/v3-decisions.md Q3).
 			result.toolFindings = prelintResult.findings;
 			result.diagnostics = {
+				...result.diagnostics,
 				toolFindingsTotal: prelintResult.findings.length,
 				prelintRan: prelintResult.ran,
 				prelintSkipped: prelintResult.skipped,
