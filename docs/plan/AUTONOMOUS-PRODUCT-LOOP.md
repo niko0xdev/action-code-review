@@ -41,6 +41,7 @@
 |---|------|--------|--------|----|----------|
 | 1 | `block-on-issues` + approval contract + harness failure + prompt-file containment | `fix/publisher-contract-flags` | `done` | https://github.com/niko0xdev/action-code-review/pull/74 | `fbc7e47` — gates: V2 409 pass, typecheck + lint clean within worktree, `v2/dist` rebuilt |
 | 2 | Remaining Phase-1 clusters (C1..C20 audit) | `feat/v2-audit-phase-1-blockers` | `deferred` | — | `.orchestration/audit/PHASE-1-SPEC.md` — requires single commit + contract pin tests; out of scope for smallest high-value fix |
-| 3 | Additive inputs from comparables (#1 commitable suggestions, #4 fail-level) | — | `pending` | — | queued until task 1 merges |
+| 3 | Additive inputs from comparables (#1 commitable suggestions, #4 fail-level) | — | `deferred` | — | Re-audit 2026-09-03: `buildSuggestion` has zero src call sites (tests only); inline suggestions already render via `replacement` in `commentIdentityBody` (`dedupe.ts:66-73`). A toggle only removes behavior — no contract violation, no caller demand. `security-fail-on` already exists (`action.yml:69-71`, honored `cli.ts:435-438`); review-path `fail-level` duplicates `block-on-issues` semantics. V1 contract frozen (`v1-interface-contract.md:1`); 30+ inputs already. No safe high-value gap. |
+| 4 | Preserve `failedGroups` through prelint diagnostics merge + pin in test | `claude/autonomous-product-loop` | `done` | https://github.com/niko0xdev/action-code-review/pull/75 | `41dcd77` — `cli.ts` overwrote reviewer diagnostics (`failedGroups` lost → outage-guard in `review.ts:319` never fired); spread preserves. Dead else-branch dropped (`reviewer.ts`). Gates: tsc clean, vitest 409/409, lint pre-existing only. |
 
-Next audit: after task 1 merges, re-check comparables and remaining `PHASE-1-SPEC.md` clusters.
+Next audit: after PR 75 merges, loop exits — no remaining safe high-value gap in scope.
