@@ -6,16 +6,18 @@ Open-source monorepo that powers the **AI Code Review GitHub Action** and ships 
 
 ```
 .
-├── pr-review/          # Source for the reusable GitHub Action
+├── src/                # Engine: repository-aware review via a coding harness
+├── tests/              # Engine test suite
+├── skills/             # Stack review skills (source SKILL.md files)
+├── pr-review/          # Published action: action.yml + dist bundle
 ├── pr-content/         # Companion action: auto-updates PR title/description
-├── v2/                 # V2 engine: repository-aware review via a coding harness
 ├── examples/nextjs/    # Sample Next.js app wired to the action
-├── docs/               # Design spec, V1 interface contract, V2 architecture
+├── docs/               # Design spec, V1 interface contract, architecture
 └── .github/workflows/  # Prompt samples and internal workflows
 ```
 
-- `pr-review` is the published GitHub Action (`niko0xdev/action-code-review/pr-review`) that analyzes pull requests, summarizes findings, and leaves inline comments. `pr-review/dist/index.js` and `pr-content/dist/index.js` are self-contained **V2 engine** bundles — same inputs, same outputs (see `docs/v1-interface-contract.md`).
-- `v2/` is the next-generation engine: a coding agent inspects the whole repository (callers, tests, related files) instead of reviewing diffs in isolation, over any OpenAI-compatible endpoint. See `docs/v2-architecture.md`.
+- `pr-review` is the published GitHub Action (`niko0xdev/action-code-review/pr-review`) that analyzes pull requests, summarizes findings, and leaves inline comments. `pr-review/dist/index.js` and `pr-content/dist/index.js` are self-contained engine bundles built from `src/` — same inputs, same outputs (see `docs/v1-interface-contract.md`).
+- `src/` is the engine: a coding agent inspects the whole repository (callers, tests, related files) instead of reviewing diffs in isolation, over any OpenAI-compatible endpoint. See `docs/architecture.md`.
 - `examples/nextjs` shows how a typical web app can include the action in its CI pipeline.
 - `.github/workflows/review-instruction.md` contains ready-made prompt snippets you can reuse with the `review-prompt` input.
 
@@ -28,9 +30,9 @@ Open-source monorepo that powers the **AI Code Review GitHub Action** and ships 
 - **Configurable scope** – Limit the number of files, exclude paths, or inject your own prompts to tailor what the model inspects.
 - **Auto-approval option** – Let the bot approve once all of the issues it opened have been resolved.
 
-## V2 & Security Engine
+## Engine & Security
 
-V2 replaces the engine, not the interface: consumer workflows stay untouched while reviews become repository-aware. Highlights:
+The engine replaces logic, not the interface: consumer workflows stay untouched while reviews become repository-aware. Highlights:
 
 - **Coding-harness review** – a coding agent inspects callers, interfaces and tests before judging a change, not just the raw diff.
 - **Security review profiles** – `diff`, `lite`, `balanced`, `deep`, `confirm` modes for fast PR diff scanning or deep scheduled repository security audits.
@@ -39,7 +41,7 @@ V2 replaces the engine, not the interface: consumer workflows stay untouched whi
 - **Validated findings & SARIF** – every candidate is checked (path in the PR? line touched? confidence ≥ 0.8?) before publishing; duplicates are suppressed; SARIF v2.1.0 report generated automatically.
 - **Suggested changes** – small high-confidence fixes render as one-click GitHub suggestions.
 
-See `docs/security-review.md`, `docs/security-model.md`, `docs/v2-design-spec.md`, `docs/v1-interface-contract.md`, `docs/v2-architecture.md` and [`CHANGELOG-V2.md`](CHANGELOG-V2.md).
+See `docs/security-review.md`, `docs/security-model.md`, `docs/v2-design-spec.md`, `docs/v1-interface-contract.md`, `docs/architecture.md` and [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Quick Start
 
@@ -124,21 +126,20 @@ Use `.github/workflows/review-instruction.md` for pre-written prompt snippets. Y
 1. **Install dependencies**
 
    ```bash
-   cd v2
    pnpm install
    ```
 
 2. **Build, lint, and test**
 
    ```bash
-   # in v2/ (sole logic package; build emits pr-review/dist/index.js + pr-content/dist/index.js)
+   # at repo root (build emits pr-review/dist/index.js + pr-content/dist/index.js)
    pnpm test        # full suite (unit + contract + e2e)
    pnpm typecheck
    pnpm lint
    pnpm build
    ```
 
-3. **Iterate on the engine** – Engine changes live under `v2/src`; the contract tests in `v2/tests/contract.test.ts` fail if any legacy input/output/default drifts.
+3. **Iterate on the engine** – Engine changes live under `src/`; the contract tests in `tests/contract.test.ts` fail if any legacy input/output/default drifts.
 
 ## Example Next.js App
 
@@ -157,9 +158,9 @@ Once the dev server runs on `http://localhost:3000`, open a PR against that proj
 This project is open source under the MIT License. Issues and pull requests are welcome:
 
 1. Fork the repository and create a feature branch.
-2. Make changes inside the relevant package (`pr-review` or an `examples/*` project).
-3. Add or update tests plus formatting (`pnpm run lint:fix && pnpm run format` inside `pr-review`).
-4. Run the test suite (`pnpm run test`) and ensure workflows stay green.
+2. Make changes (`src/`, `tests/` for engine; `pr-review/` and `pr-content/` keep only `action.yml` + `dist/index.js`).
+3. Add or update tests plus formatting (`pnpm lint:fix && pnpm format` at root).
+4. Run the test suite (`pnpm test`) and rebuild dists (`pnpm build`) if `src/` changed.
 5. Open a pull request describing the enhancement or fix.
 
 ## License

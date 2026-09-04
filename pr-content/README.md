@@ -149,10 +149,10 @@ The AI will preserve the template structure and formatting, only filling in the 
 
 ## Development
 
-`dist/index.js` is built from the V2 engine — all logic lives in `v2/src`:
+`dist/index.js` is built from the engine — all logic lives in `src/`:
 
 ```bash
-cd v2 && pnpm install
+pnpm install
 pnpm build   # emits pr-review/dist/index.js + pr-content/dist/index.js
 ```
 
