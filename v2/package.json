@@ -3,9 +3,8 @@
 	"version": "2.0.0",
 	"description": "V2 AI code review engine: repository-aware review via a coding harness over an OpenAI-compatible endpoint",
 	"type": "module",
-	"main": "dist/cli.js",
 	"scripts": {
-		"build": "rm -rf dist && tsc && mkdir -p dist/entry && npx ncc build src/entry/pr-review.ts -o dist/entry/pr-review --no-cache --quiet && mv dist/entry/pr-review/index.js dist/entry/pr-review.js && rm -rf dist/entry/pr-review && npx ncc build src/entry/pr-content.ts -o dist/entry/pr-content --no-cache --quiet && mv dist/entry/pr-content/index.js dist/entry/pr-content.js && rm -rf dist/entry/pr-content && npx ncc build src/cli.ts -o dist/cli-bundle --no-cache --quiet && mv dist/cli-bundle/index.js dist/cli.js && rm -rf dist/cli-bundle && echo 'Build complete'",
+		"build": "npx ncc build src/entry/pr-review.ts -o ../pr-review/dist-tmp --no-cache --quiet && mv ../pr-review/dist-tmp/index.js ../pr-review/dist/index.js && rm -rf ../pr-review/dist-tmp && npx ncc build src/entry/pr-content.ts -o ../pr-content/dist-tmp --no-cache --quiet && mv ../pr-content/dist-tmp/index.js ../pr-content/dist/index.js && rm -rf ../pr-content/dist-tmp && echo 'Build complete'",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",

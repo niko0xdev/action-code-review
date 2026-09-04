@@ -149,22 +149,11 @@ The AI will preserve the template structure and formatting, only filling in the 
 
 ## Development
 
-To build the action:
+`dist/index.js` is built from the V2 engine — all logic lives in `v2/src`:
 
 ```bash
-npm run build
-```
-
-To run tests:
-
-```bash
-npm test
-```
-
-To lint the code:
-
-```bash
-npm run lint
+cd v2 && pnpm install
+pnpm build   # emits pr-review/dist/index.js + pr-content/dist/index.js
 ```
 
 Tests are run using Vitest, a modern test framework for TypeScript/JavaScript projects.
