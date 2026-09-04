@@ -194,48 +194,19 @@ The blocking behavior works with any `min-severity` setting:
 
 ## Development
 
-### Building the Action
+`dist/index.js` is built from the V2 engine — all logic lives in `v2/src`:
 
 ```bash
-# Install dependencies
-npm install
-
-# Build the action
-npm run build
-
-# Run tests
-npm run test
-
-# Run tests with coverage
-npm run test:coverage
-
-# Lint code
-npm run lint
-
-# Fix linting issues
-npm run lint:fix
-
-# Format code
-npm run format
+cd v2 && pnpm install
+pnpm build   # emits pr-review/dist/index.js + pr-content/dist/index.js
 ```
 
 ### Project Structure
 
 ```
 .
-├── src/
-│   └── index.ts          # Main action code
-├── dist/                 # Built action (generated)
-├── __tests__/
-│   └── index.test.ts     # Test file
-├── .github/
-│   └── workflows/
-│       └── pr-review.yml # Example workflow
-├── action.yml            # Action metadata
-├── biome.json            # Biome configuration
-├── vitest.config.ts      # Vitest configuration
-├── package.json          # Dependencies and scripts
-├── tsconfig.json         # TypeScript configuration
+├── dist/index.js         # Published bundle (generated from v2/src)
+├── action.yml            # Action metadata (frozen consumer interface)
 └── README.md             # This file
 ```
 

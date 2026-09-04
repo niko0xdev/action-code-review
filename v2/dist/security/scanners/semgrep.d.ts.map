@@ -1,1 +1,0 @@
-{"version":3,"file":"semgrep.d.ts","sourceRoot":"","sources":["../../../src/security/scanners/semgrep.ts"],"names":[],"mappings":"AAEA,OAAO,KAAK,EACX,gBAAgB,EAChB,eAAe,EAEf,MAAM,aAAa,CAAC;AAmBrB;;;GAGG;AACH,wBAAsB,iBAAiB,CACtC,cAAc,EAAE,MAAM,EACtB,WAAW,EAAE,MAAM,EAAE,GACnB,OAAO,CAAC;IAAE,SAAS,EAAE,gBAAgB,CAAC;IAAC,QAAQ,EAAE,eAAe,EAAE,CAAA;CAAE,CAAC,CAwKvE"}

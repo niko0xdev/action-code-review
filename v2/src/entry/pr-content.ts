@@ -8,7 +8,7 @@ const invokedPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
 export { main };
 export default main;
 
-if (invokedPath === entryPath) {
+if (invokedPath === entryPath || process.env.GITHUB_ACTIONS === 'true') {
 	main(['pr-content']).catch((error) => {
 		console.error(error);
 		process.exitCode = 1;

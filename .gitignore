@@ -29,16 +29,8 @@ coverage/
 examples/nextjs/.next/
 .aider*
 
-# V2 build output (rebuilt from source with pnpm build).
-# v2/dist/ files MUST be committed so the delegation bridge can find
-# them without requiring a build step in the consumer's checkout.
-# The build script (see v2/package.json) produces:
-#   - v2/dist/entry/pr-review.js + pr-content.js (entry bundles)
-#   - v2/dist/cli.js/ (transitive dep, ncc output is a directory)
-#   - v2/dist/adapter/, context/, etc. (transitive dep directories)
-#
-# The previous approach of using !v2/dist/cli.js (a single file) was
-# broken because ncc bundles into a directory, not a file. Whitelisting
-# the whole v2/dist/ tree is simpler and matches the actual build shape.
-!v2/dist/
+# Build output (v2 tsc output + committed action bundles are tracked;
+# v2/dist stays ignored as a local-only artifact, pr-*/dist/index.js
+# are the published bundles built via (cd v2 && pnpm build)).
+v2/dist/
 v2/coverage/
