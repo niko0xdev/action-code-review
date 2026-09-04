@@ -14,7 +14,7 @@ Open-source monorepo that powers the **AI Code Review GitHub Action** and ships 
 └── .github/workflows/  # Prompt samples and internal workflows
 ```
 
-- `pr-review` is the published GitHub Action (`niko0xdev/action-code-review/pr-review`) that analyzes pull requests, summarizes findings, and leaves inline comments. It now transparently delegates to the **V2 engine** when present in the checkout — same inputs, same outputs (see `docs/v1-interface-contract.md`).
+- `pr-review` is the published GitHub Action (`niko0xdev/action-code-review/pr-review`) that analyzes pull requests, summarizes findings, and leaves inline comments. `pr-review/dist/index.js` and `pr-content/dist/index.js` are self-contained **V2 engine** bundles — same inputs, same outputs (see `docs/v1-interface-contract.md`).
 - `v2/` is the next-generation engine: a coding agent inspects the whole repository (callers, tests, related files) instead of reviewing diffs in isolation, over any OpenAI-compatible endpoint. See `docs/v2-architecture.md`.
 - `examples/nextjs` shows how a typical web app can include the action in its CI pipeline.
 - `.github/workflows/review-instruction.md` contains ready-made prompt snippets you can reuse with the `review-prompt` input.
@@ -124,28 +124,21 @@ Use `.github/workflows/review-instruction.md` for pre-written prompt snippets. Y
 1. **Install dependencies**
 
    ```bash
-   cd pr-review   # legacy action
-   pnpm install
-
-   cd ../v2       # V2 engine
+   cd v2
    pnpm install
    ```
 
 2. **Build, lint, and test**
 
    ```bash
-   # in v2/
+   # in v2/ (sole logic package; build emits pr-review/dist/index.js + pr-content/dist/index.js)
    pnpm test        # full suite (unit + contract + e2e)
    pnpm typecheck
    pnpm lint
-   pnpm build       # tsc → dist/
-
-   # in pr-review/
-   pnpm run build
-   npx vitest run
+   pnpm build
    ```
 
-3. **Iterate on the engine** – Engine changes live under `v2/src`; the contract tests in `v2/tests/contract.test.ts` fail if any legacy input/output/default drifts. Iterate on the legacy action via `pr-review/src/index.ts`.
+3. **Iterate on the engine** – Engine changes live under `v2/src`; the contract tests in `v2/tests/contract.test.ts` fail if any legacy input/output/default drifts.
 
 ## Example Next.js App
 
