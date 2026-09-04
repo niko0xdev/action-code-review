@@ -37,7 +37,7 @@ inputs:
   auto-approve-when-resolved:
     description: 'If true, approve the pull request when all AI-generated review threads are resolved'
     required: false
-    default: 'false'
+    default: 'true'
   min-severity:
     description: 'Minimum severity level for comments (low, high, critical)'
     required: false
