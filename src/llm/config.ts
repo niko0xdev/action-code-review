@@ -2,7 +2,7 @@ import type { LlmConfig } from './provider.js';
 
 /**
  * Environment-driven configuration. The legacy OPENAI_* variable names are
- * frozen contract (docs/v1-interface-contract.md); V2 maps them into its
+ * frozen contract (docs/v1-interface-contract.md); maps them into its
  * normalized config shape (spec §7/§27).
  */
 

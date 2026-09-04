@@ -453,7 +453,7 @@ export async function main(argv: string[]): Promise<void> {
 		}
 		const options = parseArgs(argv);
 		core.info(
-			`[review] V2 initialized (action: ${options.action}, mode: ${mode})`
+			`[review] initialized (action: ${options.action}, mode: ${mode})`
 		);
 		const actorForFilter =
 			process.env.GITHUB_ACTOR ??
@@ -621,9 +621,9 @@ export async function main(argv: string[]): Promise<void> {
 		});
 		process.env.PI_CODING_AGENT_DIR = runtimeConfig.configDir;
 		try {
-			// Run deterministic static analyzers (V3 Phase 2) when opted
-			// in via env var. Cannot add a new action input because V1
-			// contract is frozen - see docs/v3-decisions.md Q1.
+			// Run deterministic static analyzers when opted in via env
+			// var. Cannot add a new action input because the V1
+			// contract (docs/v1-interface-contract.md) is frozen.
 			const enablePrelint = process.env.AI_REVIEW_ENABLE_PRELINT === 'true';
 			const prelintResult = enablePrelint
 				? await runPrelint({
@@ -692,8 +692,8 @@ export async function main(argv: string[]): Promise<void> {
 				minSeverity: legacyOptions.minSeverity,
 			});
 			// Surface tool findings + prelint diagnostics in the result
-			// so they can be rendered in the GitHub review summary
-			// (collapsible section per docs/v3-decisions.md Q3).
+			// so they render in the GitHub review summary
+			// (collapsible section, see docs/index.md).
 			result.toolFindings = prelintResult.findings;
 			result.diagnostics = {
 				...result.diagnostics,

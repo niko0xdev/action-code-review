@@ -95,7 +95,7 @@ export async function runReview(
 		options.minConfidence ?? 0.8
 	);
 
-	// Phase 3 pipeline additions (V3 decision Q2 + spec §18):
+	// Pipeline additions (spec §18):
 	// 1) category vocabulary -> bucket unknown to low
 	// 2) suggestion safety -> strip unsafe replacements
 	// 3) dedupe -> cross-finding consistency -> cap

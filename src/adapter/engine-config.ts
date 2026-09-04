@@ -4,7 +4,7 @@ import type { LlmConfig } from '../llm/provider.js';
 /**
  * Engine configuration resolution: explicit action inputs win, the frozen
  * OPENAI_* environment variables are the fallback (spec §7/§27). This is
- * the single place where legacy names meet V2 config.
+ * the single place where legacy action inputs meet engine config.
  */
 
 export interface EngineConfigInput {
