@@ -38332,10 +38332,10 @@ function rulesForProfiles(profiles) {
 
 ;// CONCATENATED MODULE: ./src/types/finding.ts
 /**
- * Normalized finding model used across the V2 review pipeline.
+ * Normalized finding model used across the review pipeline.
  *
  * Every harness (Pi, future alternatives) must map its output into this
- * format before validation and publishing. See docs/v2-design-spec.md §17.
+ * format before validation and publishing. See docs/design-spec.md §17.
  */
 const SEVERITY_ORDER = {
     critical: 3,
