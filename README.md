@@ -41,7 +41,7 @@ The engine replaces logic, not the interface: consumer workflows stay untouched 
 - **Validated findings & SARIF** – every candidate is checked (path in the PR? line touched? confidence ≥ 0.8?) before publishing; duplicates are suppressed; SARIF v2.1.0 report generated automatically.
 - **Suggested changes** – small high-confidence fixes render as one-click GitHub suggestions.
 
-See `docs/security-review.md`, `docs/security-model.md`, `docs/v2-design-spec.md`, `docs/v1-interface-contract.md`, `docs/architecture.md` and [`CHANGELOG.md`](CHANGELOG.md).
+See `docs/security-review.md`, `docs/security-model.md`, `docs/design-spec.md`, `docs/v1-interface-contract.md`, `docs/architecture.md` and [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Quick Start
 
