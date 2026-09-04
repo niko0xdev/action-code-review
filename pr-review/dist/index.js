@@ -35627,7 +35627,7 @@ const external_node_os_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import
 /**
  * Built-in Pi skill for the javascript profile.
  *
- * Generated at build time from v2/skills/javascript/SKILL.md. Stored as a JSON
+ * Generated at build time from skills/javascript/SKILL.md. Stored as a JSON
  * string so backticks, `${...}` interpolation, and other markdown syntax
  * inside the skill body do not conflict with the surrounding template literal.
  */
@@ -35638,7 +35638,7 @@ const content = "---\nname: javascript\ndescription: Modern JavaScript (ES2022+)
 /**
  * Built-in Pi skill for the kotlin profile.
  *
- * Generated at build time from v2/skills/kotlin/SKILL.md. Stored as a JSON
+ * Generated at build time from skills/kotlin/SKILL.md. Stored as a JSON
  * string so backticks, `${...}` interpolation, and other markdown syntax
  * inside the skill body do not conflict with the surrounding template literal.
  */
@@ -35649,7 +35649,7 @@ const kotlin_content = '---\nname: kotlin\ndescription: Kotlin (v1.9+) and Jetpa
 /**
  * Built-in Pi skill for the nestjs profile.
  *
- * Generated at build time from v2/skills/nestjs/SKILL.md. Stored as a JSON
+ * Generated at build time from skills/nestjs/SKILL.md. Stored as a JSON
  * string so backticks, `${...}` interpolation, and other markdown syntax
  * inside the skill body do not conflict with the surrounding template literal.
  */
@@ -35660,7 +35660,7 @@ const nestjs_content = "---\nname: nestjs\ndescription: NestJS (v10+) backend co
 /**
  * Built-in Pi skill for the nextjs profile.
  *
- * Generated at build time from v2/skills/nextjs/SKILL.md. Stored as a JSON
+ * Generated at build time from skills/nextjs/SKILL.md. Stored as a JSON
  * string so backticks, `${...}` interpolation, and other markdown syntax
  * inside the skill body do not conflict with the surrounding template literal.
  */
@@ -35671,7 +35671,7 @@ const nextjs_content = "---\nname: nextjs\ndescription: Next.js (v13+) code revi
 /**
  * Built-in Pi skill for the nodejs profile.
  *
- * Generated at build time from v2/skills/nodejs/SKILL.md. Stored as a JSON
+ * Generated at build time from skills/nodejs/SKILL.md. Stored as a JSON
  * string so backticks, `${...}` interpolation, and other markdown syntax
  * inside the skill body do not conflict with the surrounding template literal.
  */
@@ -35682,7 +35682,7 @@ const nodejs_content = "---\nname: nodejs\ndescription: Node.js (v20+) backend c
 /**
  * Built-in Pi skill for the python profile.
  *
- * Generated at build time from v2/skills/python/SKILL.md. Stored as a JSON
+ * Generated at build time from skills/python/SKILL.md. Stored as a JSON
  * string so backticks, `${...}` interpolation, and other markdown syntax
  * inside the skill body do not conflict with the surrounding template literal.
  */
@@ -35693,7 +35693,7 @@ const python_content = '---\nname: python\ndescription: Python (3.11+) code revi
 /**
  * Built-in Pi skill for the react profile.
  *
- * Generated at build time from v2/skills/react/SKILL.md. Stored as a JSON
+ * Generated at build time from skills/react/SKILL.md. Stored as a JSON
  * string so backticks, `${...}` interpolation, and other markdown syntax
  * inside the skill body do not conflict with the surrounding template literal.
  */
@@ -35704,7 +35704,7 @@ const react_content = '---\nname: react\ndescription: React (v18+) best practice
 /**
  * Built-in Pi skill for the swift profile.
  *
- * Generated at build time from v2/skills/swift/SKILL.md. Stored as a JSON
+ * Generated at build time from skills/swift/SKILL.md. Stored as a JSON
  * string so backticks, `${...}` interpolation, and other markdown syntax
  * inside the skill body do not conflict with the surrounding template literal.
  */
@@ -35715,7 +35715,7 @@ const swift_content = '---\nname: swift\ndescription: Swift (v5.9+) and SwiftUI 
 /**
  * Built-in Pi skill for the typescript profile.
  *
- * Generated at build time from v2/skills/typescript/SKILL.md. Stored as a JSON
+ * Generated at build time from skills/typescript/SKILL.md. Stored as a JSON
  * string so backticks, `${...}` interpolation, and other markdown syntax
  * inside the skill body do not conflict with the surrounding template literal.
  */
@@ -35800,7 +35800,7 @@ function buildPiRuntimeModelsJson(config) {
  * Skills are progressive-disclosure: Pi loads their descriptions into the
  * system prompt (~1024 chars each), but only reads the body when the task
  * matches. The full bodies are stored as compiled-in TypeScript strings
- * (see `v2/src/skills/registry.ts`) so we ship self-contained — no external
+ * (see `src/skills/registry.ts`) so we ship self-contained — no external
  * file reads at action runtime.
  */
 async function writeSkillsForProfiles(configDir, profiles) {
@@ -35814,7 +35814,7 @@ async function writeSkillsForProfiles(configDir, profiles) {
     }
 }
 async function preparePiRuntimeConfig(config, options) {
-    const configDir = await (0,promises_namespaceObject.mkdtemp)((0,external_node_path_.join)((0,external_node_os_namespaceObject.tmpdir)(), 'acr-v2-pi-'));
+    const configDir = await (0,promises_namespaceObject.mkdtemp)((0,external_node_path_.join)((0,external_node_os_namespaceObject.tmpdir)(), 'acr-pi-'));
     try {
         await (0,promises_namespaceObject.mkdir)(configDir, { recursive: true });
         await (0,promises_namespaceObject.writeFile)((0,external_node_path_.join)(configDir, 'models.json'), buildPiRuntimeModelsJson(config), 'utf8');
@@ -37763,7 +37763,7 @@ async function resolveRuntimeConfigDir() {
     const configDir = process.env.PI_CODING_AGENT_DIR;
     if (configDir)
         return configDir;
-    return (0,promises_namespaceObject.mkdtemp)((0,external_node_path_.join)((0,external_node_os_namespaceObject.tmpdir)(), 'acr-v2-pi-test-'));
+    return (0,promises_namespaceObject.mkdtemp)((0,external_node_path_.join)((0,external_node_os_namespaceObject.tmpdir)(), 'acr-pi-test-'));
 }
 function runPi(params) {
     return new Promise((resolve, reject) => {
