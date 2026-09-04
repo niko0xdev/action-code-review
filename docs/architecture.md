@@ -1,6 +1,6 @@
 # Architecture
 
-> Companion to `docs/v2-design-spec.md` (the authoritative spec) and
+> Companion to `docs/design-spec.md` (the authoritative spec) and
 > `docs/v1-interface-contract.md` (the frozen public interface). This
 > document describes what was actually built, how the pieces fit, and how
 > to run/extend the engine.
