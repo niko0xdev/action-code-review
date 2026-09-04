@@ -35,7 +35,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install Pi coding agent
+    - name: Setup harness loop
       shell: bash
       run: |
         if ! command -v pi >/dev/null 2>&1 || ! pi --version 2>/dev/null | grep -q '^0.73.1'; then

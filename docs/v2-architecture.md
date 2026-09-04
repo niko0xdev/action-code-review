@@ -91,7 +91,7 @@ Pi coding agent into the runner before the node entry executes, so
 consumer repositories never install or reference Pi themselves.
 
 ```yaml
-- name: Install Pi coding agent
+- name: Setup harness loop
   shell: bash
   run: |
     if ! command -v pi >/dev/null 2>&1; then
