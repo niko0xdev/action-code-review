@@ -24,8 +24,8 @@ Internally everything below those surfaces changed.
 
 ```text
 action-code-review/
-├── pr-content/          # legacy action (public surface frozen)
-├── pr-review/           # legacy action + V2 delegation bridge
+├── pr-content/          # thin action (action.yml + dist, public surface frozen)
+├── pr-review/           # thin action (action.yml + dist, public surface frozen)
 ├── v2/                  # the new engine
 │   ├── src/
 │   │   ├── cli.ts                 # pr-review orchestration entry
@@ -50,8 +50,8 @@ action-code-review/
 ```text
 GitHub PR event
   ↓
-pr-review action (node20)
-  ↓  delegation bridge (v2Delegate.ts)
+pr-review action (composite: harness setup + dist/index.js)
+  ↓  dist entry (v2/src/entry/pr-review.ts, ncc-built)
 V2 engine CLI (v2/src/cli.ts)
   ├─ mapPrReviewInputs      — frozen inputs → engine options
   ├─ resolveEngineConfig    — inputs or OPENAI_API_* env fallback
@@ -81,7 +81,7 @@ publishReview      — one createReview (REQUEST_CHANGES or COMMENT)
 | Capability flags (`supportsDeveloperRole`, `maxTokensField`) instead of model checks | Spec §30 model independence; gateways vary centrally, app code stays neutral |
 | Findings anchored to new-side diff lines via unified-diff mapping | GitHub inline comments require exact post-change line numbers; validator drops anything unanchorable |
 | Legacy `<!-- ai-review-id:<12hex> -->` marker preserved | Duplicate suppression keeps working across V1/V2 threads |
-| Delegation bridge in `pr-review/src/index.ts` | If `v2/dist/entry/pr-review.js` exists it takes over; otherwise V1 runs unchanged — zero-risk rollout |
+| Self-contained dists per action | `v2/src/entry/pr-review.ts` + `pr-content.ts` ncc-built direct to `../pr-*/dist/index.js`; no shared `v2/dist`, no per-action packages |
 | Contract tests parse both `action.yml` files on every run | Any interface drift fails CI immediately |
 
 ## Pi runtime provisioning
