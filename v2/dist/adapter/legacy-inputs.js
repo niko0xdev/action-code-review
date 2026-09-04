@@ -28,7 +28,8 @@ const PR_REVIEW_DEFAULTS = {
 };
 const PR_CONTENT_DEFAULTS = {
     openaiModel: 'gpt-4',
-    maxTokens: '4096',
+    // ponytail: frozen action.yml default is 1000; 4096 only as retry escape hatch in cli.ts.
+    maxTokens: '1000',
     includeFileList: 'true',
     templatePath: '.github/pull_request_template.md',
 };

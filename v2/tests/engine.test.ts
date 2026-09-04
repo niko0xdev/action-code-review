@@ -63,6 +63,11 @@ describe('mapLegacyInputs (docs/v1-interface-contract.md)', () => {
 		expect(options.includeFileList).toBe(false);
 		expect(options.templatePath).toBe('tpl.md');
 	});
+
+	it('defaults pr-content maxTokens to frozen action.yml value 1000', () => {
+		const options = mapLegacyInputs('pr-content', {});
+		expect(options.maxTokens).toBe(1000);
+	});
 });
 
 describe('buildPiRuntimeModelsJson', () => {
