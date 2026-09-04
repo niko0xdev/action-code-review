@@ -1,5 +1,5 @@
 /**
- * Two-pass verify (V3 Phase 5, decision Q4).
+ * Two-pass verify.
  *
  * After the main review pass, optionally runs a second short LLM call
  * that asks the model to challenge its own high/critical findings.
@@ -70,7 +70,7 @@ export function buildVerifyPrompt(
 	context: { title: string; body: string; filenames: string[] }
 ): string {
 	const toolSection = toolFindings.length
-		? `\nStatic analyzer evidence (from V3 Phase 2 prelint):\n${toolFindings
+		? `\nStatic analyzer evidence (from prelint):\n${toolFindings
 				.slice(0, 30)
 				.map(
 					(f) =>

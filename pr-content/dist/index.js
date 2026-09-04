@@ -32451,7 +32451,7 @@ function wrappy (fn, cb) {
 /* unused harmony exports DEFAULT_BASE_URL, DEFAULT_TIMEOUT_MS, loadLlmConfigFromEnv */
 /**
  * Environment-driven configuration. The legacy OPENAI_* variable names are
- * frozen contract (docs/v1-interface-contract.md); V2 maps them into its
+ * frozen contract (docs/v1-interface-contract.md); maps them into its
  * normalized config shape (spec §7/§27).
  */
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
@@ -32514,9 +32514,9 @@ __nccwpck_require__.d(__webpack_exports__, {
 var llm_config = __nccwpck_require__(3950);
 ;// CONCATENATED MODULE: ./src/llm/provider.ts
 /**
- * LLM provider abstraction. V2 treats the endpoint as an OpenAI-compatible
- * gateway (spec §7): never OpenAI-specific, capability flags instead of
- * model-name conditionals (spec §30).
+ * LLM provider abstraction: treats the endpoint as an OpenAI-compatible
+ * gateway: never OpenAI-specific, capability flags instead of
+ * model-name conditionals.
  */
 const DEFAULT_CAPABILITIES = {
     supportsReasoning: false,
@@ -35985,7 +35985,7 @@ var external_node_child_process_ = __nccwpck_require__(1421);
 var external_node_fs_ = __nccwpck_require__(3024);
 ;// CONCATENATED MODULE: ./src/context/prelint.ts
 /**
- * PreLint orchestrator (V3 Phase 2).
+ * PreLint orchestrator.
  *
  * Runs deterministic static-analysis tools (biome, ruff, mypy, swiftlint,
  * ktlint, sqlfluff, semgrep) against the checked-out repository and
@@ -35994,14 +35994,9 @@ var external_node_fs_ = __nccwpck_require__(3024);
  * review prompt as evidence so the model can confirm, contradict, or
  * extend them with higher-level reasoning.
  *
- * Design decisions (docs/v3-decisions.md):
- * - Q1: bundle biome + ruff, graceful skip for the rest
- * - Q3: toolFindings exposed in summary via collapsible section
- * - Q5: SQL detection already partially handled in Phase 1; this module
- *       trusts the SQL profile to detect SQL files
- *
- * The orchestrator is opt-in via `AI_REVIEW_ENABLE_PRELINT=true` env var
- * (cannot add a new action input - V1 contract is frozen).
+ * Missing binaries are skipped, never errors. Opt-in via
+ * `AI_REVIEW_ENABLE_PRELINT=true` (cannot add a new action input - the
+ * V1 contract in docs/v1-interface-contract.md is frozen).
  */
 
 
@@ -37215,7 +37210,7 @@ function reviewFailed(result) {
 /**
  * Resolve whether every AI-authored review thread on the PR is resolved.
  * Same semantics as the retired V1 approvalManager.areAiCommentsResolved;
- * uses the structural PublisherOctokit so V2 tests stay transport-agnostic.
+ * uses the structural PublisherOctokit so tests stay transport-agnostic.
  * Fails closed: unknown/errored state is never "resolved".
  */
 async function areAiThreadsResolved(octokit, owner, repo, prNumber) {
@@ -37366,7 +37361,7 @@ function buildJobSummary(input) {
         ? `${Math.round(input.durationMs / 1000)}s`
         : 'n/a';
     const lines = [
-        '## AI Review V2',
+        '## AI Review',
         '',
         '- **Detected stack:** see review comment',
         `- **Review duration:** ${seconds}`,
@@ -37775,6 +37770,8 @@ function runPi(params) {
         });
         let stdout = '';
         let stderr = '';
+        let stdoutBytes = 0;
+        let stderrBytes = 0;
         let settled = false;
         let killTimer;
         const finish = (error) => {
@@ -37807,20 +37804,18 @@ function runPi(params) {
             child.kill('SIGKILL');
             finish(new Error(`Pi ${stream} output exceeded ${MAX_OUTPUT_BYTES} byte cap`));
         };
-        const append = (current, chunk, stream) => {
-            const text = String(chunk);
-            if (Buffer.byteLength(current) + Buffer.byteLength(text) >
-                MAX_OUTPUT_BYTES) {
+        const append = (current, size, chunk, stream) => {
+            if (size + chunk.length > MAX_OUTPUT_BYTES) {
                 killAndFail(stream);
-                return current;
+                return [current, size];
             }
-            return current + text;
+            return [current + chunk.toString('utf8'), size + chunk.length];
         };
         child.stdout.on('data', (chunk) => {
-            stdout = append(stdout, chunk, 'stdout');
+            [stdout, stdoutBytes] = append(stdout, stdoutBytes, chunk, 'stdout');
         });
         child.stderr.on('data', (chunk) => {
-            stderr = append(stderr, chunk, 'stderr');
+            [stderr, stderrBytes] = append(stderr, stderrBytes, chunk, 'stderr');
         });
         child.stdin.on('error', (error) => finish(new Error(`Failed to write harness prompt: ${error.message}`)));
         child.on('error', (error) => {
@@ -38478,7 +38473,7 @@ function riskFromFindings(findings) {
 
 ;// CONCATENATED MODULE: ./src/review/validation.ts
 /**
- * Phase 3: Validation hardening (V3 decision Q2 + spec §18 extensions).
+ * Validation hardening (spec §18 extensions).
  *
  * Three new checks layered on top of the existing validator pipeline:
  *
@@ -38913,7 +38908,7 @@ async function runReview(context, harness, options = {}) {
             SEVERITY_ORDER.critical);
     const filtered = allFindings.filter((finding) => SEVERITY_ORDER[finding.severity] >= minimum);
     const validated = validateFindings(filtered, context.diff.files, options.minConfidence ?? 0.8);
-    // Phase 3 pipeline additions (V3 decision Q2 + spec §18):
+    // Pipeline additions (spec §18):
     // 1) category vocabulary -> bucket unknown to low
     // 2) suggestion safety -> strip unsafe replacements
     // 3) dedupe -> cross-finding consistency -> cap
@@ -40757,7 +40752,7 @@ async function main(argv) {
             return;
         }
         const options = parseArgs(argv);
-        lib_core.info(`[review] V2 initialized (action: ${options.action}, mode: ${mode})`);
+        lib_core.info(`[review] initialized (action: ${options.action}, mode: ${mode})`);
         const actorForFilter = process.env.GITHUB_ACTOR ??
             github.context.payload.pull_request?.user?.login ??
             github.context.actor ??
@@ -40879,9 +40874,9 @@ async function main(argv) {
         });
         process.env.PI_CODING_AGENT_DIR = runtimeConfig.configDir;
         try {
-            // Run deterministic static analyzers (V3 Phase 2) when opted
-            // in via env var. Cannot add a new action input because V1
-            // contract is frozen - see docs/v3-decisions.md Q1.
+            // Run deterministic static analyzers when opted in via env
+            // var. Cannot add a new action input because the V1
+            // contract (docs/v1-interface-contract.md) is frozen.
             const enablePrelint = process.env.AI_REVIEW_ENABLE_PRELINT === 'true';
             const prelintResult = enablePrelint
                 ? await runPrelint({
@@ -40938,8 +40933,8 @@ async function main(argv) {
                 minSeverity: legacyOptions.minSeverity,
             });
             // Surface tool findings + prelint diagnostics in the result
-            // so they can be rendered in the GitHub review summary
-            // (collapsible section per docs/v3-decisions.md Q3).
+            // so they render in the GitHub review summary
+            // (collapsible section, see docs/index.md).
             result.toolFindings = prelintResult.findings;
             result.diagnostics = {
                 ...result.diagnostics,

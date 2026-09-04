@@ -27,21 +27,20 @@ action-code-review/
 ├── pr-content/          # thin action (action.yml + dist, public surface frozen)
 ├── pr-review/           # thin action (action.yml + dist, public surface frozen)
 ├── src/                 # the engine
-│   │   ├── cli.ts                 # pr-review orchestration entry
-│   │   ├── adapter/               # legacy-inputs, engine-config, runtime
-│   │   ├── context/               # pr, diff, files, repository
-│   │   ├── harness/               # ReviewHarness interface + Pi wrapper
-│   │   ├── llm/                   # provider, config, openai-compatible
-│   │   ├── review/                # planner, reviewer, validator,
-│   │   │                          # severity caps, dedupe
-│   │   ├── profiles/              # stack detection + rule sets
-│   │   ├── github/                # review publisher, comments, suggestions
-│   │   └── types/                 # context + finding models
+│   ├── cli.ts                 # pr-review orchestration entry
+│   ├── adapter/               # legacy-inputs, engine-config, runtime
+│   ├── context/               # pr, diff, files, repository, prelint
+│   ├── harness/               # ReviewHarness interface + Pi wrapper
+│   ├── llm/                   # provider, config, openai-compatible
+│   ├── review/                # planner, reviewer, validator,
+│   │                          # severity caps, dedupe, verify pass
+│   ├── profiles/              # stack detection + rule sets
+│   ├── security/              # scanners, skill router, validators, SARIF
+│   ├── github/                # review publisher, comments, suggestions
+│   └── types/                 # context + finding models
 ├── tests/               # unit + contract + e2e (vitest)
-└── docs/
-└── docs/
-    ├── v1-interface-contract.md   # immutable compatibility contract
-    └── architecture.md            # this file
+├── skills/              # stack review skills (source SKILL.md files)
+└── docs/                  # index.md + specs (see docs/index.md)
 ```
 
 ## Review pipeline
@@ -164,13 +163,14 @@ pnpm build         # ncc → pr-*/dist/index.js
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `AI_REVIEW_LEVEL` | `standard` | reserved for depth presets |
 | `AI_REVIEW_MAX_FILES` | `100` | hard ceiling above the input `max-files` |
-| `AI_REVIEW_MAX_FINDINGS` | `20` | overall publish cap |
 | `AI_REVIEW_MIN_CONFIDENCE` | `0.80` | validation confidence floor |
-| `AI_REVIEW_PROFILE` | `auto` | comma-separated profile override |
+| `AI_REVIEW_PROFILE` | unset (all profiles) | comma-separated profile override; `auto` = detect |
+| `AI_REVIEW_ENABLE_PRELINT` | `false` | run biome/ruff/swiftlint/ktlint/sqlfluff first (`'true'` to enable) |
 | `AI_REVIEW_PI_TIMEOUT_MS` | `900000` | Pi process timeout |
 | `AI_REVIEW_LLM_TIMEOUT_MS` | `600000` | OpenAI-compatible request timeout |
+| `AI_REVIEW_VERIFY_PASS` | `false` | second verify pass over high/critical findings (implemented, not wired into pipeline) |
+| `AI_REVIEW_VERIFY_BUDGET_USD` | `0.50` | cost ceiling for the verify pass |
 
 All optional; consumers providing none still work unchanged.
 
@@ -190,20 +190,19 @@ Adopted from [anthropics/claude-code-action](https://github.com/anthropics/claud
 | 8 | `claude_args` / `pi_args` passthrough (whitelisted) | `action.yml:104-107`, `src/create-prompt/index.ts:14-70` | `src/harness/pi.ts:parsePiArgs/buildPiArgs`, `src/cli.ts`, `pr-review/action.yml:93-96` |
 | 10 | `path_to_claude_code_executable` → `pi-binary-path` | `action.yml:144-148` | `pr-review/action.yml:93-96`, `src/cli.ts:454-465` |
 
-Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic already; defer) · **#11** `include_fix_links` (defer) · **#12** `trigger_phrase` for issue-comments (REJECT, review-only) · **#13** dup of #8 (REJECT) · **#14** Bedrock/Vertex/Foundry providers (REJECT, OpenAI-compatible) · **#15** `track_progress` for issues (REJECT, PR-only) · **#16** ephemeral GitHub App (REJECT, composite action). Details in `docs/archive/tasks.md`.
+Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic already; defer) · **#11** `include_fix_links` (defer) · **#12** `trigger_phrase` for issue-comments (REJECT, review-only) · **#13** dup of #8 (REJECT) · **#14** Bedrock/Vertex/Foundry providers (REJECT, OpenAI-compatible) · **#15** `track_progress` for issues (REJECT, PR-only) · **#16** ephemeral GitHub App (REJECT, composite action). Deferred at audit time; tracked in git history, not in a live doc.
 
 ## Known limitations / next steps
 
 1. **~~Pi binary provisioning~~ — DONE.** Both actions are now composite
    actions that install a pinned Pi release idempotently at runtime (see
    "Pi runtime provisioning" above).
-2. **`pr-content` engine path** — the pr-content engine options are mapped
-   and tested, but its runtime still uses the legacy flow; switching it over
-   should mirror the pr-review delegation bridge.
-3. **Pre-existing legacy test failures** — 5 failures in
-   `dependencyResolver`, `importParser` and `prompts` tests exist on main
-   predating the engine work; worth a dedicated cleanup PR.
-4. **Evaluation dataset** (spec §34) — fixtures exist for detection
-   tests; LLM-judged finding-quality evals remain future work.
-5. **Shadow/pilot rollout** (spec §41) — enable per-repo via the
-   delegation bridge's presence check before flipping default refs.
+2. **`pr-content` engine path** — `src/entry/pr-content.ts` delegates to the
+   same `main()` as pr-review with `['pr-content']`; both dists are ncc-built
+   from `src/entry/`.
+3. **Evaluation dataset** (spec §34) — fixtures exist for detection
+   tests (`tests/profiles/`, `tests/e2e/pipeline.test.ts`); LLM-judged
+   finding-quality evals remain future work.
+4. **Verify pass wiring** — `src/review/verify.ts` is implemented and
+   unit-tested but no pipeline caller invokes it yet; wire it behind
+   `AI_REVIEW_VERIFY_PASS` when wanted.

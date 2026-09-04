@@ -27,7 +27,7 @@ export interface PiHarnessOptions {
 	 * Static-analyzer findings to inject as evidence in the LLM prompt.
 	 * Sourced from `context/prelint.ts`. Optional - when omitted, the
 	 * prompt is rendered without a tool-findings section (backward
-	 * compatible with V2 callers that don't run prelint).
+	 * compatible with callers that don't run prelint).
 	 */
 	toolFindings?: ToolFinding[];
 }
@@ -270,6 +270,8 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 		});
 		let stdout = '';
 		let stderr = '';
+		let stdoutBytes = 0;
+		let stderrBytes = 0;
 		let settled = false;
 		let killTimer: ReturnType<typeof setTimeout> | undefined;
 		const finish = (error?: Error) => {
@@ -302,24 +304,21 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 		};
 		const append = (
 			current: string,
-			chunk: unknown,
+			size: number,
+			chunk: Buffer,
 			stream: 'stdout' | 'stderr'
-		) => {
-			const text = String(chunk);
-			if (
-				Buffer.byteLength(current) + Buffer.byteLength(text) >
-				MAX_OUTPUT_BYTES
-			) {
+		): [string, number] => {
+			if (size + chunk.length > MAX_OUTPUT_BYTES) {
 				killAndFail(stream);
-				return current;
+				return [current, size];
 			}
-			return current + text;
+			return [current + chunk.toString('utf8'), size + chunk.length];
 		};
-		child.stdout.on('data', (chunk) => {
-			stdout = append(stdout, chunk, 'stdout');
+		child.stdout.on('data', (chunk: Buffer) => {
+			[stdout, stdoutBytes] = append(stdout, stdoutBytes, chunk, 'stdout');
 		});
-		child.stderr.on('data', (chunk) => {
-			stderr = append(stderr, chunk, 'stderr');
+		child.stderr.on('data', (chunk: Buffer) => {
+			[stderr, stderrBytes] = append(stderr, stderrBytes, chunk, 'stderr');
 		});
 		child.stdin.on('error', (error) =>
 			finish(new Error(`Failed to write harness prompt: ${error.message}`))
