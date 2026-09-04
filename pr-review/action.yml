@@ -161,7 +161,7 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Install Pi coding agent
+    - name: Setup harness loop
       if: inputs.pi-binary-path == ''
       shell: bash
       run: |

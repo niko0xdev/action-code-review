@@ -321,8 +321,8 @@ function reviewFailed(result: PublishParams['result']): boolean {
 
 /**
  * Resolve whether every AI-authored review thread on the PR is resolved.
- * Mirrors pr-review/src/approvalManager.ts:areAiCommentsResolved but uses
- * the structural PublisherOctokit so V2 tests stay transport-agnostic.
+ * Same semantics as the retired V1 approvalManager.areAiCommentsResolved;
+ * uses the structural PublisherOctokit so V2 tests stay transport-agnostic.
  * Fails closed: unknown/errored state is never "resolved".
  */
 async function areAiThreadsResolved(
