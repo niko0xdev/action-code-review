@@ -1,10 +1,10 @@
-# AI Code Review Action V2
+# AI Code Review Engine
 
 ## 1. Objective
 
-Rewrite the existing `action-code-review` implementation as **V2** while maintaining **100% backward compatibility with the current GitHub Action interface**.
+The engine below the `pr-review` / `pr-content` actions is a repository-aware review harness. It keeps **100% backward compatibility with the frozen action interface** (`docs/v1-interface-contract.md`).
 
-V2 will replace the current direct LLM-based implementation with:
+The engine is built from:
 
 * **Pi coding agent** as the primary review harness
 * **OpenAI-compatible LLM endpoint**
@@ -16,26 +16,26 @@ V2 will replace the current direct LLM-based implementation with:
 * Automatic re-review on new commits
 * Multi-language / multi-stack review profiles
 
-V2 must remain usable by all existing HubWorx repositories without requiring changes to their current workflow configuration.
+Existing consumer repositories keep working without changes to their workflow configuration.
 
 ---
 
 # 2. Non-Negotiable Requirement: Backward Compatibility
 
-The most important V2 requirement is:
+The most important requirement is:
 
 > Existing repositories must continue working without modifying their current GitHub Actions workflow.
 
 Current consumers use interfaces such as:
 
 ```yaml
-uses: HubWorxAI/action-code-review/pr-content@<ref>
+uses: niko0xdev/action-code-review/pr-content@<ref>
 ```
 
 and:
 
 ```yaml
-uses: HubWorxAI/action-code-review/pr-review@<ref>
+uses: niko0xdev/action-code-review/pr-review@<ref>
 ```
 
 These entry points MUST continue to exist.
@@ -64,9 +64,9 @@ unless an alias retaining the old interface is provided.
 
 # 3. Compatibility Contract
 
-Before writing V2, create a compatibility snapshot of the current action.
+A compatibility snapshot of the legacy action is recorded in `docs/v1-interface-contract.md`.
 
-The team must inspect the current:
+The legacy surface to preserve:
 
 ```text
 pr-content/action.yml
@@ -95,12 +95,12 @@ docs/v1-interface-contract.md
 
 This becomes the immutable V1 compatibility contract.
 
-V2 contract tests MUST verify that every V1 input/output remains available.
+Contract tests (`tests/contract.test.ts`, `tests/runtime-install.test.ts`, `tests/action-runtime.test.ts`) verify every frozen input/output remains available.
 
 Example:
 
 ```text
-V1 workflow
+Legacy workflow
         │
         ▼
 pr-content
@@ -111,13 +111,13 @@ pr-review
         ▼
 same observable behavior
 
-V2 workflow
+Review workflow
         │
         ▼
-pr-content wrapper
+pr-content action
         │
         ▼
-V2 engine
+Review engine
         │
         ▼
 pr-review wrapper
@@ -134,7 +134,7 @@ Public interface must not.
 
 # 4. High-Level Architecture
 
-V2 should remain entirely GitHub Actions based.
+The action remains entirely GitHub Actions based.
 
 No additional services are required.
 
@@ -153,7 +153,7 @@ pr-content
         └── repository metadata
         │
         ▼
-V2 Review Engine
+Review Engine
         │
         ▼
 Pi Coding Agent
@@ -191,80 +191,34 @@ The GitHub runner is the execution environment.
 
 ---
 
-# 5. Recommended Repository Structure
-
-Keep the legacy directories.
+# 5. Repository Structure
 
 ```text
 action-code-review/
-│
-├── pr-content/
-│   ├── action.yml             # legacy/public interface
-│   └── ...
-│
-├── pr-review/
-│   ├── action.yml             # legacy/public interface
-│   └── ...
-│
-├── v2/
-│   ├── src/
-│   │   ├── cli.ts
-│   │   │
-│   │   ├── context/
-│   │   │   ├── pr.ts
-│   │   │   ├── diff.ts
-│   │   │   ├── repository.ts
-│   │   │   └── files.ts
-│   │   │
-│   │   ├── harness/
-│   │   │   ├── harness.ts
-│   │   │   └── pi.ts
-│   │   │
-│   │   ├── llm/
-│   │   │   ├── provider.ts
-│   │   │   ├── config.ts
-│   │   │   └── openai-compatible.ts
-│   │   │
-│   │   ├── review/
-│   │   │   ├── planner.ts
-│   │   │   ├── reviewer.ts
-│   │   │   ├── validator.ts
-│   │   │   ├── severity.ts
-│   │   │   └── dedupe.ts
-│   │   │
-│   │   ├── profiles/
-│   │   │   ├── common.ts
-│   │   │   ├── frontend.ts
-│   │   │   ├── backend.ts
-│   │   │   ├── python.ts
-│   │   │   ├── ios.ts
-│   │   │   └── android.ts
-│   │   │
-│   │   ├── github/
-│   │   │   ├── review.ts
-│   │   │   ├── comments.ts
-│   │   │   └── suggestions.ts
-│   │   │
-│   │   └── types/
-│   │       ├── context.ts
-│   │       └── finding.ts
-│   │
-│   ├── prompts/
-│   │   ├── system.md
-│   │   ├── review.md
-│   │   ├── validate.md
-│   │   └── profiles/
-│   │
-│   └── tests/
-│
-├── docs/
-│   ├── v1-interface-contract.md
-│   └── v2-architecture.md
-│
-└── README.md
+├── pr-content/          # thin action (action.yml + dist, public surface frozen)
+├── pr-review/           # thin action (action.yml + dist, public surface frozen)
+├── src/                 # the engine
+│   ├── cli.ts                 # pr-review orchestration entry
+│   ├── adapter/               # legacy-inputs, engine-config, runtime
+│   ├── context/               # pr, diff, files, repository, prelint
+│   ├── harness/               # ReviewHarness interface + Pi wrapper
+│   ├── llm/                   # provider, config, openai-compatible
+│   ├── review/                # planner, reviewer, validator,
+│   │                          # severity caps, dedupe, verify pass
+│   ├── profiles/              # stack detection + rule sets
+│   ├── security/              # scanners, skill router, validators, SARIF
+│   ├── github/                # review publisher, comments, suggestions
+│   └── types/                 # context + finding models
+├── tests/               # unit + contract + e2e (vitest)
+├── skills/              # stack review skills (source SKILL.md files)
+└── docs/
+    ├── v1-interface-contract.md   # immutable compatibility contract
+    └── architecture.md            # what was actually built
 ```
 
-`pr-content` and `pr-review` become compatibility adapters around the V2 engine.
+`pnpm` scripts run at the repo root; `pnpm build` emits
+`pr-review/dist/index.js` + `pr-content/dist/index.js` via `ncc`.
+Source of truth for behavior is `src/` + `tests/`, not this spec.
 
 ---
 
@@ -284,7 +238,7 @@ LLM
 review
 ```
 
-V2:
+Engine:
 
 ```text
 PR
@@ -331,7 +285,7 @@ The reviewer must be able to determine whether a change breaks code outside the 
 
 # 7. OpenAI-Compatible LLM
 
-V2 MUST NOT bind the action to OpenAI models.
+The engine MUST NOT bind the action to OpenAI models.
 
 The API should be treated as an OpenAI-compatible gateway.
 
@@ -361,11 +315,11 @@ OpenAI-compatible API
 
 Pi currently supports OpenAI-compatible providers including Chat Completions and Responses-style APIs. Provider compatibility options should be configurable for endpoints that do not support specific OpenAI fields.
 
-V2 should internally normalize configuration into something equivalent to:
+Engine configuration is normalized into:
 
 ```json
 {
-  "provider": "hubworx",
+  "provider": "openai",
   "baseUrl": "$OPENAI_API_URL",
   "apiKey": "$OPENAI_API_KEY",
   "model": "$OPENAI_API_MODEL"
@@ -378,11 +332,9 @@ Runtime configuration must be generated inside the GitHub runner and destroyed w
 
 ---
 
-# 8. Optional V2 Configuration
+# 8. Optional Configuration
 
-Legacy configuration remains sufficient.
-
-V2 may introduce optional variables such as:
+Legacy configuration remains sufficient. The engine accepts optional variables such as:
 
 ```text
 AI_REVIEW_LEVEL
@@ -410,7 +362,7 @@ Existing consumers that provide none of them must still work.
 
 # 9. Review Profiles
 
-V2 must automatically identify repository technology.
+The engine automatically identifies repository technology.
 
 Supported stacks at launch:
 
@@ -840,7 +792,7 @@ unit tests
 integration tests
 ```
 
-This behavior is one of the main reasons for moving V2 to a coding harness.
+This behavior is one of the main reasons for using a coding harness.
 
 ---
 
@@ -1163,9 +1115,9 @@ packages: write
 administration: write
 ```
 
-for V2 review.
+for review.
 
-V2 review itself must never:
+Review itself must never:
 
 ```text
 push commits
@@ -1180,7 +1132,7 @@ modify repository settings
 
 Keep `pr-content` as a stable public entry point.
 
-Internally V2 may change it to produce a normalized context artifact:
+Internally the engine may change it to produce a normalized context artifact:
 
 ```json
 {
@@ -1207,7 +1159,7 @@ Existing outputs may not be removed or renamed.
 Keep:
 
 ```yaml
-uses: HubWorxAI/action-code-review/pr-review@...
+uses: niko0xdev/action-code-review/pr-review@<ref>
 ```
 
 Internally:
@@ -1215,7 +1167,7 @@ Internally:
 ```text
 pr-review
    ↓
-V2 adapter
+Engine adapter
    ↓
 Pi harness
    ↓
@@ -1224,22 +1176,22 @@ validator
 GitHub publisher
 ```
 
-Existing inputs must map into V2 automatically.
+Existing inputs map into the engine automatically.
 
 For example:
 
 ```text
 OPENAI_API_KEY
        ↓
-V2 llm.apiKey
+engine llm.apiKey
 
 OPENAI_API_URL
        ↓
-V2 llm.baseUrl
+engine llm.baseUrl
 
 OPENAI_API_MODEL
        ↓
-V2 llm.model
+engine llm.model
 ```
 
 Consumer repositories must not know that Pi exists internally.
@@ -1274,7 +1226,7 @@ Internally:
 ```text
 legacy config
      ↓
-V2 configuration adapter
+Engine configuration adapter
      ↓
 Pi provider configuration
 ```
@@ -1285,7 +1237,7 @@ This allows Pi to be replaced by another harness later without changing every ap
 
 # 29. Harness Abstraction
 
-Even though V2 launches with Pi only, implement a tiny abstraction:
+The engine launches with Pi; a tiny harness abstraction keeps the door open:
 
 ```ts
 interface ReviewHarness {
@@ -1293,7 +1245,7 @@ interface ReviewHarness {
 }
 ```
 
-V2:
+Engine:
 
 ```text
 PiHarness
@@ -1425,7 +1377,7 @@ Lockfiles may be inspected when necessary to understand a dependency change.
 
 # 33. Tests
 
-V2 must include several test layers.
+The repo includes several test layers.
 
 ## Unit tests
 
@@ -1446,7 +1398,7 @@ ignore rules
 
 Critical.
 
-Verify V1 and V2 expose identical legacy contracts.
+Verify the frozen contract still matches both action.yml files.
 
 Test:
 
@@ -1552,7 +1504,7 @@ missed findings
 
 # 35. Quality Targets
 
-Before V2 rollout:
+Quality gates:
 
 ```text
 Critical false-positive rate: < 5%
@@ -1594,7 +1546,7 @@ GitHub Action hard timeout:
 20 minutes
 ```
 
-V2 should terminate gracefully and publish the findings already produced if partial review is possible.
+The engine terminates gracefully and publishes the findings already produced if partial review is possible.
 
 ---
 
@@ -1633,7 +1585,7 @@ The failure mode must remain compatible with V1 expectations.
 Logs should make debugging easy:
 
 ```text
-[review] V2 initialized
+[review] initialized
 [review] detected profiles: nextjs, react
 [review] changed files: 17
 [review] reviewable files: 12
@@ -1656,7 +1608,7 @@ full provider request headers
 
 # 39. Observability Without External Infrastructure
 
-No external telemetry system is required for V2.
+No external telemetry system is required.
 
 GitHub Action logs should expose:
 
@@ -1675,7 +1627,7 @@ Optional:
 write a GitHub Job Summary containing:
 
 ```text
-AI Review V2
+AI Review
 
 Model
 Detected stack
@@ -1692,7 +1644,7 @@ Repository should support:
 
 ```text
 v1
-v2
+v2 (engine generations)
 ```
 
 but existing references should remain operational.
@@ -1700,20 +1652,20 @@ but existing references should remain operational.
 Recommended release flow:
 
 ```text
-feature/v2
+feature/engine
     ↓
 internal test
     ↓
-v2-beta
+engine-beta
     ↓
 selected repo rollout
     ↓
-v2 stable
+engine stable
     ↓
-move existing compatible entrypoint
+move existing compatible entry points
 ```
 
-Do NOT break consumers during migration.
+Do NOT break consumers during rollout.
 
 ---
 
@@ -1723,9 +1675,9 @@ Roll out gradually.
 
 ### Phase 1 — Shadow
 
-Run V2 without publishing inline findings.
+Run the engine without publishing inline findings.
 
-Compare V1 vs V2.
+Compare previous vs current engine output.
 
 Repositories:
 
@@ -1739,8 +1691,8 @@ one Backend repo
 Enable GitHub review comments for:
 
 ```text
-hubworx-admin-web-app
-hubworx-ai
+one web repo
+one backend repo
 ```
 
 Validate:
@@ -1764,22 +1716,22 @@ iOS
 Android
 ```
 
-No workflow changes should be required in consumer repositories.
+No workflow changes are required in consumer repositories.
 
 ---
 
 # 42. Definition of Done
 
-V2 is complete when all of the following are true:
+The engine is complete when all of the following are true:
 
-* [ ] Existing `pr-content` action entry point still works.
-* [ ] Existing `pr-review` action entry point still works.
-* [ ] All existing action inputs remain compatible.
-* [ ] All existing action outputs remain compatible.
+* [ ] `pr-content` action entry point still works.
+* [ ] `pr-review` action entry point still works.
+* [ ] All frozen action inputs remain compatible.
+* [ ] All frozen action outputs remain compatible.
 * [ ] `OPENAI_API_KEY` remains supported.
 * [ ] `OPENAI_API_URL` remains supported.
 * [ ] `OPENAI_API_MODEL` remains supported.
-* [ ] Pi is used as the V2 coding/review harness.
+* [ ] Pi is used as the coding/review harness.
 * [ ] Custom OpenAI-compatible endpoint works.
 * [ ] No dependency on OpenAI-hosted models.
 * [ ] ReactJS review profile works.
@@ -1799,7 +1751,7 @@ V2 is complete when all of the following are true:
 * [ ] Low-confidence findings are filtered.
 * [ ] Large PR handling exists.
 * [ ] Automatic re-review works.
-* [ ] V1 compatibility contract tests pass.
+* [ ] Frozen compatibility contract tests pass.
 * [ ] Language fixture tests pass.
 * [ ] Secrets never appear in logs.
 * [ ] Review mode cannot modify repository code.
@@ -1822,7 +1774,7 @@ Preserve action entry points
 
 Do this before rewriting anything.
 
-## P1 — V2 Core
+## P1 — Engine Core
 
 ```text
 Context builder
@@ -1870,7 +1822,7 @@ Do not start P4 before compatibility and review quality are proven.
 
 # 44. Core Engineering Principle
 
-The guiding principle for V2 is:
+The guiding principle is:
 
 > Replace the engine, not the interface.
 
@@ -1893,7 +1845,7 @@ Legacy Action Interface
 Compatibility Adapter
         │
         ▼
-AI Code Review V2
+AI Code Review Engine
         │
         ▼
 Pi Coding Harness
@@ -1905,4 +1857,4 @@ OpenAI-Compatible LLM
 Validated GitHub Review
 ```
 
-This keeps migration risk extremely low while giving us freedom to improve the implementation and later introduce other coding harnesses without touching every HubWorx repository.
+This keeps migration risk extremely low while giving us freedom to improve the implementation and later introduce other coding harnesses without touching every consumer repository.

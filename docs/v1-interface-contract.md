@@ -1,14 +1,15 @@
 # V1 Interface Contract (Immutable)
 
 > This document is the frozen compatibility contract for the legacy
-> `pr-content` and `pr-review` actions. V2 must keep every item below
+> `pr-content` and `pr-review` actions. The engine keeps every item below
 > working. Any change to these surfaces requires an explicit alias that
 > preserves the old interface. Contract tests in
-> `v2/tests/contract.test.ts` enforce this mechanically.
+> `tests/contract.test.ts` (+ `tests/runtime-install.test.ts`,
+> `tests/action-runtime.test.ts`) enforce this mechanically.
 >
 > Snapshot taken from `main` at commit `4374c63`
 > (refactor: improve code formatting and add window resize listener, PR #9),
-> before any V2 work.
+> before the engine rewrite.
 
 ---
 
@@ -16,8 +17,8 @@
 
 | Path | Action name | Description |
 |------|-------------|-------------|
-| `HubWorxAI/action-code-review/pr-content@<ref>` | Auto-update PR Content | Auto-update PR title and description using AI based on code changes |
-| `HubWorxAI/action-code-review/pr-review@<ref>` | AI Code Review | Uses OpenAI to review pull requests and suggest improvements |
+| `niko0xdev/action-code-review/pr-content@<ref>` | Auto-update PR Content | Auto-update PR title and description using AI based on code changes |
+| `niko0xdev/action-code-review/pr-review@<ref>` | AI Code Review | Uses OpenAI to review pull requests and suggest improvements |
 
 Runner: both actions originally declared `runs.using: node20`,
 `runs.main: dist/index.js`. They now ship as **composite actions** that
@@ -98,7 +99,7 @@ OPENAI_API_URL   → openai-base-url
 OPENAI_API_MODEL → openai-model
 ```
 
-V2 must continue to accept all three names as configuration sources.
+The engine continues to accept all three names as configuration sources.
 
 ### Severity model
 
@@ -177,7 +178,7 @@ permissions:
   pull-requests: write
 ```
 
-V2 must not require more than this.
+The actions must not require more than this.
 
 ---
 
@@ -191,7 +192,7 @@ on:
     types: [opened, synchronize, reopened]
 ```
 
-V2 must keep supporting exactly these events plus manual re-runs.
+The actions keep supporting exactly these events plus manual re-runs.
 
 ---
 

@@ -322,7 +322,7 @@ function reviewFailed(result: PublishParams['result']): boolean {
 /**
  * Resolve whether every AI-authored review thread on the PR is resolved.
  * Same semantics as the retired V1 approvalManager.areAiCommentsResolved;
- * uses the structural PublisherOctokit so V2 tests stay transport-agnostic.
+ * uses the structural PublisherOctokit so tests stay transport-agnostic.
  * Fails closed: unknown/errored state is never "resolved".
  */
 async function areAiThreadsResolved(
@@ -541,7 +541,7 @@ export function buildJobSummary(input: {
 			? `${Math.round(input.durationMs / 1000)}s`
 			: 'n/a';
 	const lines: string[] = [
-		'## AI Review V2',
+		'## AI Review',
 		'',
 		'- **Detected stack:** see review comment',
 		`- **Review duration:** ${seconds}`,

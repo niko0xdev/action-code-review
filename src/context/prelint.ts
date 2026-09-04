@@ -1,5 +1,5 @@
 /**
- * PreLint orchestrator (V3 Phase 2).
+ * PreLint orchestrator.
  *
  * Runs deterministic static-analysis tools (biome, ruff, mypy, swiftlint,
  * ktlint, sqlfluff, semgrep) against the checked-out repository and
@@ -8,14 +8,9 @@
  * review prompt as evidence so the model can confirm, contradict, or
  * extend them with higher-level reasoning.
  *
- * Design decisions (docs/v3-decisions.md):
- * - Q1: bundle biome + ruff, graceful skip for the rest
- * - Q3: toolFindings exposed in summary via collapsible section
- * - Q5: SQL detection already partially handled in Phase 1; this module
- *       trusts the SQL profile to detect SQL files
- *
- * The orchestrator is opt-in via `AI_REVIEW_ENABLE_PRELINT=true` env var
- * (cannot add a new action input - V1 contract is frozen).
+ * Missing binaries are skipped, never errors. Opt-in via
+ * `AI_REVIEW_ENABLE_PRELINT=true` (cannot add a new action input - the
+ * V1 contract in docs/v1-interface-contract.md is frozen).
  */
 
 import { spawn } from 'node:child_process';

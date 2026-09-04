@@ -1,11 +1,11 @@
 /**
- * LLM provider abstraction. V2 treats the endpoint as an OpenAI-compatible
- * gateway (spec §7): never OpenAI-specific, capability flags instead of
- * model-name conditionals (spec §30).
+ * LLM provider abstraction: treats the endpoint as an OpenAI-compatible
+ * gateway: never OpenAI-specific, capability flags instead of
+ * model-name conditionals.
  */
 
 export interface LlmConfig {
-	/** Logical provider name; "openai" is the V2 default (Pi built-in OpenAI-compatible provider). */
+	/** Logical provider name; "openai" is the default (Pi built-in OpenAI-compatible provider). */
 	provider: string;
 	apiKey: string;
 	/** OpenAI-compatible base URL, e.g. https://gateway.example.com/v1 */

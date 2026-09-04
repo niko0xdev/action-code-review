@@ -1,5 +1,5 @@
 /**
- * Phase 3: Validation hardening (V3 decision Q2 + spec §18 extensions).
+ * Validation hardening (spec §18 extensions).
  *
  * Three new checks layered on top of the existing validator pipeline:
  *
