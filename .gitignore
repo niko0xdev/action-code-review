@@ -29,8 +29,7 @@ coverage/
 examples/nextjs/.next/
 .aider*
 
-# Build output (v2 tsc output + committed action bundles are tracked;
-# v2/dist stays ignored as a local-only artifact, pr-*/dist/index.js
-# are the published bundles built via (cd v2 && pnpm build)).
-v2/dist/
-v2/coverage/
+# Build output (tsc output + committed action bundles are tracked;
+# dist/ stays ignored as a local-only artifact, pr-*/dist/index.js
+# are the published bundles built via `pnpm build`).
+dist/
