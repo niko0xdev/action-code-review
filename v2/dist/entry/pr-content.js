@@ -35495,7 +35495,8 @@ const PR_REVIEW_DEFAULTS = {
 };
 const PR_CONTENT_DEFAULTS = {
     openaiModel: 'gpt-4',
-    maxTokens: '4096',
+    // ponytail: frozen action.yml default is 1000; 4096 only as retry escape hatch in cli.ts.
+    maxTokens: '1000',
     includeFileList: 'true',
     templatePath: '.github/pull_request_template.md',
 };
@@ -40944,6 +40945,7 @@ async function main(argv) {
             // (collapsible section per docs/v3-decisions.md Q3).
             result.toolFindings = prelintResult.findings;
             result.diagnostics = {
+                ...result.diagnostics,
                 toolFindingsTotal: prelintResult.findings.length,
                 prelintRan: prelintResult.ran,
                 prelintSkipped: prelintResult.skipped,
