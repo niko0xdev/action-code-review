@@ -94,7 +94,7 @@ const FROZEN_INPUTS = {
 			default: '*.md,*.txt,*.json,*.yml,*.yaml',
 		},
 		'include-dir': { required: false },
-		'auto-approve-when-resolved': { required: false, default: 'false' },
+		'auto-approve-when-resolved': { required: false, default: 'true' },
 		'min-severity': { required: false, default: 'critical' },
 		'block-on-issues': { required: false, default: 'true' },
 		'include-full-content': { required: false, default: 'false' },

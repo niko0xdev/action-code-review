@@ -77,7 +77,7 @@ None declared.
 | `max-files` | false | `'10'` |
 | `exclude-patterns` | false | `'*.md,*.txt,*.json,*.yml,*.yaml'` |
 | `include-dir` | false | — (no default) |
-| `auto-approve-when-resolved` | false | `'false'` |
+| `auto-approve-when-resolved` | false | `'true'` |
 | `min-severity` | false | `'critical'` |
 | `block-on-issues` | false | `'true'` |
 | `include-full-content` | false | `'false'` |
@@ -152,7 +152,7 @@ matching ids are skipped.
   ```
 
 - Sets output `review-summary`.
-- When `auto-approve-when-resolved=true`: resolves the bot login, lists
+- When `auto-approve-when-resolved` is enabled (default `true`): resolves the bot login, lists
   review threads; if every AI-authored thread is resolved, submits an
   `APPROVE` review with body
   `All AI-generated review comments have been resolved. Auto-approving PR.`

@@ -66,7 +66,7 @@ jobs:
 | `max-files` | Maximum number of files to review | No | `10` |
 | `exclude-patterns` | Comma-separated list of file patterns to exclude | No | `*.md,*.txt,*.json,*.yml,*.yaml` |
 | `include-dir` | Comma-separated list of directory paths to include in review | No | - |
-| `auto-approve-when-resolved` | Approve the pull request once all AI-created review threads are resolved | No | `false` |
+| `auto-approve-when-resolved` | Approve the pull request once all AI-created review threads are resolved | No | `true` |
 | `min-severity` | Minimum severity level for comments (low, high, critical) | No | `critical` |
 | `block-on-issues` | Block PR merge when issues at or above min-severity are found | No | `true` |
 
