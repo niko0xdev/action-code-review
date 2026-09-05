@@ -50,7 +50,7 @@ describe('mapLegacyInputs (docs/v1-interface-contract.md)', () => {
 		]);
 		expect(options.minSeverity).toBe('critical');
 		expect(options.blockOnIssues).toBe(true);
-		expect(options.autoApproveWhenResolved).toBe(false);
+		expect(options.autoApproveWhenResolved).toBe(true);
 	});
 
 	it('maps pr-content inputs into its own shape', () => {

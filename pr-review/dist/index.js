@@ -35487,7 +35487,7 @@ const PR_REVIEW_DEFAULTS = {
     openaiModel: 'gpt-4',
     maxFiles: '10',
     excludePatterns: '*.md,*.txt,*.json,*.yml,*.yaml',
-    autoApproveWhenResolved: 'false',
+    autoApproveWhenResolved: 'true',
     minSeverity: 'critical',
     blockOnIssues: 'true',
     includeFullContent: 'false',
@@ -37175,8 +37175,9 @@ async function publishReview(octokit, params) {
             body: summaryBody,
         });
     }
-    // Frozen V1 contract: approval is opt-in. Never approve a review whose
-    // groups partially failed — an LLM/Pi outage must not look "clean".
+    // Approval defaults on via the action input (explicit false opts out).
+    // Never approve a review whose groups partially failed — an LLM/Pi
+    // outage must not look "clean".
     if (params.autoApproveWhenResolved === true &&
         hasWrite &&
         !hasBlockingFinding &&
