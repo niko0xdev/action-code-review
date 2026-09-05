@@ -161,6 +161,10 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
     - name: Setup harness loop
       if: inputs.pi-binary-path == ''
       shell: bash

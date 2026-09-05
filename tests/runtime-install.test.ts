@@ -23,6 +23,8 @@ interface ActionYml {
 			name?: string;
 			shell?: string;
 			run?: string;
+			uses?: string;
+			with?: Record<string, string>;
 			env?: Record<string, string>;
 		}>;
 	};
@@ -131,6 +133,19 @@ describe.each([
 				);
 			}
 		}
+	});
+
+	it('provisions pinned Node.js before the Pi install step', () => {
+		const steps = parsed.runs.steps ?? [];
+		const setupNodeIndex = steps.findIndex((step) =>
+			step.uses?.includes('actions/setup-node')
+		);
+		const installIndex = steps.findIndex((step) =>
+			step.run?.includes('pi-coding-agent')
+		);
+		expect(setupNodeIndex).toBeGreaterThanOrEqual(0);
+		expect(steps[setupNodeIndex]?.with?.['node-version']).toBe('24');
+		expect(setupNodeIndex).toBeLessThan(installIndex);
 	});
 
 	it('installs Pi in an idempotent bash pre-step', () => {

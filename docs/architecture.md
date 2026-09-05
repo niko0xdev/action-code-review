@@ -84,11 +84,15 @@ publishReview      — one createReview (REQUEST_CHANGES or COMMENT)
 
 ## Pi runtime provisioning
 
-The actions ship as **composite actions**: a bash pre-step installs the
-Pi coding agent into the runner before the node entry executes, so
-consumer repositories never install or reference Pi themselves.
+The actions ship as **composite actions**: `actions/setup-node@v4` provisions
+Node.js 24 before a bash pre-step installs the Pi coding agent. Consumer
+repositories never install or reference either runtime themselves.
 
 ```yaml
+- name: Setup Node.js
+  uses: actions/setup-node@v4
+  with:
+    node-version: '24'
 - name: Setup harness loop
   shell: bash
   run: |
@@ -97,10 +101,16 @@ consumer repositories never install or reference Pi themselves.
     fi
 ```
 
+Node.js 24 matches `actions/checkout@v5`'s runtime and exceeds this
+engine's ES2022 target. Both action files provision it before harness setup;
+`pr-review` still skips only harness installation when `pi-binary-path` is set.
+
 Properties:
 - **Idempotent guard** — `command -v pi` short-circuits the npm install
   when the binary already exists (self-hosted runners with warm caches
   save ~30s per job).
+- **Pinned Node runtime** — setup-node pins major version 24 so npm always
+  exists on runners where no Node runtime is preinstalled.
 - **Pinned version** — `0.73.1` is embedded in both action.yml files and
   mirrored in `src/adapter/pi-install.ts` (`PI_PACKAGE_PIN`, asserted
   by `tests/runtime-install.test.ts`). Bump both together.
