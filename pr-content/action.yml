@@ -35,6 +35,10 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
     - name: Setup harness loop
       shell: bash
       run: |
