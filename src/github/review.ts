@@ -119,9 +119,8 @@ export interface PublishParams {
 	bufferInlineComments?: boolean;
 	stickySummary?: boolean;
 	/**
-	 * Frozen V1 contract (docs/v1-interface-contract.md): approve only when
-	 * the caller opts in AND every AI-authored review thread is resolved.
-	 * Undefined/false keeps historical behavior of never auto-approving.
+	 * Approve only when every AI-authored review thread is resolved.
+	 * Defaults to true via the action input; explicit false opts out.
 	 */
 	autoApproveWhenResolved?: boolean;
 }
@@ -282,8 +281,9 @@ export async function publishReview(
 			body: summaryBody,
 		});
 	}
-	// Frozen V1 contract: approval is opt-in. Never approve a review whose
-	// groups partially failed — an LLM/Pi outage must not look "clean".
+	// Approval defaults on via the action input (explicit false opts out).
+	// Never approve a review whose groups partially failed — an LLM/Pi
+	// outage must not look "clean".
 	if (
 		params.autoApproveWhenResolved === true &&
 		hasWrite &&
