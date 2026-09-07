@@ -27,17 +27,3 @@ export function trackPhase(
 		);
 	}
 }
-
-export function writeSummaryBlock(
-	title: string,
-	lines: string[],
-	options: { enabled: boolean }
-): void {
-	if (!options.enabled) return;
-	const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-	if (!summaryPath) return;
-	const block = `## ${title}\n\n${lines.map((l) => `- ${l}`).join('\n')}\n`;
-	try {
-		appendFileSync(summaryPath, block, 'utf8');
-	} catch {}
-}
