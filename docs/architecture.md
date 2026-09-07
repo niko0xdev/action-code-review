@@ -77,6 +77,7 @@ publishReview      — one createReview (REQUEST_CHANGES or COMMENT)
 | Pi runs as a child process with `--tools read,grep,find,ls`, `--no-session`, JSON mode | Spec §23 security model: repository inspector, not an executor; nothing writes to the repo; no session state leaks between runs |
 | Runtime `models.json` via `PI_CODING_AGENT_DIR` | The host `~/.pi` never enters the review path; config dies with the runner |
 | Capability flags (`supportsDeveloperRole`, `maxTokensField`) instead of model checks | Spec §30 model independence; gateways vary centrally, app code stays neutral |
+| Strip reasoning artifacts at transport boundary | Compatible gateways may expose `reasoning_content` or inline `<think>` tags; remove them before JSON parsing or PR publication |
 | Findings anchored to new-side diff lines via unified-diff mapping | GitHub inline comments require exact post-change line numbers; validator drops anything unanchorable |
 | Legacy `<!-- ai-review-id:<12hex> -->` marker preserved | Duplicate suppression keeps working across legacy/engine threads |
 | Self-contained dists per action | `src/entry/pr-review.ts` + `pr-content.ts` ncc-built direct to `pr-*/dist/index.js`; no shared `dist/`, no per-action packages |
