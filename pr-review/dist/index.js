@@ -32508,7 +32508,7 @@ __nccwpck_require__.d(__webpack_exports__, {
   Zg: () => (/* binding */ scrubSecrets)
 });
 
-// UNUSED EXPORTS: safeErrorDetail
+// UNUSED EXPORTS: safeErrorDetail, stripReasoningArtifacts
 
 // EXTERNAL MODULE: ./src/llm/config.ts
 var llm_config = __nccwpck_require__(3950);
@@ -32585,7 +32585,7 @@ class OpenAiCompatibleProvider {
         const payload = (await response.json());
         const choice = payload.choices?.[0];
         return {
-            content: choice?.message?.content ?? '',
+            content: stripReasoningArtifacts(choice?.message?.content, choice?.message?.reasoning_content),
             finishReason: choice?.finish_reason,
             usage: payload.usage
                 ? {
@@ -32605,6 +32605,24 @@ class OpenAiCompatibleProvider {
         }
         return messages.map((m) => ({ role: m.role, content: m.content }));
     }
+}
+/**
+ * Strip reasoning-model artifacts before downstream parsing. Some gateways
+ * surface chain-of-thought in a separate `reasoning_content` field or inline
+ * `<think>...</think>` tags; both would poison JSON extraction and could
+ * leak internal deliberation into PR comments.
+ */
+function stripReasoningArtifacts(content, reasoningContent) {
+    let text = content ?? '';
+    if (reasoningContent) {
+        const escaped = reasoningContent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (escaped)
+            text = text.replace(new RegExp(escaped, 'g'), '');
+    }
+    return text
+        .replace(/<think>[\s\S]*?<\/think>/gi, '')
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+        .trim();
 }
 function scrubSecrets(text) {
     return text.replace(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+|(?:sk-|gh[oprsu]_|xox[abprs]-|AIza|github_pat_)[A-Za-z0-9._~+/=-]*/gi, '[REDACTED-TOKEN]');
