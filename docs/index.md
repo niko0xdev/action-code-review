@@ -26,10 +26,10 @@ What shipped from them:
 - **Tool findings in summary** (`src/github/comments.ts`,
   `src/github/review.ts`): collapsible `<details>` section, collapsed by
   default; `buildJobSummary` renders the same for `$GITHUB_STEP_SUMMARY`.
-- **Two-pass verify** (`src/review/verify.ts`, implemented but **not wired
-  into the pipeline**): opt-in via `AI_REVIEW_VERIFY_PASS=true`, cost
-  ceiling `AI_REVIEW_VERIFY_BUDGET_USD` (default 0.50 USD), skipped when
-  zero high/critical findings.
+- **Two-pass verify** (`src/review/verify.ts`, wired in `src/cli.ts`):
+  opt-in via `AI_REVIEW_VERIFY_PASS=true`, cost ceiling
+  `AI_REVIEW_VERIFY_BUDGET_USD` (default 0.50 USD), skipped when zero
+  high/critical findings; kept/dropped counts surface in diagnostics.
 - **SQL profile guard** (`src/profiles/common.ts`): `postgres`/`mysql` fire
   only on `.sql` sources *plus* ORM/migration config or matching
   dependency — static `.sql` files alone do not trigger.
