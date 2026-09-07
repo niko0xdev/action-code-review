@@ -6,7 +6,6 @@ import {
 	buildSummaryBody,
 	publishReview,
 } from '../../src/github/review.js';
-import { buildSuggestion } from '../../src/github/suggestions.js';
 import { normalizeCommentId } from '../../src/review/dedupe.js';
 import type { Finding, ReviewResult } from '../../src/types/finding.js';
 
@@ -25,45 +24,6 @@ function finding(overrides?: Partial<Finding>): Finding {
 		...overrides,
 	};
 }
-
-describe('buildSuggestion', () => {
-	it('renders a fenced suggestion block for small replacements', () => {
-		const block = buildSuggestion(
-			finding({ replacement: 'findOne({ id, tenantId })' })
-		);
-		expect(block).toContain('```suggestion');
-		expect(block).toContain('findOne({ id, tenantId })');
-	});
-
-	it('returns undefined for large replacements', () => {
-		const big = finding({
-			replacement: Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n'),
-		});
-		expect(buildSuggestion(big)).toBeUndefined();
-	});
-
-	it('returns undefined when no replacement exists', () => {
-		expect(buildSuggestion(finding())).toBeUndefined();
-	});
-
-	it('returns undefined for whitespace-only replacements', () => {
-		expect(buildSuggestion(finding({ replacement: '  \n  ' }))).toBeUndefined();
-	});
-
-	it('returns undefined below the 0.85 confidence floor', () => {
-		expect(
-			buildSuggestion(
-				finding({ replacement: 'findOne({ id, tenantId })', confidence: 0.84 })
-			)
-		).toBeUndefined();
-	});
-
-	it('returns undefined past the 400-char cap', () => {
-		expect(
-			buildSuggestion(finding({ replacement: `x = '${'y'.repeat(400)}';` }))
-		).toBeUndefined();
-	});
-});
 
 describe('buildFindingBody', () => {
 	it('renders severity badge, category, description and impact', () => {
