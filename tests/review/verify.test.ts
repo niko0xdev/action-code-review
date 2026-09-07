@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	applyVerifyPass,
 	buildVerifyPrompt,
 	estimateCostUsd,
 	runVerifyPass,
@@ -229,6 +230,76 @@ describe('runVerifyPass', () => {
 		});
 		expect(result.droppedCount).toBe(1);
 		expect(result.findings).toHaveLength(0);
+	});
+
+	it('applyVerifyPass replaces findings, recomputes counts/risk, records diagnostics', async () => {
+		const result = {
+			findings: [
+				mkFinding({
+					severity: 'high',
+					title: 'Kept bug path',
+					confidence: 0.9,
+				}),
+				mkFinding({
+					severity: 'high',
+					title: 'Dropped bug path',
+					line: 99,
+					confidence: 0.9,
+				}),
+				mkFinding({ severity: 'low', title: 'Low stays' }),
+			],
+			summary: '',
+			risk: 'high' as const,
+			counts: { critical: 0, high: 2, medium: 0, low: 1 },
+			filesReviewed: ['src/app.ts'],
+		};
+		await applyVerifyPass(result, {
+			toolFindings: [],
+			title: 'Test PR',
+			body: '',
+			verify: async () =>
+				JSON.stringify({
+					findings: [
+						{
+							path: 'src/app.ts',
+							line: 10,
+							category: 'correctness',
+							title: 'Kept bug path',
+							verified: true,
+						},
+					],
+				}),
+		});
+		expect(result.findings).toHaveLength(2);
+		expect(result.counts).toEqual({
+			critical: 0,
+			high: 1,
+			medium: 0,
+			low: 1,
+		});
+		expect(result.risk).toBe('high');
+		expect(result.diagnostics?.verifyVerified).toBe(1);
+		expect(result.diagnostics?.verifyDropped).toBe(1);
+	});
+
+	it('applyVerifyPass keeps findings unchanged but records skip reason', async () => {
+		const result = {
+			findings: [mkFinding({ severity: 'medium' })],
+			summary: '',
+			risk: 'medium' as const,
+			counts: { critical: 0, high: 0, medium: 1, low: 0 },
+			filesReviewed: ['src/app.ts'],
+		};
+		await applyVerifyPass(result, {
+			toolFindings: [],
+			title: 'Test PR',
+			body: '',
+			verify: async () => '{"findings":[]}',
+		});
+		expect(result.findings).toHaveLength(1);
+		expect(result.diagnostics?.verifySkippedReason).toContain(
+			'no high/critical'
+		);
 	});
 
 	it('records estimatedCostUsd in result', async () => {

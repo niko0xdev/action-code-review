@@ -607,6 +607,19 @@ export function renderToolFindingsSection(
 				`- **Trivial-PR fast path:** ${diagnostics.trivialPrFastPath ? 'yes' : 'no'}`
 			);
 		}
+		if (
+			diagnostics.verifyVerified !== undefined ||
+			diagnostics.verifyDropped !== undefined
+		) {
+			diagLines.push(
+				`- **Verify pass:** kept ${diagnostics.verifyVerified ?? 0}, dropped ${diagnostics.verifyDropped ?? 0}${diagnostics.verifyCostUsd !== undefined ? ` ($${diagnostics.verifyCostUsd.toFixed(3)} est.)` : ''}`
+			);
+		}
+		if (diagnostics.verifySkippedReason !== undefined) {
+			diagLines.push(
+				`- **Verify pass:** skipped (${diagnostics.verifySkippedReason})`
+			);
+		}
 		if (diagLines.length > 0) {
 			lines.push('### Pipeline diagnostics', '');
 			lines.push(...diagLines);

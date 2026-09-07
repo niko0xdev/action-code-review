@@ -14,7 +14,13 @@
  * (input + output) using a per-1K-token rate.
  */
 
-import type { Finding, Severity, ToolFinding } from '../types/finding.js';
+import type {
+	Finding,
+	ReviewResult,
+	Severity,
+	ToolFinding,
+} from '../types/finding.js';
+import { computeCounts, riskFromFindings } from './severity.js';
 
 export interface VerifyPassOptions {
 	/** Findings from the main pass (post-validation). */
@@ -198,6 +204,71 @@ export async function runVerifyPass(
 		skipped: false,
 		estimatedCostUsd,
 	};
+}
+
+/** Default budget (USD) and output token budget for the pipeline verify pass. */
+export const VERIFY_BUDGET_USD_DEFAULT = 0.5;
+export const VERIFY_OUTPUT_TOKEN_BUDGET = 2048;
+
+/**
+ * Apply `runVerifyPass` to a pipeline `ReviewResult` in place: replaces
+ * findings with survivors, recomputes counts + risk, and records
+ * verify stats on `result.diagnostics`. Never throws — any failure
+ * leaves the input result unchanged with the skip reason recorded.
+ */
+export async function applyVerifyPass(
+	result: ReviewResult,
+	args: {
+		toolFindings: ToolFinding[];
+		title: string;
+		body: string;
+		verify: (prompt: string) => Promise<string>;
+		budgetUsd?: number;
+	}
+): Promise<void> {
+	const outcome = await runVerifyPass({
+		findings: result.findings,
+		toolFindings: args.toolFindings,
+		context: {
+			title: args.title,
+			body: args.body,
+			filenames: result.filesReviewed,
+		},
+		verify: args.verify,
+		inputTokenEstimate: estimateVerifyInputTokens(
+			result.findings,
+			args.toolFindings
+		),
+		outputTokenBudget: VERIFY_OUTPUT_TOKEN_BUDGET,
+		budgetUsd: args.budgetUsd ?? VERIFY_BUDGET_USD_DEFAULT,
+	});
+	if (outcome.skipped) {
+		result.diagnostics = {
+			...result.diagnostics,
+			verifySkippedReason: outcome.skipReason,
+			verifyCostUsd: outcome.estimatedCostUsd,
+		};
+		return;
+	}
+	result.findings = outcome.findings;
+	result.counts = computeCounts(outcome.findings);
+	result.risk = riskFromFindings(outcome.findings);
+	result.diagnostics = {
+		...result.diagnostics,
+		verifyVerified: outcome.verifiedCount,
+		verifyDropped: outcome.droppedCount,
+		verifyCostUsd: outcome.estimatedCostUsd,
+	};
+}
+
+/** Rough input estimate: ~4 chars/token over the verify prompt inputs. */
+function estimateVerifyInputTokens(
+	findings: Finding[],
+	toolFindings: ToolFinding[]
+): number {
+	const chars =
+		JSON.stringify(findings).length + JSON.stringify(toolFindings).length;
+	return Math.ceil(chars / 4);
 }
 
 /**

@@ -35,6 +35,7 @@ import type { ChatCompletion, ChatMessage } from './llm/provider.js';
 import { resolveReviewMode, validateReviewEvent } from './modes/detector.js';
 import { resolveProfiles, rulesForProfiles } from './profiles/index.js';
 import { runReview } from './review/reviewer.js';
+import { applyVerifyPass } from './review/verify.js';
 import { runSecurityWorkflow } from './security/orchestrator.js';
 import { publishSecurityReview } from './security/reporters/security-publisher.js';
 import { CURATED_SECURITY_SKILLS } from './security/skills/registry.js';
@@ -691,6 +692,37 @@ export async function main(argv: string[]): Promise<void> {
 					.join('\n\n'),
 				minSeverity: legacyOptions.minSeverity,
 			});
+			// Opt-in second LLM pass (env-only; V1 contract frozen, no new
+			// input): challenges high/critical findings, drops hallucinations.
+			if (process.env.AI_REVIEW_VERIFY_PASS === 'true') {
+				try {
+					const verifyProvider = new OpenAiCompatibleProvider(llmConfig);
+					await applyVerifyPass(result, {
+						toolFindings: prelintResult.findings,
+						title: reviewContext.pullRequest.title,
+						body: reviewContext.pullRequest.body,
+						verify: async (prompt: string) =>
+							(
+								await verifyProvider.complete(
+									[{ role: 'user', content: prompt }],
+									{ temperature: 0, maxOutputTokens: 2048 }
+								)
+							).content,
+						budgetUsd: Number.parseFloat(
+							process.env.AI_REVIEW_VERIFY_BUDGET_USD || '0.5'
+						),
+					});
+					trackPhase(
+						'harness',
+						`Verify pass done: ${result.findings.length} findings`,
+						{ enabled: trackEnabled }
+					);
+				} catch (error) {
+					core.warning(
+						`[review] verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`
+					);
+				}
+			}
 			// Surface tool findings + prelint diagnostics in the result
 			// so they render in the GitHub review summary
 			// (collapsible section, see docs/index.md).
