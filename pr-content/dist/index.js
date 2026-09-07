@@ -41168,9 +41168,6 @@ async function main(argv) {
         // "N of M (X excluded by filter)" (src/github/comments.ts).
         const filesTotal = reviewContext.diff.files.length;
         reviewContext.diff.files = prioritizeFiles(reviewContext.diff.files.filter((f) => filtered.includes(f.filename) && Boolean(f.patch)), maxFiles);
-        // Post-filter count, not filesReviewed: the latter shrinks when a
-        // harness group fails, which would misreport an outage as a filter
-        // exclusion.
         const filesSelected = reviewContext.diff.files.length;
         trackPhase('filter', `${reviewContext.diff.files.length} files after filter`, { enabled: trackEnabled });
         if (reviewContext.diff.files.length === 0) {
@@ -41281,6 +41278,10 @@ async function main(argv) {
             };
             await appendAgentDebugToSummary(harness.runs);
             trackPhase('harness', `Pi review done: ${result.findings.length} findings`, { enabled: trackEnabled });
+            // Post-filter count, not filesReviewed: the latter shrinks when a
+            // harness group fails, which would misreport an outage as a filter
+            // exclusion. Shared by the PR comment and the job summary below.
+            const filesExcluded = Math.max(filesTotal - filesSelected, 0);
             await publishReview(octokit, {
                 owner: repoInfo.owner,
                 repo: repoInfo.repo,
@@ -41289,7 +41290,7 @@ async function main(argv) {
                 result,
                 model: llmConfig.model,
                 filesTotal,
-                filesExcluded: Math.max(filesTotal - filesSelected, 0),
+                filesExcluded,
                 blockOnIssues: legacyOptions.blockOnIssues,
                 minSeverity: legacyOptions.minSeverity,
                 requireWritePermissions: lib_core.getInput('require-write-permissions') === 'true',
@@ -41308,7 +41309,7 @@ async function main(argv) {
                 durationMs: external_node_perf_hooks_namespaceObject.performance.now() - reviewStarted,
                 filesReviewed: result.filesReviewed,
                 filesTotal,
-                filesExcluded: Math.max(filesTotal - filesSelected, 0),
+                filesExcluded,
                 result,
                 toolFindings: result.toolFindings,
                 diagnostics: result.diagnostics,
