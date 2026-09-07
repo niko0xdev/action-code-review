@@ -34,6 +34,18 @@ export function isSupportedReviewEvent(
 	return SUPPORTED_ACTIONS.has(action);
 }
 
+/**
+ * Opt-in draft skip. Env-only because the V1 input surface is frozen
+ * (docs/v1-interface-contract.md). Safe to skip: `ready_for_review` is a
+ * supported trigger, so the PR is reviewed when it leaves draft.
+ */
+export function shouldSkipDraft(
+	draft: boolean,
+	env: NodeJS.ProcessEnv = process.env
+): boolean {
+	return draft && env.AI_REVIEW_SKIP_DRAFTS === 'true';
+}
+
 export function validateReviewEvent(
 	eventName: string | undefined,
 	action: string | undefined

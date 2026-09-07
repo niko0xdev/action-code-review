@@ -32,7 +32,11 @@ import {
 	createSystemPrompt,
 } from './llm/prompts/pr-content.js';
 import type { ChatCompletion, ChatMessage } from './llm/provider.js';
-import { resolveReviewMode, validateReviewEvent } from './modes/detector.js';
+import {
+	resolveReviewMode,
+	shouldSkipDraft,
+	validateReviewEvent,
+} from './modes/detector.js';
 import { resolveProfiles, rulesForProfiles } from './profiles/index.js';
 import { runReview } from './review/reviewer.js';
 import { applyVerifyPass } from './review/verify.js';
@@ -572,6 +576,13 @@ export async function main(argv: string[]): Promise<void> {
 		const trackEnabled = core.getInput('track-progress') === 'true';
 		trackPhase('fetch', `PR #${prNumber}`, { enabled: trackEnabled });
 		const reviewContext = await fetchPrContext(octokit, repoInfo, prNumber);
+		if (shouldSkipDraft(reviewContext.pullRequest.draft)) {
+			core.info(
+				`[review] PR #${prNumber} is a draft and AI_REVIEW_SKIP_DRAFTS=true — skipping review`
+			);
+			core.setOutput('review-summary', 'skipped: draft pull request');
+			return;
+		}
 		reviewContext.repositoryPath =
 			process.env.GITHUB_WORKSPACE || process.cwd();
 		const filtered = applyLegacyFilters(

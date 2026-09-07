@@ -37922,6 +37922,14 @@ function isSupportedReviewEvent(eventName, action) {
         return true;
     return SUPPORTED_ACTIONS.has(action);
 }
+/**
+ * Opt-in draft skip. Env-only because the V1 input surface is frozen
+ * (docs/v1-interface-contract.md). Safe to skip: `ready_for_review` is a
+ * supported trigger, so the PR is reviewed when it leaves draft.
+ */
+function shouldSkipDraft(draft, env = process.env) {
+    return draft && env.AI_REVIEW_SKIP_DRAFTS === 'true';
+}
 function validateReviewEvent(eventName, action) {
     if (!eventName)
         return { supported: true };
@@ -41106,6 +41114,11 @@ async function main(argv) {
         const trackEnabled = lib_core.getInput('track-progress') === 'true';
         trackPhase('fetch', `PR #${prNumber}`, { enabled: trackEnabled });
         const reviewContext = await fetchPrContext(octokit, repoInfo, prNumber);
+        if (shouldSkipDraft(reviewContext.pullRequest.draft)) {
+            lib_core.info(`[review] PR #${prNumber} is a draft and AI_REVIEW_SKIP_DRAFTS=true — skipping review`);
+            lib_core.setOutput('review-summary', 'skipped: draft pull request');
+            return;
+        }
         reviewContext.repositoryPath =
             process.env.GITHUB_WORKSPACE || process.cwd();
         const filtered = applyLegacyFilters(reviewContext.diff.files.map((f) => f.filename), legacyOptions);

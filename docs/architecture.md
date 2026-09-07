@@ -177,6 +177,7 @@ pnpm build         # ncc → pr-*/dist/index.js
 | `AI_REVIEW_MIN_CONFIDENCE` | `0.80` | validation confidence floor |
 | `AI_REVIEW_PROFILE` | unset (all profiles) | comma-separated profile override; `auto` = detect |
 | `AI_REVIEW_ENABLE_PRELINT` | `false` | run biome/ruff/swiftlint/ktlint/sqlfluff first (`'true'` to enable) |
+| `AI_REVIEW_SKIP_DRAFTS` | `false` | skip draft PRs (`'true'` to enable); `ready_for_review` still triggers a full review |
 | `AI_REVIEW_PI_TIMEOUT_MS` | `900000` | Pi process timeout |
 | `AI_REVIEW_LLM_TIMEOUT_MS` | `600000` | OpenAI-compatible request timeout |
 | `AI_REVIEW_VERIFY_PASS` | `false` | second LLM pass over high/critical findings (`'true'` to enable; drops hallucinations, records stats in diagnostics) |
