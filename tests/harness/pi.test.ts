@@ -3,8 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+	AGENT_DEBUG_MAX_CHARS,
 	PI_READONLY_TOOLS,
 	PiHarness,
+	buildAgentDebugSection,
 	buildPiArgs,
 	buildPiEnv,
 } from '../../src/harness/pi.js';
@@ -159,5 +161,53 @@ EOF
 		await expect(harness.review(makeContext())).rejects.toThrow(
 			/not found|ENOENT/i
 		);
+	});
+});
+
+describe('buildAgentDebugSection', () => {
+	it('returns null when no runs or only blank output', () => {
+		expect(buildAgentDebugSection([])).toBeNull();
+		expect(
+			buildAgentDebugSection([{ stdout: '   \n  ', stderr: '' }])
+		).toBeNull();
+	});
+
+	it('wraps a single run in a collapsed details block', () => {
+		const section = buildAgentDebugSection([
+			{ stdout: 'review output', stderr: '' },
+		]);
+		expect(section).toContain(
+			'<details><summary>Agent runtime log (debug)</summary>'
+		);
+		expect(section).toContain('review output');
+	});
+
+	it('numbers multiple runs and appends stderr', () => {
+		const section = buildAgentDebugSection([
+			{ stdout: 'first', stderr: 'warn' },
+			{ stdout: 'second', stderr: '' },
+		]);
+		expect(section).toContain('--- run 1/2 ---');
+		expect(section).toContain('--- run 2/2 ---');
+		expect(section).toContain('[stderr]\nwarn');
+	});
+
+	it('neutralizes fence and details-tag injection from untrusted output', () => {
+		const section = buildAgentDebugSection([
+			{ stdout: '```\nevil\n```\n</details>', stderr: '' },
+		]);
+		// The wrapper's own outer </details> is the only legit one left.
+		expect(section).not.toContain('```\nevil');
+		expect(section?.split('</details>').length).toBe(2);
+		expect(section).toContain('\\`\\`\\`');
+		expect(section).toContain('&lt;/details&gt;');
+	});
+
+	it('truncates past the char cap and says where the rest lives', () => {
+		const section = buildAgentDebugSection([
+			{ stdout: 'x'.repeat(AGENT_DEBUG_MAX_CHARS + 100), stderr: '' },
+		]);
+		expect(section).toContain('_(truncated)_');
+		expect(section).toContain('full log in action logs');
 	});
 });
