@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { buildSuggestion } from '../github/suggestions.js';
 import type { Finding } from '../types/finding.js';
 
 export function normalizeTitle(title: string): string {
@@ -63,13 +64,9 @@ export function commentIdentityBody(finding: Finding): string {
 			? `**Suggestion:** ${finding.suggestion}`
 			: '',
 	];
-	if (
-		finding.replacement &&
-		finding.confidence >= 0.85 &&
-		finding.replacement.split('\n').length <= 10 &&
-		finding.replacement.length <= 400
-	) {
-		parts.push(['```suggestion', finding.replacement, '```'].join('\n'));
+	const suggestionBlock = buildSuggestion(finding);
+	if (suggestionBlock) {
+		parts.push(suggestionBlock);
 	}
 	return parts.filter(Boolean).join('\n\n').trim();
 }
