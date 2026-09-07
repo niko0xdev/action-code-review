@@ -33,4 +33,5 @@ jobs:
         env:
           AI_REVIEW_ENABLE_PRELINT: 'true'
           AI_REVIEW_SKIP_DRAFTS: 'true'
+          AI_REVIEW_VERIFY_BUDGET_USD: '0.50'
           AI_REVIEW_VERIFY_PASS: 'true'
