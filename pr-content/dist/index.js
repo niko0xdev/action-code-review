@@ -36522,15 +36522,6 @@ async function updatePrContent(octokit, owner, repo, prNumber, options) {
     lib_core.info(`Updated PR title: "${update.title}"`);
     lib_core.info(`Updated PR description: ${description.substring(0, 100)}...`);
 }
-function parsePrContentResponse(response) {
-    try {
-        return parseUpdate(response);
-    }
-    catch (error) {
-        core.setFailed(error instanceof Error ? error.message : String(error));
-        throw error;
-    }
-}
 
 ;// CONCATENATED MODULE: ./src/github/progress.ts
 
