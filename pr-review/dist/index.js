@@ -37395,14 +37395,6 @@ async function replyToReviewComment(octokit, params) {
     });
     return { id: data.id, html_url: data.html_url };
 }
-async function postReviewReply(octokit, reply, target) {
-    return replyToReviewComment(octokit, {
-        ...target,
-        commentId: reply.commentId,
-        body: reply.body,
-        finding: reply.finding,
-    });
-}
 function buildJobSummary(input) {
     const seconds = input.durationMs !== undefined
         ? `${Math.round(input.durationMs / 1000)}s`
