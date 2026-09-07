@@ -150,6 +150,12 @@ describe('stripReasoningArtifacts', () => {
 		expect(stripReasoningArtifacts('{"ok":true}', null)).toBe('{"ok":true}');
 	});
 
+	it('drops an unclosed think tag from truncated output', () => {
+		expect(
+			stripReasoningArtifacts('{"a":1}<think>cut off mid-reasoning', null)
+		).toBe('{"a":1}');
+	});
+
 	it('strips reasoning_content echoes from the main content', async () => {
 		const fetchImpl = captureFetch(
 			jsonResponse({
