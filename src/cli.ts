@@ -607,9 +607,6 @@ export async function main(argv: string[]): Promise<void> {
 			),
 			maxFiles
 		);
-		// Post-filter count, not filesReviewed: the latter shrinks when a
-		// harness group fails, which would misreport an outage as a filter
-		// exclusion.
 		const filesSelected = reviewContext.diff.files.length;
 		trackPhase(
 			'filter',
@@ -758,6 +755,10 @@ export async function main(argv: string[]): Promise<void> {
 				`Pi review done: ${result.findings.length} findings`,
 				{ enabled: trackEnabled }
 			);
+			// Post-filter count, not filesReviewed: the latter shrinks when a
+			// harness group fails, which would misreport an outage as a filter
+			// exclusion. Shared by the PR comment and the job summary below.
+			const filesExcluded = Math.max(filesTotal - filesSelected, 0);
 			await publishReview(octokit, {
 				owner: repoInfo.owner,
 				repo: repoInfo.repo,
@@ -766,7 +767,7 @@ export async function main(argv: string[]): Promise<void> {
 				result,
 				model: llmConfig.model,
 				filesTotal,
-				filesExcluded: Math.max(filesTotal - filesSelected, 0),
+				filesExcluded,
 				blockOnIssues: legacyOptions.blockOnIssues,
 				minSeverity: legacyOptions.minSeverity,
 				requireWritePermissions:
@@ -793,7 +794,7 @@ export async function main(argv: string[]): Promise<void> {
 						durationMs: performance.now() - reviewStarted,
 						filesReviewed: result.filesReviewed,
 						filesTotal,
-						filesExcluded: Math.max(filesTotal - filesSelected, 0),
+						filesExcluded,
 						result,
 						toolFindings: result.toolFindings,
 						diagnostics: result.diagnostics,
