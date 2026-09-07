@@ -31,4 +31,5 @@ jobs:
           exclude-patterns: "*.md,*.txt,*.json,*.yml,*.yaml"
           track-progress: 'true'
         env:
+          AI_REVIEW_ENABLE_PRELINT: 'true'
           AI_REVIEW_VERIFY_PASS: 'true'
