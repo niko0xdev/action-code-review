@@ -532,6 +532,8 @@ export function buildJobSummary(input: {
 	model?: string;
 	durationMs?: number;
 	filesReviewed: string[];
+	filesTotal?: number;
+	filesExcluded?: number;
 	result: Pick<ReviewResult, 'counts' | 'risk'> & { findings: unknown[] };
 	toolFindings?: ReviewResult['toolFindings'];
 	diagnostics?: ReviewResult['diagnostics'];
@@ -540,12 +542,21 @@ export function buildJobSummary(input: {
 		input.durationMs !== undefined
 			? `${Math.round(input.durationMs / 1000)}s`
 			: 'n/a';
+	const reviewed = input.filesReviewed.length;
+	const excluded =
+		input.filesExcluded ??
+		Math.max((input.filesTotal ?? reviewed) - reviewed, 0);
+	const total = input.filesTotal ?? reviewed + excluded;
+	const filesLine =
+		input.filesTotal !== undefined || input.filesExcluded !== undefined
+			? `**Files reviewed:** ${reviewed} of ${total} (${excluded} excluded by filter)`
+			: `**Files reviewed:** ${reviewed}`;
 	const lines: string[] = [
 		'## AI Review',
 		'',
 		'- **Detected stack:** see review comment',
 		`- **Review duration:** ${seconds}`,
-		`- **Files reviewed:** ${input.filesReviewed.length}`,
+		`- ${filesLine}`,
 		`- **Findings:** Critical ${input.result.counts.critical} · High ${input.result.counts.high} · Medium ${input.result.counts.medium} · Low ${input.result.counts.low}`,
 	];
 	// Q3 decision: surface tool findings + diagnostics in a collapsible

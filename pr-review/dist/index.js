@@ -37424,12 +37424,19 @@ function buildJobSummary(input) {
     const seconds = input.durationMs !== undefined
         ? `${Math.round(input.durationMs / 1000)}s`
         : 'n/a';
+    const reviewed = input.filesReviewed.length;
+    const excluded = input.filesExcluded ??
+        Math.max((input.filesTotal ?? reviewed) - reviewed, 0);
+    const total = input.filesTotal ?? reviewed + excluded;
+    const filesLine = input.filesTotal !== undefined || input.filesExcluded !== undefined
+        ? `**Files reviewed:** ${reviewed} of ${total} (${excluded} excluded by filter)`
+        : `**Files reviewed:** ${reviewed}`;
     const lines = [
         '## AI Review',
         '',
         '- **Detected stack:** see review comment',
         `- **Review duration:** ${seconds}`,
-        `- **Files reviewed:** ${input.filesReviewed.length}`,
+        `- ${filesLine}`,
         `- **Findings:** Critical ${input.result.counts.critical} · High ${input.result.counts.high} · Medium ${input.result.counts.medium} · Low ${input.result.counts.low}`,
     ];
     // Q3 decision: surface tool findings + diagnostics in a collapsible
@@ -41161,6 +41168,7 @@ async function main(argv) {
         const prNumber = context.payload.pull_request.number;
         const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
         const trackEnabled = lib_core.getInput('track-progress') === 'true';
+        const reviewStarted = external_node_perf_hooks_namespaceObject.performance.now();
         trackPhase('fetch', `PR #${prNumber}`, { enabled: trackEnabled });
         const reviewContext = await fetchPrContext(octokit, repoInfo, prNumber);
         if (shouldSkipDraft(reviewContext.pullRequest.draft)) {
@@ -41311,6 +41319,18 @@ async function main(argv) {
                     github.context.actor,
             });
             trackPhase('publish', 'review published', { enabled: trackEnabled });
+            await lib_core.summary
+                .addRaw(buildJobSummary({
+                model: llmConfig.model,
+                durationMs: external_node_perf_hooks_namespaceObject.performance.now() - reviewStarted,
+                filesReviewed: result.filesReviewed,
+                filesTotal,
+                filesExcluded: Math.max(filesTotal - filesSelected, 0),
+                result,
+                toolFindings: result.toolFindings,
+                diagnostics: result.diagnostics,
+            }))
+                .write();
             lib_core.setOutput('review-summary', `${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`);
         }
         finally {
