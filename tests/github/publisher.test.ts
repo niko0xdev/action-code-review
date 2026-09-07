@@ -81,6 +81,7 @@ describe('buildSummaryBody', () => {
 		const body = buildSummaryBody(result);
 		expect(body).toContain('**Risk:** High');
 		expect(body).toContain('**Files reviewed:** 3');
+		expect(body.match(/\*\*Reviewed files:\*\*/g) ?? []).toHaveLength(0);
 		expect(body).toContain('Critical: 0');
 		expect(body).toContain('High: 1');
 		expect(body).toContain('Medium: 2');

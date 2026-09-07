@@ -215,7 +215,6 @@ export function buildSummaryBody(result: SummaryResult): string {
 		`**Risk:** ${RISK_LABEL[result.risk]}`,
 		`**Duration:** ${formatDuration(result.durationMs)}`,
 		filesLine,
-		`**Reviewed files:** ${reviewed}`,
 		`**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,
 	];
 	if (result.summary) lines.push('', result.summary);
