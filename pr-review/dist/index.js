@@ -32619,10 +32619,11 @@ function stripReasoningArtifacts(content, reasoningContent) {
         if (escaped)
             text = text.replace(new RegExp(escaped, 'g'), '');
     }
-    return text
-        .replace(/<think>[\s\S]*?<\/think>/gi, '')
-        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-        .trim();
+    return (text
+        // Unclosed tag = truncated model output mid-reasoning. Drop the
+        // tail (reasoning) rather than the head (JSON payload).
+        .replace(/<think(?:ing)?>[\s\S]*?(?:<\/(?:think|thinking)>|$)/gi, '')
+        .trim());
 }
 function scrubSecrets(text) {
     return text.replace(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+|(?:sk-|gh[oprsu]_|xox[abprs]-|AIza|github_pat_)[A-Za-z0-9._~+/=-]*/gi, '[REDACTED-TOKEN]');

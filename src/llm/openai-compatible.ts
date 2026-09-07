@@ -129,10 +129,13 @@ export function stripReasoningArtifacts(
 		const escaped = reasoningContent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 		if (escaped) text = text.replace(new RegExp(escaped, 'g'), '');
 	}
-	return text
-		.replace(/<think>[\s\S]*?<\/think>/gi, '')
-		.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-		.trim();
+	return (
+		text
+			// Unclosed tag = truncated model output mid-reasoning. Drop the
+			// tail (reasoning) rather than the head (JSON payload).
+			.replace(/<think(?:ing)?>[\s\S]*?(?:<\/(?:think|thinking)>|$)/gi, '')
+			.trim()
+	);
 }
 
 export function scrubSecrets(text: string): string {
