@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	isSupportedReviewEvent,
 	resolveReviewMode,
+	shouldSkipDraft,
 	validateReviewEvent,
 } from '../../src/modes/detector.js';
 
@@ -55,5 +56,22 @@ describe('isSupportedReviewEvent', () => {
 		expect(isSupportedReviewEvent('pull_request', 'opened')).toBe(true);
 		expect(isSupportedReviewEvent('push', 'opened')).toBe(false);
 		expect(isSupportedReviewEvent(undefined, undefined)).toBe(false);
+	});
+});
+
+describe('shouldSkipDraft', () => {
+	it('skips only when the PR is a draft and the flag is exactly "true"', () => {
+		expect(shouldSkipDraft(true, { AI_REVIEW_SKIP_DRAFTS: 'true' })).toBe(true);
+		expect(shouldSkipDraft(false, { AI_REVIEW_SKIP_DRAFTS: 'true' })).toBe(
+			false
+		);
+	});
+
+	it('defaults off — drafts are reviewed unless opted in', () => {
+		expect(shouldSkipDraft(true, {})).toBe(false);
+		expect(shouldSkipDraft(true, { AI_REVIEW_SKIP_DRAFTS: '1' })).toBe(false);
+		expect(shouldSkipDraft(true, { AI_REVIEW_SKIP_DRAFTS: 'TRUE' })).toBe(
+			false
+		);
 	});
 });
