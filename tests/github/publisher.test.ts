@@ -498,4 +498,21 @@ describe('buildJobSummary (spec §39)', () => {
 		expect(text).toContain('2');
 		expect(text).toContain('High');
 	});
+
+	it('reports the excluded-files line when filesTotal is supplied', () => {
+		const text = buildJobSummary({
+			durationMs: 61_000,
+			filesReviewed: ['a.ts'],
+			filesTotal: 4,
+			filesExcluded: 3,
+			result: {
+				findings: [],
+				summary: '',
+				risk: 'none',
+				counts: { critical: 0, high: 0, medium: 0, low: 0 },
+				filesReviewed: ['a.ts'],
+			},
+		});
+		expect(text).toContain('**Files reviewed:** 1 of 4 (3 excluded by filter)');
+	});
 });

@@ -574,6 +574,7 @@ export async function main(argv: string[]): Promise<void> {
 		const prNumber = context.payload.pull_request.number;
 		const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
 		const trackEnabled = core.getInput('track-progress') === 'true';
+		const reviewStarted = performance.now();
 		trackPhase('fetch', `PR #${prNumber}`, { enabled: trackEnabled });
 		const reviewContext = await fetchPrContext(octokit, repoInfo, prNumber);
 		if (shouldSkipDraft(reviewContext.pullRequest.draft)) {
@@ -785,6 +786,20 @@ export async function main(argv: string[]): Promise<void> {
 					(github.context.actor as string | undefined),
 			});
 			trackPhase('publish', 'review published', { enabled: trackEnabled });
+			await core.summary
+				.addRaw(
+					buildJobSummary({
+						model: llmConfig.model,
+						durationMs: performance.now() - reviewStarted,
+						filesReviewed: result.filesReviewed,
+						filesTotal,
+						filesExcluded: Math.max(filesTotal - filesSelected, 0),
+						result,
+						toolFindings: result.toolFindings,
+						diagnostics: result.diagnostics,
+					})
+				)
+				.write();
 			core.setOutput(
 				'review-summary',
 				`${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`
