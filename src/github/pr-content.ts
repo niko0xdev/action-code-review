@@ -91,15 +91,3 @@ export async function updatePrContent(
 	core.info(`Updated PR title: "${update.title}"`);
 	core.info(`Updated PR description: ${description.substring(0, 100)}...`);
 }
-
-export function parsePrContentResponse(response: string): {
-	title: string;
-	description: string;
-} {
-	try {
-		return parseUpdate(response);
-	} catch (error) {
-		core.setFailed(error instanceof Error ? error.message : String(error));
-		throw error;
-	}
-}
