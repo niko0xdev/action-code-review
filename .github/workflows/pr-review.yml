@@ -35,3 +35,4 @@ jobs:
           AI_REVIEW_SKIP_DRAFTS: 'true'
           AI_REVIEW_VERIFY_BUDGET_USD: '0.50'
           AI_REVIEW_VERIFY_PASS: 'true'
+          AI_REVIEW_MIN_CONFIDENCE: '0.8'
