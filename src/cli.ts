@@ -597,12 +597,19 @@ export async function main(argv: string[]): Promise<void> {
 				10
 			)
 		);
+		// Captured before filtering so the summary can report
+		// "N of M (X excluded by filter)" (src/github/comments.ts).
+		const filesTotal = reviewContext.diff.files.length;
 		reviewContext.diff.files = prioritizeFiles(
 			reviewContext.diff.files.filter(
 				(f) => filtered.includes(f.filename) && Boolean(f.patch)
 			),
 			maxFiles
 		);
+		// Post-filter count, not filesReviewed: the latter shrinks when a
+		// harness group fails, which would misreport an outage as a filter
+		// exclusion.
+		const filesSelected = reviewContext.diff.files.length;
 		trackPhase(
 			'filter',
 			`${reviewContext.diff.files.length} files after filter`,
@@ -757,6 +764,8 @@ export async function main(argv: string[]): Promise<void> {
 				headSha: reviewContext.pullRequest.headSha,
 				result,
 				model: llmConfig.model,
+				filesTotal,
+				filesExcluded: Math.max(filesTotal - filesSelected, 0),
 				blockOnIssues: legacyOptions.blockOnIssues,
 				minSeverity: legacyOptions.minSeverity,
 				requireWritePermissions:
