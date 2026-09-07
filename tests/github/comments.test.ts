@@ -36,6 +36,21 @@ describe('buildSummaryBody', () => {
 		expect(body).toContain('✅ **All clear**');
 	});
 
+	it('renders the excluded-files line when filesTotal is supplied', () => {
+		const body = buildSummaryBody({
+			...empty,
+			filesReviewed: ['a.ts', 'b.ts'],
+			filesTotal: 5,
+			filesExcluded: 3,
+		});
+		expect(body).toContain('**Files reviewed:** 2 of 5 (3 excluded by filter)');
+	});
+
+	it('falls back to the bare count when filesTotal is absent', () => {
+		expect(buildSummaryBody(empty)).toContain('**Files reviewed:** 1');
+		expect(buildSummaryBody(empty)).not.toContain('excluded by filter');
+	});
+
 	it('renders blocking high findings and sorts top findings', () => {
 		const high = finding({ severity: 'high', confidence: 0.92 });
 		const body = buildSummaryBody({

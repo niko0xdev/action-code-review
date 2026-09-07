@@ -41124,7 +41124,14 @@ async function main(argv) {
         const filtered = applyLegacyFilters(reviewContext.diff.files.map((f) => f.filename), legacyOptions);
         const maxFiles = Math.min(legacyOptions.maxFiles, Number.parseInt(process.env.AI_REVIEW_MAX_FILES ||
             `${config/* REVIEW_OPTION_DEFAULTS */.Ag.aiReviewMaxFiles}`, 10));
+        // Captured before filtering so the summary can report
+        // "N of M (X excluded by filter)" (src/github/comments.ts).
+        const filesTotal = reviewContext.diff.files.length;
         reviewContext.diff.files = prioritizeFiles(reviewContext.diff.files.filter((f) => filtered.includes(f.filename) && Boolean(f.patch)), maxFiles);
+        // Post-filter count, not filesReviewed: the latter shrinks when a
+        // harness group fails, which would misreport an outage as a filter
+        // exclusion.
+        const filesSelected = reviewContext.diff.files.length;
         trackPhase('filter', `${reviewContext.diff.files.length} files after filter`, { enabled: trackEnabled });
         if (reviewContext.diff.files.length === 0) {
             lib_core.info('[review] No files to review after filtering');
@@ -41241,6 +41248,8 @@ async function main(argv) {
                 headSha: reviewContext.pullRequest.headSha,
                 result,
                 model: llmConfig.model,
+                filesTotal,
+                filesExcluded: Math.max(filesTotal - filesSelected, 0),
                 blockOnIssues: legacyOptions.blockOnIssues,
                 minSeverity: legacyOptions.minSeverity,
                 requireWritePermissions: lib_core.getInput('require-write-permissions') === 'true',

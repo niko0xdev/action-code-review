@@ -224,6 +224,29 @@ describe('publishReview', () => {
 		expect(octokit.rest.issues.createComment).toHaveBeenCalledOnce();
 	});
 
+	it('forwards filesTotal/filesExcluded into the summary comment', async () => {
+		const octokit = makeOctokit();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 5,
+			headSha: 'sha1',
+			result: {
+				findings: [],
+				summary: 'clean',
+				risk: 'none',
+				counts: { critical: 0, high: 0, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+			},
+			filesTotal: 4,
+			filesExcluded: 3,
+			blockOnIssues: true,
+		});
+		const body = octokit.rest.issues.createComment.mock.calls[0][0]
+			.body as string;
+		expect(body).toContain('**Files reviewed:** 1 of 4 (3 excluded by filter)');
+	});
+
 	it('skips posting a review when there are no findings but still summarizes', async () => {
 		const octokit = makeOctokit();
 		await publishReview(octokit as never, {
