@@ -2,7 +2,7 @@ import * as core from '@actions/core';
 import type { OctokitLike } from '../context/pr.js';
 import { normalizeCommentId } from '../review/dedupe.js';
 import type { Finding, ReviewResult } from '../types/finding.js';
-import type { ReplyParams, ReplyResult, ReviewReply } from '../types/reply.js';
+import type { ReplyParams, ReplyResult } from '../types/reply.js';
 import { appendToBuffer, classifyFindings } from './buffer.js';
 import {
 	buildFindingBody,
@@ -513,19 +513,6 @@ export async function replyToReviewComment(
 		body: buildReplyBody(params.body, params.finding),
 	});
 	return { id: data.id, html_url: data.html_url };
-}
-
-export async function postReviewReply(
-	octokit: PublisherOctokit,
-	reply: ReviewReply,
-	target: { owner: string; repo: string; prNumber: number }
-): Promise<ReplyResult> {
-	return replyToReviewComment(octokit, {
-		...target,
-		commentId: reply.commentId,
-		body: reply.body,
-		finding: reply.finding,
-	});
 }
 
 export function buildJobSummary(input: {
