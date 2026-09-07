@@ -45,6 +45,24 @@ describe('buildSuggestion', () => {
 	it('returns undefined when no replacement exists', () => {
 		expect(buildSuggestion(finding())).toBeUndefined();
 	});
+
+	it('returns undefined for whitespace-only replacements', () => {
+		expect(buildSuggestion(finding({ replacement: '  \n  ' }))).toBeUndefined();
+	});
+
+	it('returns undefined below the 0.85 confidence floor', () => {
+		expect(
+			buildSuggestion(
+				finding({ replacement: 'findOne({ id, tenantId })', confidence: 0.84 })
+			)
+		).toBeUndefined();
+	});
+
+	it('returns undefined past the 400-char cap', () => {
+		expect(
+			buildSuggestion(finding({ replacement: `x = '${'y'.repeat(400)}';` }))
+		).toBeUndefined();
+	});
 });
 
 describe('buildFindingBody', () => {
