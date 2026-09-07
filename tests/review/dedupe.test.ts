@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeFindings } from '../../src/review/dedupe.js';
+import {
+	commentIdentityBody,
+	dedupeFindings,
+} from '../../src/review/dedupe.js';
 import { normalizeCommentId } from '../../src/review/dedupe.js';
 import type { Finding } from '../../src/types/finding.js';
 
@@ -47,6 +50,22 @@ describe('dedupeFindings', () => {
 		]);
 		expect(kept).toHaveLength(1);
 		expect(kept[0].confidence).toBe(0.99);
+	});
+});
+
+describe('commentIdentityBody', () => {
+	it('uses the shared suggestion eligibility rules', () => {
+		const body = commentIdentityBody(
+			f({ replacement: 'const safe = true;', confidence: 0.9 })
+		);
+		expect(body).toContain('```suggestion');
+	});
+
+	it('does not render low-confidence replacements as suggestions', () => {
+		const body = commentIdentityBody(
+			f({ replacement: 'const unsafe = true;', confidence: 0.84 })
+		);
+		expect(body).not.toContain('```suggestion');
 	});
 });
 

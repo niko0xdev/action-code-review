@@ -36546,7 +36546,41 @@ function writeSummaryBlock(title, lines, options) {
 
 // EXTERNAL MODULE: external "node:crypto"
 var external_node_crypto_ = __nccwpck_require__(7598);
+;// CONCATENATED MODULE: ./src/github/suggestions.ts
+/**
+ * GitHub suggested-changes rendering (spec §20). Suggestions are only
+ * emitted for small, high-confidence replacements — never for large
+ * architectural rewrites.
+ */
+/** Max replacement size (lines) eligible for a ```suggestion``` block. */
+const MAX_SUGGESTION_LINES = 10;
+/** Max replacement size (characters) eligible for a suggestion block. */
+const MAX_SUGGESTION_CHARS = 400;
+/**
+ * Render the finding's replacement as a GitHub suggestion block, or
+ * undefined when the replacement is missing or too large.
+ */
+function buildSuggestion(finding) {
+    const replacement = finding.replacement;
+    if (!replacement || typeof replacement !== 'string') {
+        return undefined;
+    }
+    if (!replacement.trim()) {
+        return undefined;
+    }
+    if (finding.confidence < 0.85) {
+        return undefined;
+    }
+    const lines = replacement.split('\n');
+    if (lines.length > MAX_SUGGESTION_LINES ||
+        replacement.length > MAX_SUGGESTION_CHARS) {
+        return undefined;
+    }
+    return ['```suggestion', ...lines, '```'].join('\n');
+}
+
 ;// CONCATENATED MODULE: ./src/review/dedupe.ts
+
 
 function normalizeTitle(title) {
     return title
@@ -36606,11 +36640,9 @@ function commentIdentityBody(finding) {
             ? `**Suggestion:** ${finding.suggestion}`
             : '',
     ];
-    if (finding.replacement &&
-        finding.confidence >= 0.85 &&
-        finding.replacement.split('\n').length <= 10 &&
-        finding.replacement.length <= 400) {
-        parts.push(['```suggestion', finding.replacement, '```'].join('\n'));
+    const suggestionBlock = buildSuggestion(finding);
+    if (suggestionBlock) {
+        parts.push(suggestionBlock);
     }
     return parts.filter(Boolean).join('\n\n').trim();
 }
