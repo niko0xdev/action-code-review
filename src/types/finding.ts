@@ -121,6 +121,14 @@ export interface ReviewDiagnostics {
 	prelintRan?: string[];
 	/** Number of review groups that failed (outage/parse failure). Non-zero blocks auto-approval. */
 	failedGroups?: number;
+	/** Verify pass: high/critical findings that survived the second LLM challenge. */
+	verifyVerified?: number;
+	/** Verify pass: high/critical findings dropped as hallucinations. */
+	verifyDropped?: number;
+	/** Verify pass: skip reason when the pass did not run (no candidates, over budget, call failed). */
+	verifySkippedReason?: string;
+	/** Verify pass: estimated cost in USD. */
+	verifyCostUsd?: number;
 }
 
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low' | 'none';

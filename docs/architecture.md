@@ -179,7 +179,7 @@ pnpm build         # ncc → pr-*/dist/index.js
 | `AI_REVIEW_ENABLE_PRELINT` | `false` | run biome/ruff/swiftlint/ktlint/sqlfluff first (`'true'` to enable) |
 | `AI_REVIEW_PI_TIMEOUT_MS` | `900000` | Pi process timeout |
 | `AI_REVIEW_LLM_TIMEOUT_MS` | `600000` | OpenAI-compatible request timeout |
-| `AI_REVIEW_VERIFY_PASS` | `false` | second verify pass over high/critical findings (implemented, not wired into pipeline) |
+| `AI_REVIEW_VERIFY_PASS` | `false` | second LLM pass over high/critical findings (`'true'` to enable; drops hallucinations, records stats in diagnostics) |
 | `AI_REVIEW_VERIFY_BUDGET_USD` | `0.50` | cost ceiling for the verify pass |
 
 All optional; consumers providing none still work unchanged.
@@ -213,6 +213,6 @@ Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic alrea
 3. **Evaluation dataset** (spec §34) — fixtures exist for detection
    tests (`tests/profiles/`, `tests/e2e/pipeline.test.ts`); LLM-judged
    finding-quality evals remain future work.
-4. **Verify pass wiring** — `src/review/verify.ts` is implemented and
-   unit-tested but no pipeline caller invokes it yet; wire it behind
-   `AI_REVIEW_VERIFY_PASS` when wanted.
+4. **~~Verify pass wiring~~ — DONE.** `src/review/verify.ts` runs in the
+   pipeline behind `AI_REVIEW_VERIFY_PASS=true` (default off); kept/dropped
+   counts surface in the diagnostics block.
