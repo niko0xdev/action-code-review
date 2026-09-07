@@ -3,6 +3,7 @@ import {
 	OpenAiCompatibleProvider,
 	extractJsonBlock,
 	scrubSecrets,
+	stripReasoningArtifacts,
 } from '../../src/llm/openai-compatible.js';
 import { safeErrorDetail } from '../../src/llm/openai-compatible.js';
 import type { LlmConfig } from '../../src/llm/provider.js';
@@ -131,6 +132,47 @@ describe('OpenAiCompatibleProvider', () => {
 		await expect(
 			provider.complete([{ role: 'user', content: 'x' }])
 		).rejects.toThrow(/LLM request failed/);
+	});
+});
+
+describe('stripReasoningArtifacts', () => {
+	it('removes separate and inline reasoning artifacts before parsing', () => {
+		expect(
+			stripReasoningArtifacts(
+				'<think>secret deliberation</think>{"findings":[]}',
+				'separate deliberation'
+			)
+		).toBe('{"findings":[]}');
+	});
+
+	it('handles null content and leaves ordinary JSON unchanged', () => {
+		expect(stripReasoningArtifacts(null, 'reasoning')).toBe('');
+		expect(stripReasoningArtifacts('{"ok":true}', null)).toBe('{"ok":true}');
+	});
+
+	it('strips reasoning_content echoes from the main content', async () => {
+		const fetchImpl = captureFetch(
+			jsonResponse({
+				choices: [
+					{
+						message: {
+							content: 'inner musings {"findings":[]}',
+							reasoning_content: 'inner musings ',
+						},
+						finish_reason: 'stop',
+					},
+				],
+			})
+		);
+		const provider = new OpenAiCompatibleProvider(
+			CONFIG,
+			undefined,
+			fetchImpl as typeof fetch
+		);
+		const result = await provider.complete([
+			{ role: 'user', content: 'review' },
+		]);
+		expect(result.content).toBe('{"findings":[]}');
 	});
 });
 

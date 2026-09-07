@@ -19,7 +19,10 @@ import {
 
 interface WireResponse {
 	choices?: Array<{
-		message?: { content?: string | null };
+		message?: {
+			content?: string | null;
+			reasoning_content?: string | null;
+		};
 		finish_reason?: string;
 	}>;
 	usage?: {
@@ -85,7 +88,10 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 		const payload = (await response.json()) as WireResponse;
 		const choice = payload.choices?.[0];
 		return {
-			content: choice?.message?.content ?? '',
+			content: stripReasoningArtifacts(
+				choice?.message?.content,
+				choice?.message?.reasoning_content
+			),
 			finishReason: choice?.finish_reason,
 			usage: payload.usage
 				? {
@@ -106,6 +112,27 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 		}
 		return messages.map((m) => ({ role: m.role, content: m.content }));
 	}
+}
+
+/**
+ * Strip reasoning-model artifacts before downstream parsing. Some gateways
+ * surface chain-of-thought in a separate `reasoning_content` field or inline
+ * `<think>...</think>` tags; both would poison JSON extraction and could
+ * leak internal deliberation into PR comments.
+ */
+export function stripReasoningArtifacts(
+	content?: string | null,
+	reasoningContent?: string | null
+): string {
+	let text = content ?? '';
+	if (reasoningContent) {
+		const escaped = reasoningContent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		if (escaped) text = text.replace(new RegExp(escaped, 'g'), '');
+	}
+	return text
+		.replace(/<think>[\s\S]*?<\/think>/gi, '')
+		.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+		.trim();
 }
 
 export function scrubSecrets(text: string): string {
