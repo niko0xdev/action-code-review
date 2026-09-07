@@ -42,13 +42,6 @@ const CATEGORY_LABEL: Record<string, string> = {
 	compatibility: 'Compatibility',
 };
 
-export function severityBadge(finding: Finding): string {
-	const icon = SEVERITY_ICON[finding.severity] ?? '•';
-	const label = finding.severity.toUpperCase();
-	const category = CATEGORY_LABEL[finding.category] ?? finding.category;
-	return `${icon} ${label} · ${category}`;
-}
-
 /** Full inline-comment body for a finding, ending with its id marker. */
 export function buildFindingBody(finding: Finding): string {
 	const safeFinding = {

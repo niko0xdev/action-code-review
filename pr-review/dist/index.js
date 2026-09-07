@@ -36549,18 +36549,6 @@ function trackPhase(phase, detail, options) {
         lib_core.warning(`[progress] write to $GITHUB_STEP_SUMMARY failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
-function writeSummaryBlock(title, lines, options) {
-    if (!options.enabled)
-        return;
-    const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-    if (!summaryPath)
-        return;
-    const block = `## ${title}\n\n${lines.map((l) => `- ${l}`).join('\n')}\n`;
-    try {
-        appendFileSync(summaryPath, block, 'utf8');
-    }
-    catch { }
-}
 
 // EXTERNAL MODULE: external "node:crypto"
 var external_node_crypto_ = __nccwpck_require__(7598);
@@ -36709,12 +36697,6 @@ const CATEGORY_LABEL = {
     testing: 'Testing',
     compatibility: 'Compatibility',
 };
-function severityBadge(finding) {
-    const icon = SEVERITY_ICON[finding.severity] ?? '•';
-    const label = finding.severity.toUpperCase();
-    const category = CATEGORY_LABEL[finding.category] ?? finding.category;
-    return `${icon} ${label} · ${category}`;
-}
 /** Full inline-comment body for a finding, ending with its id marker. */
 function comments_buildFindingBody(finding) {
     const safeFinding = {
