@@ -262,7 +262,10 @@ export function buildSummaryBody(result: SummaryResult): string {
 			result.diagnostics.prelintSkipped?.length ||
 			result.diagnostics.bucketedUnknownCategories ||
 			result.diagnostics.crossFindingConflictsResolved ||
-			result.diagnostics.trivialPrFastPath)
+			result.diagnostics.trivialPrFastPath !== undefined ||
+			result.diagnostics.verifyVerified !== undefined ||
+			result.diagnostics.verifyDropped !== undefined ||
+			result.diagnostics.verifySkippedReason !== undefined)
 			? [
 					'<details><summary>Pipeline diagnostics</summary>',
 					'',
@@ -292,6 +295,17 @@ export function buildSummaryBody(result: SummaryResult): string {
 					...(result.diagnostics.trivialPrFastPath !== undefined
 						? [
 								`- **Trivial-PR fast path:** ${result.diagnostics.trivialPrFastPath ? 'yes' : 'no'}`,
+							]
+						: []),
+					...(result.diagnostics.verifyVerified !== undefined ||
+					result.diagnostics.verifyDropped !== undefined
+						? [
+								`- **Verify pass:** kept ${result.diagnostics.verifyVerified ?? 0}, dropped ${result.diagnostics.verifyDropped ?? 0}${result.diagnostics.verifyCostUsd !== undefined ? ` ($${result.diagnostics.verifyCostUsd.toFixed(3)} est.)` : ''}`,
+							]
+						: []),
+					...(result.diagnostics.verifySkippedReason !== undefined
+						? [
+								`- **Verify pass:** skipped (${result.diagnostics.verifySkippedReason})`,
 							]
 						: []),
 					'</details>',
