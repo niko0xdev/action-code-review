@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { redactSecrets } from '../security/redaction/redactor.js';
 import type { ReviewContext } from '../types/context.js';
 import type { ReviewResult, ToolFinding } from '../types/finding.js';
 import {
@@ -72,21 +73,18 @@ export function buildPiArgs(
 	repositoryPath: string,
 	model?: string,
 	provider = 'openai',
-	extraArgs: string[] = []
+	extraArgs: string[] = [],
+	skillPaths: string[] = []
 ): string[] {
 	const args = [
 		'-p',
 		'--mode',
 		'json',
 		'--no-session',
-		// Extensions ON so built-in profile skills at
-		// ${PI_CODING_AGENT_DIR}/skills/<id>/SKILL.md are discoverable
-		// (Pi progressive-disclosure). Keep --no-context-files below to
-		// block repo-controlled prompt injection via AGENTS.md/README.md.
-		// Skills ARE on now: the runtime copies per-profile SKILL.md files
-		// into ${PI_CODING_AGENT_DIR}/skills/<id>/SKILL.md based on the
-		// detected profiles. Pi auto-discovers them at startup and progressive-
-		// disclosure loads them on demand for matching tasks.
+		// Never load project-local TypeScript extensions. Built-in skills are
+		// written to the isolated config directory by preparePiRuntimeConfig.
+		'--no-extensions',
+		'--no-skills',
 		'--no-prompt-templates',
 		// Context files (AGENTS.md, README.md, etc.) are still off — they
 		// are repo-controlled and could leak prompt-injection bait into the
@@ -98,6 +96,7 @@ export function buildPiArgs(
 		provider,
 	];
 	if (model) args.push('--model', model);
+	for (const skillPath of skillPaths) args.push('--skill', skillPath);
 	for (const a of extraArgs) {
 		if (a === '--model-override') continue;
 		if (a.startsWith('--model-override=')) {
@@ -148,7 +147,8 @@ interface AgentEndEvent {
 	};
 }
 export function extractAssistantText(stdout: string): string {
-	const texts: string[] = [];
+	const messages: string[] = [];
+	let currentMessage: string[] = [];
 	for (const line of stdout.split('\n')) {
 		const trimmed = line.trim();
 		if (!trimmed.startsWith('{')) continue;
@@ -158,15 +158,32 @@ export function extractAssistantText(stdout: string): string {
 				event.type === 'message_end' &&
 				event.message?.role === 'assistant' &&
 				Array.isArray(event.message.content)
-			)
+			) {
+				currentMessage = [];
 				for (const block of event.message.content)
 					if (block?.type === 'text' && typeof block.text === 'string')
-						texts.push(block.text);
+						currentMessage.push(block.text);
+				if (currentMessage.length > 0) messages.push(currentMessage.join(''));
+			}
 		} catch {
 			/* ignore non-JSON event lines */
 		}
 	}
-	return texts.join('\n');
+	// Pi can emit multiple assistant messages (for example, a progress answer
+	// followed by the final structured artifact). Prefer the last message that
+	// contains a JSON object with findings so progress text cannot corrupt the
+	// harness parser by being concatenated with the final answer.
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const candidate = messages[i];
+		try {
+			const parsed = JSON.parse(candidate) as unknown;
+			if (parsed && typeof parsed === 'object' && 'findings' in parsed)
+				return candidate;
+		} catch {
+			/* Try the next assistant message. */
+		}
+	}
+	return messages.at(-1) ?? '';
 }
 export interface PiRunLog {
 	stdout: string;
@@ -183,8 +200,8 @@ export function buildAgentDebugSection(
 		.map((r, i) => {
 			const header =
 				runs.length > 1 ? `--- run ${i + 1}/${runs.length} ---\n` : '';
-			const err = r.stderr ? `\n[stderr]\n${r.stderr}` : '';
-			return `${header}${r.stdout}${err}`;
+			const err = r.stderr ? `\n[stderr]\n${redactSecrets(r.stderr)}` : '';
+			return `${header}${redactSecrets(r.stdout)}${err}`;
 		})
 		.join('\n\n');
 	if (!combined.trim()) return null;
@@ -213,6 +230,14 @@ export class PiHarness implements ReviewHarness {
 	}
 	async review(context: ReviewContext): Promise<ReviewResult> {
 		let run: PiRunLog;
+		const configDir = await resolveRuntimeConfigDir();
+		const skillPaths = context.profiles.map((profile) =>
+			join(configDir, 'skills', profile.id, 'SKILL.md')
+		);
+		const extraRules = [this.options.extraRules, context.reviewRules]
+			.filter((value): value is string => Boolean(value?.trim()))
+			.filter((value, index, values) => values.indexOf(value) === index)
+			.join('\n\n');
 		try {
 			run = await runPi({
 				binaryPath: this.options.binaryPath ?? 'pi',
@@ -220,12 +245,13 @@ export class PiHarness implements ReviewHarness {
 					context.repositoryPath,
 					this.options.model ?? process.env.OPENAI_API_MODEL,
 					this.options.provider ?? 'openai',
-					parsePiArgs(this.options.piArgs ?? '')
+					parsePiArgs(this.options.piArgs ?? ''),
+					skillPaths
 				),
 				cwd: context.repositoryPath,
-				configDir: await resolveRuntimeConfigDir(),
+				configDir,
 				apiKey: this.options.apiKey,
-				prompt: buildReviewPrompt(context, this.options.extraRules, {
+				prompt: buildReviewPrompt(context, extraRules || undefined, {
 					includeFullContent: this.options.includeFullContent,
 					maxContextChars: this.options.maxContextChars,
 					toolFindings: this.options.toolFindings,
@@ -273,6 +299,7 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 		let stdoutBytes = 0;
 		let stderrBytes = 0;
 		let settled = false;
+		let timedOut = false;
 		let killTimer: ReturnType<typeof setTimeout> | undefined;
 		const finish = (error?: Error) => {
 			if (settled) return;
@@ -289,15 +316,35 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 		};
 		const timer = setTimeout(() => {
 			if (settled) return;
-			child.kill('SIGTERM');
-			killTimer = setTimeout(() => child.kill('SIGKILL'), 250);
-			finish(
-				new Error(`Pi review process timed out after ${params.timeoutMs}ms`)
-			);
+			timedOut = true;
+			const signalProcess = (signal: NodeJS.Signals) => {
+				if (process.platform !== 'win32' && child.pid) {
+					try {
+						process.kill(-child.pid, signal);
+						return;
+					} catch {
+						// Fall back to the direct child when the process group is gone.
+					}
+				}
+				child.kill(signal);
+			};
+			signalProcess('SIGTERM');
+			killTimer = setTimeout(() => {
+				signalProcess('SIGKILL');
+				finish(
+					new Error(`Pi review process timed out after ${params.timeoutMs}ms`)
+				);
+			}, 250);
 		}, params.timeoutMs);
 		const killAndFail = (stream: 'stdout' | 'stderr') => {
 			if (settled) return;
-			child.kill('SIGKILL');
+			if (process.platform !== 'win32' && child.pid) {
+				try {
+					process.kill(-child.pid, 'SIGKILL');
+				} catch {
+					child.kill('SIGKILL');
+				}
+			} else child.kill('SIGKILL');
 			finish(
 				new Error(`Pi ${stream} output exceeded ${MAX_OUTPUT_BYTES} byte cap`)
 			);
@@ -329,6 +376,12 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 		});
 		child.on('close', (code) => {
 			if (settled) return;
+			if (timedOut) {
+				finish(
+					new Error(`Pi review process timed out after ${params.timeoutMs}ms`)
+				);
+				return;
+			}
 			if (code !== 0)
 				finish(
 					new Error(

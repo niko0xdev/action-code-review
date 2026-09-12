@@ -10,12 +10,14 @@
  *
  * Missing binaries are skipped, never errors. Opt-in via
  * `AI_REVIEW_ENABLE_PRELINT=true` (cannot add a new action input - the
- * V1 contract in docs/v1-interface-contract.md is frozen).
+ * V1 contract in docs/v1-interface-contract.md is frozen). Workspace-local
+ * binaries require `AI_REVIEW_ALLOW_WORKSPACE_TOOLS=true`; otherwise use a
+ * pinned directory via `AI_REVIEW_TRUSTED_ANALYZER_DIR`.
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, realpathSync, statSync } from 'node:fs';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import type { ChangedFile } from '../types/context.js';
 import type { ToolFinding } from '../types/finding.js';
 
@@ -82,16 +84,61 @@ export interface ToolRunner {
 
 export function findBinary(
 	repositoryPath: string,
-	binary: string
+	binary: string,
+	options: { allowWorkspace?: boolean } = { allowWorkspace: true }
 ): string | null {
 	const candidates = [
-		join(repositoryPath, 'node_modules', '.bin', binary),
-		join(repositoryPath, 'node_modules', '.bin', `${binary}.cmd`),
+		...(process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR
+			? [
+					join(process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR, binary),
+					join(process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR, `${binary}.cmd`),
+				]
+			: []),
+		...(options.allowWorkspace === false
+			? []
+			: [
+					join(repositoryPath, 'node_modules', '.bin', binary),
+					join(repositoryPath, 'node_modules', '.bin', `${binary}.cmd`),
+				]),
 	];
+	const allowWorkspace = options.allowWorkspace !== false;
 	for (const candidate of candidates) {
-		if (existsSync(candidate)) return candidate;
+		if (!existsSync(candidate)) continue;
+		try {
+			const resolvedRoot = realpathSync(repositoryPath);
+			const resolvedCandidate = realpathSync(candidate);
+			const rel = relative(resolvedRoot, resolvedCandidate);
+			const trustedRoot = process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR
+				? realpathSync(process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR)
+				: null;
+			const isTrustedCandidate =
+				trustedRoot !== null &&
+				(resolvedCandidate === trustedRoot ||
+					resolvedCandidate.startsWith(`${trustedRoot}${sep}`));
+			// Never execute a symlink that escapes the checked-out repository and
+			// never accept a directory or non-executable regular file as a tool.
+			if (
+				(!isTrustedCandidate && !allowWorkspace) ||
+				(!isTrustedCandidate &&
+					(isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)))
+			)
+				continue;
+			const stat = statSync(resolvedCandidate);
+			if (stat.isFile() && (stat.mode & 0o111) !== 0) return candidate;
+		} catch {
+			// A disappearing or unreadable candidate is treated as unavailable.
+		}
 	}
 	return null;
+}
+
+function configuredBinary(
+	repositoryPath: string,
+	binary: string
+): string | null {
+	return findBinary(repositoryPath, binary, {
+		allowWorkspace: process.env.AI_REVIEW_ALLOW_WORKSPACE_TOOLS === 'true',
+	});
 }
 
 function spawnCollect(
@@ -139,12 +186,12 @@ function spawnCollect(
 
 const biomeRunner: ToolRunner = {
 	id: 'biome',
-	isAvailable: (repo) => findBinary(repo, 'biome') !== null,
+	isAvailable: (repo) => configuredBinary(repo, 'biome') !== null,
 	matches: (file) =>
 		/\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(file.filename) &&
 		!file.filename.includes('node_modules/'),
 	run: async ({ repositoryPath, files, timeoutMs }) => {
-		const binary = findBinary(repositoryPath, 'biome');
+		const binary = configuredBinary(repositoryPath, 'biome');
 		if (!binary) return [];
 		const fileList = files.map((f) => f.filename);
 		const { stdout } = await spawnCollect(
@@ -158,10 +205,10 @@ const biomeRunner: ToolRunner = {
 
 const ruffRunner: ToolRunner = {
 	id: 'ruff',
-	isAvailable: (repo) => findBinary(repo, 'ruff') !== null,
+	isAvailable: (repo) => configuredBinary(repo, 'ruff') !== null,
 	matches: (file) => /\.py$/i.test(file.filename),
 	run: async ({ repositoryPath, files, timeoutMs }) => {
-		const binary = findBinary(repositoryPath, 'ruff');
+		const binary = configuredBinary(repositoryPath, 'ruff');
 		if (!binary) return [];
 		const fileList = files.map((f) => f.filename);
 		const { stdout } = await spawnCollect(
@@ -180,10 +227,10 @@ const ruffRunner: ToolRunner = {
  */
 const swiftlintRunner: ToolRunner = {
 	id: 'swiftlint',
-	isAvailable: (repo) => findBinary(repo, 'swiftlint') !== null,
+	isAvailable: (repo) => configuredBinary(repo, 'swiftlint') !== null,
 	matches: (file) => /\.swift$/i.test(file.filename),
 	run: async ({ repositoryPath, files, timeoutMs }) => {
-		const binary = findBinary(repositoryPath, 'swiftlint');
+		const binary = configuredBinary(repositoryPath, 'swiftlint');
 		if (!binary) return [];
 		const fileList = files.map((f) => f.filename);
 		const { stdout } = await spawnCollect(
@@ -203,11 +250,11 @@ const swiftlintRunner: ToolRunner = {
  */
 const ktlintRunner: ToolRunner = {
 	id: 'ktlint',
-	isAvailable: (repo) => findBinary(repo, 'ktlint') !== null,
+	isAvailable: (repo) => configuredBinary(repo, 'ktlint') !== null,
 	matches: (file) =>
 		/\.(kt|kts)$/i.test(file.filename) && !file.filename.includes('/build/'),
 	run: async ({ repositoryPath, files, timeoutMs }) => {
-		const binary = findBinary(repositoryPath, 'ktlint');
+		const binary = configuredBinary(repositoryPath, 'ktlint');
 		if (!binary) return [];
 		const fileList = files.map((f) => f.filename);
 		const { stdout } = await spawnCollect(
@@ -226,10 +273,10 @@ const ktlintRunner: ToolRunner = {
  */
 const sqlfluffRunner: ToolRunner = {
 	id: 'sqlfluff',
-	isAvailable: (repo) => findBinary(repo, 'sqlfluff') !== null,
+	isAvailable: (repo) => configuredBinary(repo, 'sqlfluff') !== null,
 	matches: (file) => /\.sql$/i.test(file.filename),
 	run: async ({ repositoryPath, files, timeoutMs }) => {
-		const binary = findBinary(repositoryPath, 'sqlfluff');
+		const binary = configuredBinary(repositoryPath, 'sqlfluff');
 		if (!binary) return [];
 		const fileList = files.map((f) => f.filename);
 		// sqlfluff returns non-zero on violations; we want the JSON anyway.

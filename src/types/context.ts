@@ -43,6 +43,8 @@ export interface ChangedFile {
 export interface DiffInfo {
 	/** Files with a patch attached (text-reviewable). */
 	files: ChangedFile[];
+	/** True when GitHub pagination reached the configured safety limit. */
+	filesTruncated?: boolean;
 	/** Total additions/deletions across all files. */
 	totalAdditions: number;
 	totalDeletions: number;
@@ -77,4 +79,6 @@ export interface ReviewContext {
 	 * Harnesses use it as their working directory for inspection.
 	 */
 	repositoryPath: string;
+	/** Optional caller-supplied policy text forwarded to the harness. */
+	reviewRules?: string;
 }

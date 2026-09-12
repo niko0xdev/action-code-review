@@ -3,7 +3,6 @@ import type { ReviewHarness } from '../harness/harness.js';
 import { combinedRules } from '../profiles/rules.js';
 import type { ReviewContext } from '../types/context.js';
 import {
-	FINDING_LIMITS,
 	type Finding,
 	type ReviewResult,
 	SEVERITY_ORDER,
@@ -38,6 +37,7 @@ export async function runReview(
 	);
 	const scoped: ReviewContext = {
 		...context,
+		...(options.extraRules ? { reviewRules: options.extraRules } : {}),
 		diff: { ...context.diff, files: reviewable },
 	};
 	const groups = planReviewGroups(scoped, options.maxFilesPerGroup ?? 15);
@@ -64,11 +64,9 @@ export async function runReview(
 		for (const [index, outcome] of outcomes.entries()) {
 			const group = groups[start + index];
 			if (outcome.status === 'fulfilled') {
-				allFindings.push(
-					...capFindings(
-						outcome.value.result.findings.slice(0, FINDING_LIMITS.overall)
-					)
-				);
+				// Validate and rank the complete candidate set before applying a
+				// presentation cap, so output ordering cannot hide critical issues.
+				allFindings.push(...outcome.value.result.findings);
 				filesReviewed.push(...group.files);
 				if (outcome.value.result.summary)
 					summaries.push(outcome.value.result.summary);
@@ -119,7 +117,9 @@ export async function runReview(
 		risk: riskFromFindings(findings),
 		counts: computeCounts(findings),
 		filesReviewed,
+		...(context.diff.filesTruncated ? { filesTruncated: true } : {}),
 		ruleCoverage: deriveRuleCoverage(context, findings),
+		reviewStatus: failedGroups > 0 ? 'incomplete' : 'complete',
 	};
 	// Phase 3 diagnostics: bucket count + conflict drop count + trivial flag.
 	// Preserve any toolFindings already set by cli.ts so reviewers don't
@@ -157,6 +157,15 @@ function deriveRuleCoverage(
 				.filter((id): id is string => Boolean(id && id.length > 0))
 		),
 	];
-	const passed = Math.max(total - failedRules.length, 0);
-	return { total, passed, failedRules };
+	// A finding can prove a rule failed, but its absence cannot prove the rule
+	// passed. Keep the legacy `passed` field for compatibility while exposing
+	// the assessed/unassessed split used by the renderer.
+	const assessed = failedRules.length;
+	return {
+		total,
+		passed: 0,
+		assessed,
+		unassessed: Math.max(total - assessed, 0),
+		failedRules,
+	};
 }

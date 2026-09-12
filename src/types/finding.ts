@@ -64,16 +64,25 @@ export interface ReviewResult {
 	counts: FindingCounts;
 	/** Files actually included in the review pass. */
 	filesReviewed: string[];
+	/** True when the PR file list was capped by pagination safety limits. */
+	filesTruncated?: boolean;
 	/** Static-analyzer findings surfaced as evidence for the LLM review. */
 	toolFindings?: ToolFinding[];
 	/** Diagnostics about the review pipeline (counts, dropped findings, etc). */
 	diagnostics?: ReviewDiagnostics;
 	/** Rule-level pass/fail coverage, derived deterministically from profiles + findings. */
 	ruleCoverage?: RuleCoverage;
+	/** Overall assessment state; incomplete work is never a clean approval. */
+	reviewStatus?: 'complete' | 'incomplete' | 'failed' | 'stale';
 }
 
 export interface RuleCoverage {
 	total: number;
+	/** Number of rules with explicit evidence in the review output. */
+	assessed?: number;
+	/** Rules for which this pass produced no explicit evidence. */
+	unassessed?: number;
+	/** Legacy field retained for wire compatibility; derived reviews set this to 0. */
 	passed: number;
 	failedRules: string[];
 }
@@ -129,6 +138,7 @@ export interface ReviewDiagnostics {
 	verifySkippedReason?: string;
 	/** Verify pass: estimated cost in USD. */
 	verifyCostUsd?: number;
+	verifyStatus?: 'complete' | 'error' | 'incomplete' | 'skipped';
 }
 
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low' | 'none';

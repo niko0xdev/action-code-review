@@ -62,7 +62,7 @@ export class PioliumSecurityEngine implements SecurityEngine {
 			// Fallback: use PiSecurityEngine for audit if Piolium native CLI is unavailable
 			const { PiSecurityEngine } = await import('./pi-security-engine.js');
 			const fallbackEngine = new PiSecurityEngine();
-			return fallbackEngine.diff(ctx);
+			return await fallbackEngine.diff(ctx);
 		} finally {
 			await rm(tempWorkDir, { recursive: true, force: true }).catch(() => {});
 		}

@@ -84,6 +84,10 @@ export interface SecurityConclusion {
 	failThresholdReached: boolean;
 	scanners: ScannerExecution[];
 	domains: string[];
+	/** Whether the reasoning engine completed; static findings can coexist with failure. */
+	engineStatus: 'success' | 'failed';
+	/** True when the result cannot be treated as a complete clean audit. */
+	incomplete: boolean;
 }
 
 export interface SecurityResult {
@@ -115,6 +119,8 @@ export interface SecurityContext {
 	}>;
 	riskClassification?: RiskClassification;
 	options: SecurityOptions;
+	/** Finding scope; audit findings may reference unchanged files in the checkout. */
+	scope?: 'diff' | 'audit';
 }
 
 export interface SecurityOptions {

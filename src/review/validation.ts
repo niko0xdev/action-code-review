@@ -16,11 +16,9 @@
  *   don't exist in the file (best-effort heuristic). `suggestion` (prose)
  *   is kept.
  *
- * - NEW CHECK 3: Cross-finding consistency. Two findings on the same
- *   `(path, line range of 5)` with the SAME category that give
- *   contradictory advice (one positive, one negative body keywords) get
- *   the lower-confidence one dropped. Implemented as a pairwise scan
- *   after dedupe.
+ * - NEW CHECK 3: Cross-finding consistency is intentionally conservative.
+ *   Candidate conflicts are retained until evidence-based verification; a
+ *   keyword polarity heuristic must never suppress an independent defect.
  *
  * All checks operate on the post-validate, post-dedupe finding set so
  * the order in the pipeline stays: validate -> dedupe -> cross-check ->
@@ -188,88 +186,20 @@ export interface CrossCheckResult {
 }
 
 /**
- * For each `(path, category)` group, scan pairs of findings within a
- * `LINE_PROXIMITY` window of each other. If two findings in the same
- * group contain contradictory advice (one says the code is missing
- * something, the other says it's over-engineered / remove something),
- * keep the higher-confidence one and drop the lower.
- *
- * Heuristic: presence of positive markers ("missing", "add", "should",
- * "required") vs negative markers ("remove", "delete", "unnecessary",
- * "redundant", "over-engineered") in `description` or `title`.
+ * Lexical polarity is not sufficient to establish a shared invariant, so
+ * this stage preserves candidates. A future verifier may emit an explicit
+ * contradiction record with evidence without silently dropping either one.
  */
 export const LINE_PROXIMITY = 5;
 
 export function resolveCrossFindingConflicts(
 	findings: Finding[]
 ): CrossCheckResult {
-	const result: Finding[] = [];
-	let droppedCount = 0;
-	const groups = groupByPathCategory(findings);
-	for (const group of groups.values()) {
-		group.sort((a, b) => a.line - b.line);
-		const survivors: Finding[] = [];
-		for (const candidate of group) {
-			let dropped = false;
-			for (const survivor of survivors) {
-				if (
-					Math.abs(survivor.line - candidate.line) <= LINE_PROXIMITY &&
-					isContradictory(survivor, candidate)
-				) {
-					if (candidate.confidence > survivor.confidence) {
-						const idx = survivors.indexOf(survivor);
-						survivors.splice(idx, 1);
-						survivors.push(candidate);
-					}
-					dropped = true;
-					droppedCount += 1;
-					break;
-				}
-			}
-			if (!dropped) survivors.push(candidate);
-		}
-		result.push(...survivors);
-	}
-	return { findings: result, droppedCount };
-}
-
-function groupByPathCategory(findings: Finding[]): Map<string, Finding[]> {
-	const groups = new Map<string, Finding[]>();
-	for (const finding of findings) {
-		const key = `${finding.path}|${finding.category}`;
-		const bucket = groups.get(key) ?? [];
-		bucket.push(finding);
-		groups.set(key, bucket);
-	}
-	return groups;
-}
-
-const POSITIVE_MARKERS = [
-	/\bmissing\b/i,
-	/\badd\b/i,
-	/\bshould\b/i,
-	/\brequired\b/i,
-	/\bneed\b/i,
-	/\bmust\b/i,
-];
-const NEGATIVE_MARKERS = [
-	/\bremove\b/i,
-	/\bdelete\b/i,
-	/\bunnecessary\b/i,
-	/\bredundant\b/i,
-	/\bover-engineered\b/i,
-	/\bexcessive\b/i,
-	/\bdead\b/i,
-];
-
-function isContradictory(a: Finding, b: Finding): boolean {
-	const aText = `${a.title} ${a.description}`;
-	const bText = `${b.title} ${b.description}`;
-	const aPositive = POSITIVE_MARKERS.some((re) => re.test(aText));
-	const aNegative = NEGATIVE_MARKERS.some((re) => re.test(aText));
-	const bPositive = POSITIVE_MARKERS.some((re) => re.test(bText));
-	const bNegative = NEGATIVE_MARKERS.some((re) => re.test(bText));
-	return (aPositive && bNegative) || (aNegative && bPositive);
+	// Natural-language polarity is not evidence that two findings describe the
+	// same invariant. Preserve both candidates until a verifier can establish
+	// identity; dropping one here can hide independent fixes (for example an
+	// added tenant check and a removed admin bypass).
+	return { findings: [...findings], droppedCount: 0 };
 }
 
 // ─── Trivial-PR fast-path ──────────────────────────────────────────────────

@@ -61,6 +61,25 @@ describe('SecurityReporters', () => {
 		expect(summary).toContain('• authorization');
 	});
 
+	it('marks a summary incomplete when an engine fails', () => {
+		const summary = buildStickySecuritySummary({
+			risk: 'low',
+			validatedCount: 0,
+			rejectedCount: 0,
+			findings: [],
+			scanners: [
+				{ name: 'semgrep', status: 'failed', findings: 0, reason: 'timeout' },
+			],
+			domains: [],
+			incomplete: true,
+		});
+
+		expect(summary).toContain('SECURITY REVIEW INCOMPLETE');
+		expect(summary).toContain(
+			'do not treat this report as a clean security pass'
+		);
+	});
+
 	it('builds comprehensive full audit report markdown', () => {
 		const report = buildFullAuditReport({
 			owner: 'org',

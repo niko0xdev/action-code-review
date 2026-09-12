@@ -55,9 +55,8 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
-		let response: Response;
 		try {
-			response = await this.fetchImpl(url, {
+			const response = await this.fetchImpl(url, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -66,40 +65,42 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 				body: JSON.stringify(body),
 				signal: controller.signal,
 			});
+			if (!response.ok) {
+				const detail = (await safeErrorDetail(response)).replaceAll(
+					this.config.apiKey,
+					'[redacted]'
+				);
+				throw new LlmError(
+					`LLM endpoint returned ${response.status}: ${detail}`,
+					response.status
+				);
+			}
+
+			// Keep the same deadline through response body parsing. A server can
+			// send headers and then stall indefinitely on a large JSON body.
+			const payload = (await response.json()) as WireResponse;
+			const choice = payload.choices?.[0];
+			return {
+				content: stripReasoningArtifacts(
+					choice?.message?.content,
+					choice?.message?.reasoning_content
+				),
+				finishReason: choice?.finish_reason,
+				usage: payload.usage
+					? {
+							inputTokens: payload.usage.prompt_tokens ?? 0,
+							outputTokens: payload.usage.completion_tokens ?? 0,
+						}
+					: undefined,
+			};
 		} catch (error) {
+			if (error instanceof LlmError) throw error;
 			throw new LlmError(
 				`LLM request failed: ${error instanceof Error ? error.message : String(error)}`
 			);
 		} finally {
 			clearTimeout(timer);
 		}
-
-		if (!response.ok) {
-			const detail = (await safeErrorDetail(response)).replaceAll(
-				this.config.apiKey,
-				'[redacted]'
-			);
-			throw new LlmError(
-				`LLM endpoint returned ${response.status}: ${detail}`,
-				response.status
-			);
-		}
-
-		const payload = (await response.json()) as WireResponse;
-		const choice = payload.choices?.[0];
-		return {
-			content: stripReasoningArtifacts(
-				choice?.message?.content,
-				choice?.message?.reasoning_content
-			),
-			finishReason: choice?.finish_reason,
-			usage: payload.usage
-				? {
-						inputTokens: payload.usage.prompt_tokens ?? 0,
-						outputTokens: payload.usage.completion_tokens ?? 0,
-					}
-				: undefined,
-		};
 	}
 
 	/**
