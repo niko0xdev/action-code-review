@@ -1,58 +1,58 @@
-# Roadmap reviewer xuất sắc và agent phát triển tiếp
+# Roadmap to an excellent reviewer and follow-on agent development
 
-## 1. Mục tiêu sản phẩm có thể kiểm chứng
+## 1. Verifiable product goals
 
-Kế hoạch bắt đầu từ baseline **`f59cfc34f385d89754814f7b3649b7004fe7faa4`, 12/09/2026**. Working tree hiện đã triển khai một phần Phase A; các feature/gates còn lại **chưa được triển khai hoặc đạt**. [Audit và nguồn nghiên cứu](code-review-deep-research.md), [local witnesses](reproduction-results.json) là cơ sở trước khi quyết định release.
+The plan starts from baseline **`f59cfc34f385d89754814f7b3649b7004fe7faa4`, 09/12/2026**. The working tree has already partially implemented Phase A; the remaining features/gates are **not yet implemented or met**. [Audit and research sources](code-review-deep-research.md), [local witnesses](reproduction-results.json) are the basis before deciding on release.
 
-## Cập nhật implementation hiện tại
+## Current implementation update
 
-Đợt triển khai này đã xử lý các đường false-clean và mất bằng chứng có tác động lớn: review giữ toàn bộ candidate trước khi cap, trạng thái incomplete/failed được truyền tới summary và không phát hành approval, malformed verify/schema không làm rơi finding, unknown category không bị đổi thành correctness, conflict resolver không xoá finding độc lập, Pi chọn message JSON cuối có cấu trúc, timeout bao phủ cả response body và kill process group, Pi tắt discovery không tin cậy, custom rules được forward, suggestion giữ nguyên byte code, sink comment/debug redaction được áp dụng, quality gate kiểm tra path/range, security conclusion và sticky summary báo engine failure, security dedupe truyền pull number, pagination báo `filesTruncated`, và prelint từ chối candidate binary không phải executable hoặc symlink thoát khỏi checkout.
+This implementation round addressed high-impact false-clean paths and lost evidence: reviews retain all candidates before capping, incomplete/failed state is propagated to the summary and no approval is published, malformed verify/schema does not drop findings, unknown categories are not rewritten as correctness, the conflict resolver does not delete independent findings, Pi selects the last structured JSON message, timeouts cover both response body and process-group kill, Pi disables unreliable discovery, custom rules are forwarded, suggestions preserve code bytes exactly, sink comment/debug redaction is applied, quality gates check path/range, security conclusions and sticky summaries report engine failure, security dedupe passes the pull number, pagination reports `filesTruncated`, and prelint rejects non-executable binary candidates or symlinks escaping the checkout.
 
-Các thay đổi này có regression tests, `pnpm typecheck`, Biome, `pnpm test` (**48 file / 438 test pass**), `pnpm build` cho cả hai entrypoint và smoke guard dưới `GITHUB_ACTIONS=true`. Chúng chưa chứng minh quality so với Copilot; các hạng mục còn lại cần benchmark, sandbox thực sự, evidence ledger, GraphQL lifecycle và verified-fix workflow trước khi gọi là release vượt đối thủ.
+These changes have regression tests, `pnpm typecheck`, Biome, `pnpm test` (**48 files / 438 passing tests**), `pnpm build` for both entrypoints, and a smoke guard under `GITHUB_ACTIONS=true`. They do not prove quality against Copilot; the remaining items require benchmarking, a real sandbox, an evidence ledger, GraphQL lifecycle, and a verified-fix workflow before it can be called a competitor-beating release.
 
-Định vị đề xuất: **reviewer tìm regression có bằng chứng, giải thích ngắn và chính xác, kiểm tra patch trong môi trường cô lập, giữ trạng thái issue qua nhiều vòng, cho đội phát triển kiểm soát provider/cost/data**. Không cạnh tranh bằng comment count, prompt dài hoặc số agent.
+Proposed positioning: **a reviewer that finds regressions with evidence, explains briefly and accurately, checks patches in an isolated environment, preserves issue state across rounds, and gives development teams control over provider/cost/data**. It does not compete on comment count, long prompts, or agent count.
 
-Phạm vi đầu tiên nên là TypeScript/JavaScript + Node/React/Next/Nest và Python; xác nhận thứ tự bằng repository mục tiêu. SQL/migration cần là domain xuyên stack. Swift/Kotlin giữ mức hỗ trợ best-effort cho đến khi có corpus, toolchain và quality gates riêng. Go/Java/C#/Rust là expansion sau, không quảng cáo hỗ trợ sâu trước evaluation.
+The first scope should be TypeScript/JavaScript + Node/React/Next/Nest and Python; confirm the ordering against target repositories. SQL/migrations should be a cross-stack domain. Keep Swift/Kotlin at best-effort support until there is a dedicated corpus, toolchain, and quality gates. Go/Java/C#/Rust are later expansions; do not advertise deep support before evaluation.
 
-Hai mục tiêu khác nhau cần đo riêng: **code-review quality** so với Copilot code review; **issue→verified fix→PR** so với Copilot cloud agent. Action không cần tái tạo toàn bộ IDE/completion/chat ecosystem để vượt trong nhiệm vụ review đã xác định.
+Two different goals need separate measurement: **code-review quality** versus Copilot code review; **issue→verified fix→PR** versus the Copilot cloud agent. The action does not need to recreate the full IDE/completion/chat ecosystem to win in the defined review task.
 
-| Mục tiêu chất lượng | Điều kiện đề xuất cho bản phát hành |
+| Quality goal | Proposed release condition |
 |---|---|
-| Full tính năng | Supported feature matrix có tests/integration/docs; không input nào silently ignored hoặc profile silently downgraded |
-| Review outstanding | Severe findings precision/recall/evidence đạt gates trên holdout; clean PR ít false blockers; không false-clean do lỗi pipeline |
-| Có thể vượt Copilot | Blind paired benchmark cùng snapshot/context/policy, pre-registered metric; công bố chi phí/latency và confidence intervals |
-| Sản phẩm tuyệt vời | Setup rõ, summary trung thực, comments ngắn actionable, rerun không spam, failure phục hồi được, human edits được bảo vệ |
-| Có thể dừng một vòng phát triển | Không còn P0/P1 đã biết trong supported scope; toàn bộ release gates đạt; residual risks/version boundaries được ghi rõ |
+| Full features | Supported feature matrix has tests/integration/docs; no input silently ignored or profile silently downgraded |
+| Outstanding review | Severe-finding precision/recall/evidence meet gates on holdout; clean PRs have few false blockers; no false-clean caused by pipeline errors |
+| Able to surpass Copilot | Blind paired benchmark on the same snapshot/context/policy, pre-registered metrics; publish costs/latency and confidence intervals |
+| Excellent product | Clear setup, honest summary, short actionable comments, reruns do not spam, failures are recoverable, human edits are protected |
+| Able to stop one development round | No known P0/P1 remains in supported scope; all release gates pass; residual risks/version boundaries are documented |
 
-“Dừng” ở đây là release milestone, không phải hứa hệ thống sẽ không cần maintenance. Model/API/scanner/rules thay đổi phải đi qua evaluation trước khi rollout tiếp.
+“Stop” here means a release milestone, not a promise that the system will never need maintenance. Model/API/scanner/rules changes must pass evaluation before the next rollout.
 
-## 2. Quality gates — mục tiêu, chưa phải số liệu hiện có
+## 2. Quality gates — goals, not existing measurements
 
-Các số dưới đây là **ngưỡng đề xuất để thảo luận và cố định trước benchmark**. Chưa có measured LLM quality baseline cho action; cần baseline để xác nhận ngân sách/sampling và khả năng đạt. Không trộn seeded bugs với real defects để báo một recall đẹp.
+The numbers below are **proposed thresholds for discussion and freezing before benchmarking**. There is no measured LLM quality baseline for the action yet; a baseline is needed to confirm budget/sampling and achievability. Do not mix seeded bugs with real defects to report an inflated recall.
 
-| Gate | Cách đo | Ngưỡng release đề xuất |
+| Gate | How to measure | Proposed release threshold |
 |---|---|---|
-| Safety | Adversarial workspace/resources/tools/credential sinks, process/network instrumentation | Không có unauthorized execution/secret egress ở corpus đã xác định; 100% mandatory cases pass |
-| Completion truth | Fault injection: API/schema/refusal/context missing/scanner failed/stale head | 0 case lỗi được báo complete clean/approved; không drop issue do verification error |
-| Severe precision | Human-adjudicated high/critical findings, unique defects | Point estimate ≥98%; lower 95% confidence bound ≥95%; tối thiểu 300 adjudicated severe predictions hoặc mở rộng sample |
-| Known-defect recall | Holdout ground truth đã adjudicate, report theo stack/domain/severity | Seeded severe recall ≥80%; real known-defect recall không regression; không gọi đây là recall mọi bug tồn tại |
-| Evidence integrity | Blob/range/citation/proof checks | 100% published anchors hợp lệ; ≥95% actionable severe claims có concrete evidence; blocking claims phải có evidence gate |
-| Clean PR false blocks | Negative corpus được human kiểm tra | Point estimate ≤1%; upper 95% CI ≤2%; tối thiểu 200 clean cases, tăng mẫu nếu thiếu power |
-| Suggestion safety | Exact patch apply + formatter/typecheck/target tests trong sandbox | 100% published replacement apply đúng snapshot; verified-fix badge chỉ khi checks thực sự chạy/pass |
-| Review lifecycle | New/open/resolved/regressed/outdated qua rounds | State accuracy mục tiêu ≥95%; không tự resolve chỉ vì human click hoặc model im lặng |
-| Reliability | Fault-injected GitHub/gateway/tool errors, cancellation, rerun | No orphan processes trong cancellation tests; idempotent rerun; failure/degraded state observable |
-| Cost/latency | Actual usage + scanner/Actions costs, warm/cold chạy riêng | Enforced hard per-run budget; p50/p95 và USD/PR công bố theo preset/PR size; unknown costs hiện unknown |
-| UX | Maintainer pilot: relevance, clarity, actionability, setup/task success | ≥90% comments được đánh giá actionable; acceptance chỉ secondary metric, không thay truth labels |
+| Safety | Adversarial workspace/resources/tools/credential sinks, process/network instrumentation | No unauthorized execution/secret egress on the defined corpus; 100% of mandatory cases pass |
+| Completion truth | Fault injection: API/schema/refusal/context missing/scanner failed/stale head | 0 error cases reported as complete clean/approved; no issues dropped because of verification errors |
+| Severe precision | Human-adjudicated high/critical findings, unique defects | Point estimate ≥98%; lower 95% confidence bound ≥95%; at least 300 adjudicated severe predictions or expand the sample |
+| Known-defect recall | Adjudicated holdout ground truth, reported by stack/domain/severity | Seeded severe recall ≥80%; real known-defect recall has no regression; do not call this recall of all existing bugs |
+| Evidence integrity | Blob/range/citation/proof checks | 100% of published anchors valid; ≥95% of actionable severe claims have concrete evidence; blocking claims must have an evidence gate |
+| Clean PR false blocks | Human-checked negative corpus | Point estimate ≤1%; upper 95% CI ≤2%; at least 200 clean cases, grow the sample if power is insufficient |
+| Suggestion safety | Exact patch apply + formatter/typecheck/target tests in sandbox | 100% of published replacements apply to the correct snapshot; verified-fix badge only when checks actually ran/passed |
+| Review lifecycle | New/open/resolved/regressed/outdated across rounds | Target state accuracy ≥95%; never auto-resolve merely because a human clicked or the model stayed silent |
+| Reliability | Fault-injected GitHub/gateway/tool errors, cancellation, rerun | No orphan processes in cancellation tests; idempotent reruns; failure/degraded state observable |
+| Cost/latency | Actual usage + scanner/Actions costs, warm/cold runs separated | Enforced hard per-run budget; publish p50/p95 and USD/PR by preset/PR size; unknown costs remain unknown |
+| UX | Maintainer pilot: relevance, clarity, actionability, setup/task success | ≥90% of comments rated actionable; acceptance is only a secondary metric, not a substitute for truth labels |
 
-Confidence interval phải tính theo sampling phù hợp: finding precision dùng binomial/Wilson như descriptive summary, comparison dùng paired bootstrap cluster theo PR/repository. Nhiều finding trong một PR không độc lập; đừng lấy 300 comments từ vài PR để tạo confidence giả. Zero failures trong một finite adversarial suite không chứng minh zero risk ngoài suite.
+Confidence intervals must use appropriate sampling: finding precision uses binomial/Wilson as a descriptive summary, comparisons use paired bootstrap clustered by PR/repository. Multiple findings in one PR are not independent; do not take 300 comments from a few PRs to manufacture false confidence. Zero failures in a finite adversarial suite does not prove zero risk outside the suite.
 
-### Điều kiện công bố “vượt Copilot”
+### Conditions for claiming to “surpass Copilot”
 
-Pre-register **severe known-defect recall** là primary comparison; precision phải qua gate và không kém baseline quá 2 điểm phần trăm. Mục tiêu recall tăng ít nhất **5 điểm phần trăm**, paired 95% CI của chênh lệch nằm trên 0. Công bố kết quả theo stack/PR size, không chỉ aggregate. Cost-matched comparison là chính; quality-max comparison báo riêng. Latency p95 mục tiêu không quá 1,25× baseline trong cùng tier, hoặc giải thích premium quality có lợi ích gì.
+Pre-register **severe known-defect recall** as the primary comparison; precision must pass its gate and be no more than 2 percentage points below baseline. Target a recall gain of at least **5 percentage points**, with the paired 95% CI of the difference above 0. Publish results by stack/PR size, not only in aggregate. Cost-matched comparison is primary; report quality-max comparison separately. Target p95 latency of no more than 1.25× baseline in the same tier, or explain what benefit the premium quality buys.
 
-Nếu không có quyền đo baseline, không có enough sample hoặc kết quả không đạt significance, kết luận phải là **chưa chứng minh**, không đổi metric sau khi xem kết quả. Fix-agent benchmark có thước đo khác: bug repro, patch correctness, regression, test validity, PR usefulness và quyền thực thi; không dùng điểm review để suy ra agent sửa code vượt đối thủ.
+Without permission to measure the baseline, without enough sample, or without significant results, the conclusion must be **not yet proven**; do not change metrics after seeing results. The fix-agent benchmark has different measures: bug reproduction, patch correctness, regressions, test validity, PR usefulness, and execution rights; do not use review scores to infer that a code-fixing agent beats competitors.
 
-## 3. Kiến trúc đích, triển khai từng phần
+## 3. Target architecture, incremental implementation
 
 ```mermaid
 flowchart TD
@@ -73,152 +73,152 @@ flowchart TD
   N --> J
 ```
 
-`cli.ts` trở thành adapter mỏng; review/security/fix là services riêng dùng chung contracts. Pi giữ agent loop; tool access, trusted resource discovery và output protocol được host kiểm soát. Không cần rewrite tất cả cùng lúc: đổi parser/status, sau đó context/ledger, rồi execution và publication services.
+`cli.ts` becomes a thin adapter; review/security/fix become separate services sharing contracts. Pi keeps the agent loop; tool access, trusted resource discovery, and output protocol are host-controlled. No need to rewrite everything at once: change parser/status first, then context/ledger, then execution and publication services.
 
-### Contracts cần có trước feature expansion
+### Contracts needed before feature expansion
 
-| Contract | Dữ liệu/ngữ nghĩa tối thiểu |
+| Contract | Minimum data/semantics |
 |---|---|
-| `ReviewSnapshot` | base SHA, head SHA, checkout SHA, repository root canonical, collected-at, expected changed-files count |
+| `ReviewSnapshot` | base SHA, head SHA, checkout SHA, canonical repository root, collected-at, expected changed-file count |
 | `ScopeLedger` | File/hunk: eligible, excluded-by-policy, no-patch, fetched, inspected, truncated/budget-limited, failed, unsupported; reason + bytes/tokens |
 | `EngineExecution` | engine/model/prompt/rules digest, status complete/failed/refused/incomplete/skipped/degraded, error class, usage, retries, duration |
 | `FindingCandidate` | host-generated ID, severity/category, claimed confidence, invariant/behavior change, base/head locations, evidence refs, assumptions, origin |
-| `Evidence` | pinned blob hash/range/excerpt digest; analyzer rule/version/output hash; repro command policy/check result; không dùng model tự nhận confirmed làm proof |
-| `VerificationVerdict` | candidate ID; supported/refuted/uncertain/error; evidence and reason; parse failure không là refuted |
-| `FindingLedger` | candidate→valid→verified→published/suppressed/refuted state, dedupe/conflict reasons; full assessment retained dù UI cap |
+| `Evidence` | pinned blob hash/range/excerpt digest; analyzer rule/version/output hash; repro command policy/check result; do not use model self-claimed confirmation as proof |
+| `VerificationVerdict` | candidate ID; supported/refuted/uncertain/error; evidence and reason; parse failure is not refuted |
+| `FindingLedger` | candidate→valid→verified→published/suppressed/refuted state, dedupe/conflict reasons; full assessment retained despite UI cap |
 | `PublicationPlan` | intended review/check/comment, actual status/IDs, expected SHA, trusted actor, idempotency key, redaction decision |
 | `BudgetLedger` | token/cost/latency budget reserve, actual usage, cached/reasoning tokens, retry/tool overhead, estimated vs known cost |
 
-Blocking là policy trên **verified issue + complete mandatory assessment**. Findings và completeness cùng tồn tại: incomplete review có thể vẫn phát hiện critical; không xóa finding để biến status đẹp hơn. Failure nên ngăn auto approval; workflow exit/fail behavior phải configurable và documented cho consumer.
+Blocking is policy over **verified issues + complete mandatory assessment**. Findings and completeness coexist: an incomplete review can still find critical issues; do not delete findings to make status look better. Failures should prevent auto-approval; workflow exit/fail behavior must be configurable and documented for consumers.
 
-## 4. Roadmap theo dependency và effort
+## 4. Roadmap by dependency and effort
 
-Ước lượng dưới đây là **person-weeks**, không phải cam kết calendar. Giả định có maintainer familiar repo, một engineer thực thi và reviewer hỗ trợ; benchmark labeling/toolchain có thể là bottleneck. Làm theo dependency/gates, không cố hoàn thành tất cả bằng một PR.
+The estimates below are **person-weeks**, not calendar commitments. They assume a maintainer familiar with the repo, one implementing engineer plus a supporting reviewer; benchmark labeling/toolchain may be the bottleneck. Follow dependencies/gates; do not try to finish everything in one PR.
 
-| Phase | Effort đề xuất | Kết quả | Dependency / điều kiện chuyển phase |
+| Phase | Proposed effort | Outcome | Dependency / phase-transition condition |
 |---|---|---|---|
-| A — Trust và correctness | 2–4 person-weeks | Sửa P0/P1 false-clean, sandbox/resource/env, parser/verifier, summary/redaction/cancellation | Tất cả mandatory adversarial/fault fixtures pass; existing public contract giữ nguyên |
-| B — Evaluation và telemetry | 3–5 + labeling | Baseline replay, private holdout, usage/cost ledger, dashboard artifact | Có frozen corpus/config, blinded labels, known failure baseline; có thể bắt regression |
-| C — Evidence/context chất lượng cao | 4–7 | Change impact, selective retrieval, base/head citations, calibrated ranking, scanner/SCA integration | Ablation chứng minh improvement về recall/precision và budget; không tăng false blocks |
-| D — GitHub lifecycle và UX | 2–4 | GraphQL threads, SHA-safe publish, incremental rerun, no-spam, PR content protection | Sandbox integration matrix pass; pilot maintainers đánh giá comments actionable |
-| E — Verified fix agent | 5–9 | Repro-first patch, isolated tool execution, targeted tests, reviewable patch/PR handoff | A–D gates đạt; patch benchmark không regression; capability policy rõ |
-| F — Scale/enterprise/expansion | 4–8 ban đầu | Data controls, policy inheritance, audit/metrics, more stacks, release discipline | Có nhu cầu/pilot và quality gates từng capability; không bật deep support chỉ bằng prompt |
+| A — Trust and correctness | 2–4 person-weeks | Fix P0/P1 false-clean, sandbox/resource/env, parser/verifier, summary/redaction/cancellation | All mandatory adversarial/fault fixtures pass; existing public contracts unchanged |
+| B — Evaluation and telemetry | 3–5 + labeling | Baseline replay, private holdout, usage/cost ledger, dashboard artifact | Frozen corpus/config, blinded labels, known failure baseline available; regressions can be caught |
+| C — High-quality evidence/context | 4–7 | Change impact, selective retrieval, base/head citations, calibrated ranking, scanner/SCA integration | Ablation proves improvement in recall/precision and budget; no increase in false blocks |
+| D — GitHub lifecycle and UX | 2–4 | GraphQL threads, SHA-safe publish, incremental rerun, no-spam, PR content protection | Sandbox integration matrix passes; pilot maintainers rate comments actionable |
+| E — Verified fix agent | 5–9 | Repro-first patch, isolated tool execution, targeted tests, reviewable patch/PR handoff | A–D gates met; patch benchmark has no regression; capability policy clear |
+| F — Scale/enterprise/expansion | 4–8 initial | Data controls, policy inheritance, audit/metrics, more stacks, release discipline | Demand/pilot and quality gates per capability exist; do not enable deep support by prompt alone |
 
-Tổng effort thô 20–37 person-weeks cộng labeling/pilot; cần lập lại estimate sau A/B. Một implementation engineer không nên hứa xong production-grade full feature trong vài ngày. B có thể bắt đầu tạo corpus cùng A, nhưng không dùng model tuning trên holdout.
+Raw total effort is 20–37 person-weeks plus labeling/pilot; re-estimate after A/B. One implementation engineer should not promise a production-grade full feature in a few days. B can start building the corpus alongside A, but do not tune models on the holdout.
 
-### Phase A — PRs nên làm đầu tiên
+### Phase A — PRs to do first
 
-| PR đề xuất | Findings / thay đổi | Tests và acceptance |
+| Proposed PR | Findings / changes | Tests and acceptance |
 |---|---|---|
-| `fix/trusted-pi-resources` | F01, unsafe security fallback; trusted loader/workspace, bundled skills allowlist, env/read path isolation | Extension/packages/system/ancestor-skill adversarial fixtures; tools không đọc credential; builtin skills vẫn hoạt động |
-| `fix/trusted-analyzers` | F02; binary/config provenance, no PR install scripts, minimal env/sandbox | Workspace binary bị từ chối, trusted analyzer runs, required skip/error không clean |
-| `fix/structured-review-state` | F03/F08/F11/F12; terminal protocol/schema, per-engine health, explicit verify outcomes, async cleanup | Fault matrix malformed/refusal/truncation/multiturn/outage; preserve critical; no unhandled rejection |
-| `fix/honest-review-summary` | F04/F13; completeness/publication separate, no invented rule passes | Snapshot tests failed/partial/clean/issues/stale/write-denied; file reason ledger |
-| `fix/publication-integrity` | F05/F06/F09; exact suggestions + structured final redaction + host provenance | Byte roundtrip, secret canaries all sinks, impossible anchors/forged evidence rejected |
-| `fix/review-ranking-and-rules` | F07/F10/F17/F18; wire custom prompts, canonical enums, cap after validate, semantic identity | Input→Pi integration, independent add/remove, permuted findings, invalid prefix + late critical |
+| `fix/trusted-pi-resources` | F01, unsafe security fallback; trusted loader/workspace, bundled skills allowlist, env/read path isolation | Extension/packages/system/ancestor-skill adversarial fixtures; tools cannot read credentials; builtin skills still work |
+| `fix/trusted-analyzers` | F02; binary/config provenance, no PR install scripts, minimal env/sandbox | Workspace binaries rejected, trusted analyzer runs, required skip/error is not clean |
+| `fix/structured-review-state` | F03/F08/F11/F12; terminal protocol/schema, per-engine health, explicit verify outcomes, async cleanup | Fault matrix malformed/refusal/truncation/multiturn/outage; preserve critical issues; no unhandled rejection |
+| `fix/honest-review-summary` | F04/F13; completeness/publication separated, no invented rule passes | Snapshot tests failed/partial/clean/issues/stale/write-denied; file reason ledger |
+| `fix/publication-integrity` | F05/F06/F09; exact suggestions + structured final redaction + host provenance | Byte roundtrip, secret canaries across all sinks, impossible anchors/forged evidence rejected |
+| `fix/review-ranking-and-rules` | F07/F10/F17/F18; wire custom prompts, canonical enums, cap after validation, semantic identity | Input→Pi integration, independent add/remove, permuted findings, invalid prefix + late critical |
 | `fix/transport-cancellation` | F16/F19; headers+body deadline, output caps, process-group termination, typed Pi args | Slow body, oversized payload, transient vs permanent retry, harmless ignore-SIGTERM descendant fixture |
 | `test/release-quality-gates` | Required unit/type/lint/build/integration docs; deterministic artifact build | Build both shipped bundles; smoke invocation under Actions contract; fail on dist drift |
 
-Mỗi PR thay `src/` phải có tests và docs cùng PR, Biome + strict TS, build cả hai bundle bằng `pnpm build`, smoke trước push theo repository rules. Không thêm co-author trailers hoặc model names vào PR title/body. Release workflow dùng trusted ref; không chạy code/dist PR với secret để tự chứng minh PR an toàn.
+Each PR touching `src/` must include tests and docs in the same PR, Biome + strict TS, build both bundles with `pnpm build`, smoke-test before push per repository rules. Do not add co-author trailers or model names to PR title/body. Release workflows use a trusted ref; do not run PR code/dist with secrets to prove the PR itself safe.
 
-## 5. Feature backlog: đủ để biến thành product, không chỉ demo
+## 5. Feature backlog: enough to become a product, not just a demo
 
-| Feature | Value cụ thể | Acceptance / rollout | Priority |
+| Feature | Concrete value | Acceptance / rollout | Priority |
 |---|---|---|---|
-| Honest assessment status | Người đọc biết review đủ hay thiếu | Incomplete/failed/stale không approved; raw finding vẫn retained | A |
-| Reproducible evidence cards | Mỗi issue có behavior change, trigger, impact và proof | Blob/range valid; evidence provenance; assumptions visible; prose ngắn | A/C |
-| Safe custom review policy | Team rules thực sự được áp dụng | Trust level/version manifest; path-specific rules; test wiring, no privilege escalation | A/C |
-| Safe exact suggestions | Apply fix không làm sai code | Range/hash match; apply check; uncertain thì prose | A/E |
-| Confidence calibration | High confidence có ý nghĩa đo | Reliability plot/Brier/ECE theo category; self-score không là confirmation | B/C |
-| Budgeted review presets | Chọn tradeoff rõ | Fast/balanced/deep/verify có scope/budget observable, actual costs; no silent downgrade | B/C |
-| Symbol/change-impact planner | Tìm bug liên file thay vì chỉ lớn nhất | Changed symbol→callers/contracts/tests; bounded graph; cross-file holdout improvement | C |
-| Base/head semantic review | Phân biệt regression với legacy behavior | Before/after invariant checks; existing bug advisory riêng; no stale citations | C |
-| Test intelligence | Missing test claim cụ thể | Map changed behavior→existing assertions/coverage gaps; repro-first khi cần | C/E |
-| Security domain specialists | Auth/tenant/secrets/SSRF/path/SQL/migrations | Select đúng domain và versions; threat-model evidence; precision gates riêng | C |
-| Full audit scope | Deep đúng nghĩa ngoài diff | Full-repo file inventory/phases/errors; separate audit locations vs inline PR constraints | C |
-| SAST/SCA/SARIF integration | Tools bổ sung evidence có provenance | Pinned analyzer/rules, lockfile resolved advisories, native fingerprints, upload optional | C |
-| Version-aware stacks | Không gợi ý API/rules sai version | Read actual deps/toolchains; rules metadata supported ranges; unsupported clear | C/F |
-| Incremental review | Review push mới nhanh và không mất issue cũ | Compare last-reviewed SHA; revalidate impacted unresolved defects; new/resolved/regressed ledger | D |
-| SHA-safe/no-spam GitHub publisher | Comment đúng code và không lặp | Final SHA recheck, GraphQL pagination, trusted authorship, idempotent rerun | D |
-| Follow-up/review reply workflow | Maintainer hỏi lại issue bằng evidence | Trigger opt-in, actor authorization, current code reread, concise answer, no embedded commands | D |
-| PR title/body assistant an toàn | Hữu ích nhưng giữ human edits | Managed section/preview, optimistic conflict check, preserve checklist/manual title policy | D |
-| Draft/fork/large PR experience | Người dùng biết action làm gì | Least privilege, explicit unsupported/queued/sliced scope, partial result meaningful | D |
-| Verified fix workflow | Sửa bug đã chứng minh | Failing repro on head→passing on patch; independent checks; patch scope limit | E |
-| Issue→plan→patch handoff | Workflow end-to-end như agent | Plan + evidence + sandbox tools; reviewable diff; permission/publish policy rõ | E |
-| Controlled read-only MCP | Issue/spec/incident context có nguồn | Trusted server/tool allowlist, egress/credential separation, source refs, no arbitrary PR server startup | C/F |
-| Privacy/provider presets | Dùng private repo/custom gateway có kiểm soát | Endpoint policy, no-secret-egress tests, retention docs, raw trace off by default | F |
-| Enterprise policy/audit | Org biết ai bật quyền gì | Base-ref/admin policy inheritance, signed config/rule digest, auditable decisions | F |
-| CLI/offline replay | Reproduce review ngoài GitHub | Same engine config snapshot, fixture replay, machine-readable report, exit semantics | B/F |
-| Observability and release channels | Debug được degradation/regression | Trace IDs/usage/status, canary, rollback, benchmark-required model/rule upgrades | B/F |
-| More languages/platforms | Mở rộng khi chất lượng đã đo | Corpus + toolchain + CI per stack; bounded support matrix | F |
+| Honest assessment status | Readers know whether a review is complete or partial | Incomplete/failed/stale never approved; raw findings still retained | A |
+| Reproducible evidence cards | Each issue has behavior change, trigger, impact, and proof | Blob/range valid; evidence provenance; assumptions visible; short prose | A/C |
+| Safe custom review policy | Team rules actually applied | Trust level/version manifest; path-specific rules; wiring tests, no privilege escalation | A/C |
+| Safe exact suggestions | Applying a fix does not corrupt code | Range/hash match; apply check; prose when uncertain | A/E |
+| Confidence calibration | High confidence is measurably meaningful | Reliability plot/Brier/ECE by category; self-score is not confirmation | B/C |
+| Budgeted review presets | Clear tradeoff choices | Fast/balanced/deep/verify have observable scope/budget, actual costs; no silent downgrade | B/C |
+| Symbol/change-impact planner | Finds cross-file bugs instead of only the largest ones | Changed symbol→callers/contracts/tests; bounded graph; cross-file holdout improvement | C |
+| Base/head semantic review | Distinguishes regressions from legacy behavior | Before/after invariant checks; separate advisory for existing bugs; no stale citations | C |
+| Test intelligence | Missing-test claims are specific | Map changed behavior→existing assertions/coverage gaps; repro-first when needed | C/E |
+| Security domain specialists | Auth/tenant/secrets/SSRF/path/SQL/migrations | Select the right domain and versions; threat-model evidence; separate precision gates | C |
+| Full audit scope | Deep truly means beyond the diff | Full-repo file inventory/phases/errors; separate audit locations vs inline PR constraints | C |
+| SAST/SCA/SARIF integration | Tools add evidence with provenance | Pinned analyzer/rules, lockfile-resolved advisories, native fingerprints, optional upload | C |
+| Version-aware stacks | No API/rules suggestions for the wrong version | Read actual deps/toolchains; rules metadata with supported ranges; unsupported clearly marked | C/F |
+| Incremental review | Reviewing new pushes is fast and never loses old issues | Compare last-reviewed SHA; revalidate impacted unresolved defects; new/resolved/regressed ledger | D |
+| SHA-safe/no-spam GitHub publisher | Comments land on the right code without duplicates | Final SHA recheck, GraphQL pagination, trusted authorship, idempotent rerun | D |
+| Follow-up/review reply workflow | Maintainers can ask about an issue with evidence | Opt-in trigger, actor authorization, current-code reread, concise answer, no embedded commands | D |
+| Safe PR title/body assistant | Useful while preserving human edits | Managed section/preview, optimistic conflict check, preserve checklist/manual title policy | D |
+| Draft/fork/large PR experience | Users know what the action does | Least privilege, explicit unsupported/queued/sliced scope, meaningful partial result | D |
+| Verified fix workflow | Fixes bugs with proof | Failing repro on head→passing on patch; independent checks; patch scope limit | E |
+| Issue→plan→patch handoff | End-to-end workflow like an agent | Plan + evidence + sandbox tools; reviewable diff; clear permission/publish policy | E |
+| Controlled read-only MCP | Issue/spec/incident context with sources | Trusted server/tool allowlist, egress/credential separation, source refs, no arbitrary PR server startup | C/F |
+| Privacy/provider presets | Use private repos/custom gateways with controls | Endpoint policy, no-secret-egress tests, retention docs, raw traces off by default | F |
+| Enterprise policy/audit | Orgs know who enabled which permissions | Base-ref/admin policy inheritance, signed config/rule digest, auditable decisions | F |
+| CLI/offline replay | Reproduce reviews outside GitHub | Same engine config snapshot, fixture replay, machine-readable report, exit semantics | B/F |
+| Observability and release channels | Degradation/regression can be debugged | Trace IDs/usage/status, canary, rollback, benchmark-required model/rule upgrades | B/F |
+| More languages/platforms | Expand once quality is measured | Corpus + toolchain + CI per stack; bounded support matrix | F |
 
-Không bắt buộc tất cả capability phải enabled mặc định. Review policy không nên luôn auto-approve; approval chỉ opt-in khi completeness/evidence/permissions/head gates đạt. Autofix nên bắt đầu bằng local patch artifact, sau đó opt-in PR publishing/handoff; write tools chạy trong môi trường riêng với quyền tối thiểu.
+Not every capability must be enabled by default. Review policy should not always auto-approve; approval only opt-in when completeness/evidence/permissions/head gates pass. Autofix should start with a local patch artifact, then opt-in PR publishing/handoff; write tools run in a separate environment with minimum privileges.
 
-## 6. Thiết kế evaluation để không tự đánh lừa
+## 6. Evaluation design that avoids self-deception
 
-### Dataset và ground truth
+### Dataset and ground truth
 
-Baseline corpus đề xuất **400 real PR từ ≥30 repository**: 300 issue-bearing và 100 negative/clean, phân tầng theo supported stacks, size, category và severity. Bổ sung **120 adversarial/fault cases**, **60 multiround trajectories** và seeded mutations được report riêng. Mở rộng clean corpus tới ≥200 và severe predictions tới đủ sample khi áp gates; không ép một dataset thiếu power thành kết luận mạnh.
+Proposed baseline corpus: **400 real PRs from ≥30 repositories**: 300 issue-bearing and 100 negative/clean, stratified by supported stacks, size, category, and severity. Add **120 adversarial/fault cases**, **60 multi-round trajectories**, and seeded mutations reported separately. Expand the clean corpus to ≥200 and severe predictions to sufficient sample when applying gates; do not force an underpowered dataset into strong conclusions.
 
-Split theo **repository + thời gian + defect family**, không random comment: calibration/dev set, validation set và private locked holdout. PR/review histories có thể đã nằm trong training hoặc lộ đáp án; ưu tiên PR mới/private được phép, freeze head trước human fixes. Nếu clone/recreate PR để so product, giữ build context cần thiết nhưng không đưa ground-truth review comments vào input. Ground truth/future fix chỉ evaluator thấy. Ghi rõ điều gì không thể che khỏi mỗi product.
+Split by **repository + time + defect family**, not random comments: calibration/dev set, validation set, and private locked holdout. PR/review histories may already be in training data or leak answers; prefer new/private PRs where permitted, freeze head before human fixes. When cloning/recreating PRs to compare products, keep the necessary build context but do not feed ground-truth review comments into inputs. Only evaluators see ground truth/future fixes. Document what cannot be hidden from each product.
 
-Hai reviewer độc lập, ẩn product/model, adjudicate disagreements. Nhãn finding gồm: genuine defect, valid advisory, incorrect/noise, duplicate, unresolved/insufficient evidence. Ghi affected invariant, trigger, severity, new-vs-existing, location và available proof. LLM judge chỉ hỗ trợ triage; không là ground truth duy nhất. Human review có thể thiếu bug, nên “not matched to historical comment” không tự là false positive; adjudicate thêm finding mới trước chấm precision.
+Two independent reviewers, blinded to product/model, adjudicate disagreements. Finding labels include: genuine defect, valid advisory, incorrect/noise, duplicate, unresolved/insufficient evidence. Record affected invariant, trigger, severity, new-vs-existing, location, and available proof. LLM judges only assist triage; they are never the sole ground truth. Human review can miss bugs, so “not matched to a historical comment” is not automatically a false positive; adjudicate new findings before scoring precision.
 
-### Runs và comparison
+### Runs and comparison
 
-Freeze action commit, bundled artifacts, Pi/scanner versions, model snapshot/provider, policy, prompt/rules digests, budgets. Với Copilot ghi product tier, review configuration, accessible context/skills/MCP, request/run time và billing; không giả định đọc được hidden model identity. So baseline current action, action repaired, từng ablation và Copilot trên cùng head; chạy lặp subset để đo stochastic variance. Không dùng phản hồi evaluator làm context vòng sau trên holdout.
+Freeze action commit, bundled artifacts, Pi/scanner versions, model snapshot/provider, policy, prompt/rules digests, and budgets. For Copilot record product tier, review configuration, accessible context/skills/MCP, request/run time, and billing; do not assume hidden model identity is readable. Compare baseline action, repaired action, each ablation, and Copilot on the same head; repeat runs on a subset to measure stochastic variance. Do not use evaluator feedback as context for later rounds on holdout.
 
-Dùng cả cost-matched và quality-max runs, warm/cold latency tách biệt. Lưu **mọi raw normalized candidate có quyền truy cập an toàn**, verdict/suppression/cap reason và final published findings. Nếu chỉ chấm comment được publish, có thể “tăng precision” bằng cách giấu mọi finding; bởi vậy clean rate, recall, budget/completeness và severe misses phải được báo đồng thời.
+Use both cost-matched and quality-max runs, with warm/cold latency separated. Store **every raw normalized candidate with safe access**, verdict/suppression/cap reason, and final published findings. Scoring only published comments can “boost precision” by hiding every finding; therefore clean rate, recall, budget/completeness, and severe misses must be reported together.
 
-### Metrics bắt buộc
+### Required metrics
 
-| Nhóm | Metrics |
+| Group | Metrics |
 |---|---|
 | Defect quality | Unique-defect precision/known recall, severe misses, per-domain/stack PR-size slices; new vs legacy |
-| Noise/usefulness | False comments per PR, duplicate rate, advisory tách khỏi blocking defect, human actionability; no-hit clean cases |
+| Noise/usefulness | False comments per PR, duplicate rate, advisory separated from blocking defects, human actionability; no-hit clean cases |
 | Evidence | Valid citations, supported claims, actual repro checks, assumptions, location correctness |
-| Verification | Supported/refuted/uncertain/error, false drops, gain/loss compared discovery; calibration |
+| Verification | Supported/refuted/uncertain/error, false drops, gain/loss versus discovery; calibration |
 | Lifecycle | New/open/resolved/regressed/outdated state accuracy; false resolution and repeated-comment rate |
 | Fix | Repro validity, correct patch, regressions, test cheating/masking, apply rate, changed-line scope, maintainer acceptance |
 | Operations | Completed/partial/failed/skipped, actual USD/input/output/cache/reasoning tokens, Actions/tool time, p50/p95, retries |
 | Safety | Resource execution, credential/read boundaries, egress attempts, sink redaction, orphan processes, policy bypass |
 
-### Ablations cần làm trước khi thêm agent
+### Ablations to run before adding agents
 
-1. Diff-only vs selective retrieval vs full-content; context bytes/tokens/inspected ranges phải ghi thật.
+1. Diff-only vs selective retrieval vs full-content; record actual context bytes/tokens/inspected ranges.
 2. Detected profiles vs all profiles; generic broad rules vs versioned high-signal domain rules.
 3. Single discovery vs discovery+evidence verification; same-model vs different verifier, matched budget.
-4. LLM alone vs analyzers/evidence; deterministic duplicates tách riêng để không đếm hai lần.
-5. No memory vs explicit SHA-bound finding ledger ở multiround; không dùng free-text memory làm truth.
-6. One model tier vs cost-aware risk routing; cheap pass không quyết định suppress severe without proof.
-7. Prompt-only confidence vs calibrated confidence; acceptance/resolution feedback không tự là true label.
+4. LLM alone vs analyzers/evidence; separate deterministic duplicates so they are not counted twice.
+5. No memory vs explicit SHA-bound finding ledger in multi-round; do not use free-text memory as truth.
+6. One model tier vs cost-aware risk routing; cheap passes must not suppress severe issues without proof.
+7. Prompt-only confidence vs calibrated confidence; acceptance/resolution feedback is not itself a true label.
 
-Một thay đổi chỉ được giữ khi cải thiện metric pre-registered mà không phá safety/precision/completeness gates. Những ý tưởng như “thêm năm agents”, “deep nhiều phases” hoặc “context lớn hơn” phải đi qua cùng ablation, không mặc định hiệu quả.
+Keep a change only when it improves a pre-registered metric without breaking safety/precision/completeness gates. Ideas like “add five agents”, “deeper with more phases”, or “larger context” must pass the same ablation; they are not effective by default.
 
-## 7. Presets, compatibility và trải nghiệm
+## 7. Presets, compatibility, and experience
 
-Giữ v1 inputs/defaults hiện có; sửa bug không thay public meaning ngoài documented correction. Thêm preset/config schema/versioned entry bằng additive interface được contract cho phép. Migration guide giải thích defaults cũ critical-only/10files/exclusions và lý do preset mới phù hợp review thường ngày hơn.
+Keep existing v1 inputs/defaults; fix bugs without changing public meaning except documented corrections. Add presets/config schema/versioned entries through additive interfaces allowed by contracts. The migration guide explains old defaults (critical-only/10 files/exclusions) and why new presets fit everyday review better.
 
-| Preset đề xuất | Scope/behavior | Publication |
+| Proposed preset | Scope/behavior | Publication |
 |---|---|---|
-| Fast | Diff + minimum dependency/contract reads + trusted scanners, bounded budget | High signal; coverage omissions explicit; COMMENT default |
-| Balanced | Selective callers/tests/config, structured evidence verification high/critical | Full severe evidence gate, concise ranked comments |
-| Deep | Change-impact graph + broader audit/repro where allowed, higher budget | Report full scope/phases; không gọi full audit khi chỉ diff |
-| Verify | Input candidate IDs + pinned evidence; không discovery tự do giả confirm | Supported/refuted/uncertain per ID |
-| Fix | Separate isolated write environment, scoped patch + checks | Reviewable patch/PR opt-in; verified badge chỉ khi proof thật |
+| Fast | Diff + minimum dependency/contract reads + trusted scanners, bounded budget | High signal; explicit coverage omissions; COMMENT default |
+| Balanced | Selective callers/tests/config, structured evidence verification for high/critical | Full severe evidence gate, concise ranked comments |
+| Deep | Change-impact graph + broader audit/repro where allowed, higher budget | Report full scope/phases; do not call it a full audit when only the diff was checked |
+| Verify | Input candidate IDs + pinned evidence; no free discovery pretending to confirm | Supported/refuted/uncertain per ID |
+| Fix | Separate isolated write environment, scoped patch + checks | Reviewable patch/PR opt-in; verified badge only with real proof |
 
-Summary nên bắt đầu bằng “Đã kiểm tra gì / Có issue nào / Còn thiếu gì”, sau đó 3–5 highest-value findings với trigger/impact/evidence và next step. Không dùng bảng mười category đều xanh nếu agent chưa chứng minh đã assess. Error messages nên nói được cần rerun, missing tool, budget tăng hay permission nào; không chỉ stack trace. Raw source/log giữ trong restricted artifact có retention, không dump lên PR.
+Summaries should start with “What was checked / Any issues / What is still missing”, then the 3–5 highest-value findings with trigger/impact/evidence and next steps. Do not use a ten-category all-green table when the agent has not proven it assessed them. Error messages should say whether a rerun, missing tool, budget increase, or permission is needed; not just a stack trace. Keep raw sources/logs in a restricted artifact with retention; do not dump them on the PR.
 
-## 8. Pilot, rollout và điểm kết thúc
+## 8. Pilot, rollout, and exit point
 
-Bắt đầu **shadow mode** trên repositories đã đồng ý: không block/approve, thu labels và compare human review. Sau safety/evidence gates, bật advisory comments ở canary; khi severe precision có đủ power mới thử blocking opt-in. Fix bắt đầu local artifacts, sau đó sandbox pilot và PR handoff theo policy. Model/rule/scanner upgrade có frozen evaluation và rollback; provider outage không biến thành clean.
+Start in **shadow mode** on consenting repositories: no blocking/approving, collect labels and compare against human review. After safety/evidence gates, enable advisory comments on canaries; try blocking opt-in only when severe precision has enough power. Fixes start as local artifacts, then sandbox pilot and PR handoff per policy. Model/rule/scanner upgrades get frozen evaluation and rollback; provider outages never become clean.
 
-Release milestone hoàn thành khi:
+The release milestone is complete when:
 
-1. F01–F20 đã sửa hoặc có bounded documented disposition được maintainer chấp nhận; không còn P0/P1 blocker trong supported scope.
-2. Supported feature matrix, integration matrix và quality gates đạt; test/build/smoke/docs cùng version; không silently ignored input.
-3. Benchmark report có configs, corpus/sampling/limitations, blinded adjudication, confidence intervals, cost/latency; claim cạnh tranh chỉ nói điều đo được.
-4. Pilot cho thấy setup dễ, comments actionable, rerun không spam, failure/stale/partial được hiểu đúng; không overwrite human content.
-5. Có owner cho eval/rules/security/dependencies, canary/rollback, data policies và known residual risks.
+1. F01–F20 are fixed or have a bounded documented disposition accepted by maintainers; no P0/P1 blockers remain in supported scope.
+2. Supported feature matrix, integration matrix, and quality gates pass; tests/build/smoke/docs share the same version; no silently ignored inputs.
+3. Benchmark report includes configs, corpus/sampling/limitations, blinded adjudication, confidence intervals, cost/latency; competitive claims state only what was measured.
+4. Pilot shows easy setup, actionable comments, reruns without spam, failure/stale/partial correctly understood; no overwriting of human content.
+5. There are owners for eval/rules/security/dependencies, canary/rollback, data policies, and known residual risks.
 
-Tại snapshot audit, **các điều kiện này chưa đạt**. Bước thực thi phù hợp nhất là Phase A, đồng thời xây baseline corpus của B. Sau đó mới biết cần thêm context, model, verifier hay fix capabilities nào để tạo lợi thế thực tế.
+At the audit snapshot, **these conditions are not yet met**. The most fitting execution step is Phase A, while building the baseline corpus for B. Only then will it be clear which context, model, verifier, or fix capabilities are needed for a real advantage.
