@@ -259,6 +259,26 @@ describe('buildSummaryBody - hidden footer and checks table (Rules)', () => {
 		expect(body).toContain('15/20 passed');
 	});
 
+	it('does not claim unobserved rules passed', () => {
+		const body = buildSummaryBody({
+			...base2,
+			ruleCoverage: {
+				total: 20,
+				assessed: 1,
+				unassessed: 19,
+				passed: 0,
+				failedRules: ['rule-a'],
+			},
+		});
+		expect(body).toContain('1/20 assessed');
+		expect(body).not.toContain('19/20 passed');
+	});
+
+	it('shows when GitHub file pagination truncated the review scope', () => {
+		const body = buildSummaryBody({ ...base2, filesTruncated: true });
+		expect(body).toContain('FILE LIST TRUNCATED');
+	});
+
 	it('lists failed rules as bullets with escaping', () => {
 		const body = buildSummaryBody({
 			...base2,

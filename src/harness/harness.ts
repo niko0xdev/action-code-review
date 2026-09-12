@@ -21,18 +21,6 @@ export interface HarnessOutput {
 }
 const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
 const RISKS: RiskLevel[] = ['critical', 'high', 'medium', 'low', 'none'];
-const CATEGORIES: FindingCategory[] = [
-	'correctness',
-	'security',
-	'regression',
-	'error-handling',
-	'data-integrity',
-	'concurrency',
-	'performance',
-	'maintainability',
-	'testing',
-	'compatibility',
-];
 
 export function buildReviewPrompt(
 	context: ReviewContext,
@@ -101,6 +89,8 @@ export function parseHarnessFindings(
 		);
 	if (!json.findings && !('summary' in json))
 		throw new Error('harness output JSON does not look like a review result');
+	if ('findings' in json && !Array.isArray(json.findings))
+		throw new Error('harness output findings must be an array');
 	const findings = Array.isArray(json.findings)
 		? json.findings.map(coerceFinding).filter((f): f is Finding => f !== null)
 		: [];
@@ -148,9 +138,11 @@ function coerceFinding(item: unknown): Finding | null {
 	return {
 		severity: f.severity as Severity,
 		confidence,
-		category: CATEGORIES.includes(f.category as FindingCategory)
-			? (f.category as FindingCategory)
-			: 'correctness',
+		// Preserve unknown values so the single normalizeCategories policy can
+		// bucket them and report drift instead of changing their meaning here.
+		category: (typeof f.category === 'string'
+			? f.category
+			: 'maintainability') as FindingCategory,
 		path: f.path,
 		line: Math.floor(line),
 		title: typeof f.title === 'string' ? f.title : 'Untitled finding',

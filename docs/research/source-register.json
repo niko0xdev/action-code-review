@@ -1,0 +1,359 @@
+{
+  "accessed_date": "2026-09-12",
+  "selection": "Primary official documentation, exact pinned package source, original research papers; source audit uses commit permalinks.",
+  "source_groups": [
+    {
+      "id": 1,
+      "publisher_or_author": "Pi maintainers",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "0.73.1",
+      "sources": [
+        {
+          "title": "Pi 0.73.1 — Extensions",
+          "url": "https://raw.githubusercontent.com/badlogic/pi-mono/v0.73.1/packages/coding-agent/docs/extensions.md"
+        }
+      ],
+      "usage_note": "Pi 0.73.1 — Extensions. Discovery và quyền thực thi extension; bằng chứng upstream cho F01.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 2,
+      "publisher_or_author": "Pi maintainers / npm registry",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "0.73.1",
+      "sources": [
+        {
+          "title": "Pi package metadata đúng pin 0.73.1",
+          "url": "https://registry.npmjs.org/@mariozechner/pi-coding-agent/0.73.1"
+        },
+        {
+          "title": "resource loader source đúng tag",
+          "url": "https://github.com/badlogic/pi-mono/blob/v0.73.1/packages/coding-agent/src/core/resource-loader.ts"
+        }
+      ],
+      "usage_note": "Pi package metadata đúng pin 0.73.1; resource loader source đúng tag. Package được download/extract để inspection, không install/run. Project resource resolution cần isolation riêng.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 3,
+      "publisher_or_author": "GitHub",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "GitHub Actions — Secure use",
+          "url": "https://docs.github.com/en/actions/reference/security/secure-use"
+        }
+      ],
+      "usage_note": "GitHub Actions — Secure use. Credential/trust boundary khi xử lý code không tin cậy.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 4,
+      "publisher_or_author": "OpenAI",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "OpenAI — Structured Outputs",
+          "url": "https://developers.openai.com/api/docs/guides/structured-outputs"
+        }
+      ],
+      "usage_note": "OpenAI — Structured Outputs. Strict schema, refusal/incomplete handling; không phải factual verification.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 5,
+      "publisher_or_author": "Vigolium / npm registry",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "0.0.13",
+      "sources": [
+        {
+          "title": "Piolium upstream",
+          "url": "https://github.com/vigolium/piolium"
+        },
+        {
+          "title": "package metadata 0.0.13",
+          "url": "https://registry.npmjs.org/@vigolium/piolium/0.0.13"
+        }
+      ],
+      "usage_note": "Piolium upstream; package metadata 0.0.13. CLI/extensions package inspection; không giả định custom/private historical adapter có cùng contract.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 6,
+      "publisher_or_author": "GitHub",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "GitHub REST — Pull request reviews",
+          "url": "https://docs.github.com/en/rest/pulls/reviews"
+        }
+      ],
+      "usage_note": "GitHub REST — Pull request reviews. Review/comment endpoint contracts.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 7,
+      "publisher_or_author": "GitHub",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "GitHub REST — List pull request files",
+          "url": "https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files"
+        }
+      ],
+      "usage_note": "GitHub REST — List pull request files. Pagination và giới hạn 3.000 files.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 8,
+      "publisher_or_author": "GitHub",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "GitHub GraphQL — Pull requests reference",
+          "url": "https://docs.github.com/en/graphql/reference/pulls"
+        }
+      ],
+      "usage_note": "GitHub GraphQL — Pull requests reference. `reviewThreads`, `PullRequestReviewThread`, resolution state.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 9,
+      "publisher_or_author": "Semgrep",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "Semgrep — Running rules",
+          "url": "https://docs.semgrep.dev/running-rules"
+        }
+      ],
+      "usage_note": "Semgrep — Running rules. Explicit rule configuration và execution reproducibility.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 10,
+      "publisher_or_author": "Google OSV",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "OSV API",
+          "url": "https://google.github.io/osv.dev/api/"
+        }
+      ],
+      "usage_note": "OSV API. Advisory queries/batch queries; đề xuất SCA, chưa triển khai.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 11,
+      "publisher_or_author": "GitHub",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "GitHub — About Copilot code review",
+          "url": "https://docs.github.com/en/copilot/concepts/agents/code-review"
+        }
+      ],
+      "usage_note": "GitHub — About Copilot code review. Baseline full-project context, automation, model mix, handoff. Trạng thái product có thể thay đổi sau audit.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 12,
+      "publisher_or_author": "GitHub",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "GitHub — Configure MCP servers",
+          "url": "https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/configure-mcp-servers"
+        }
+      ],
+      "usage_note": "GitHub — Configure MCP servers. Repository MCP settings, default servers và read-only annotation gate.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 13,
+      "publisher_or_author": "GitHub",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "GitHub — Adding agent skills",
+          "url": "https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/add-skills"
+        }
+      ],
+      "usage_note": "GitHub — Adding agent skills. Skills áp dụng cho code review và cloud agent.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 14,
+      "publisher_or_author": "GitHub",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "GitHub — About Copilot cloud agent",
+          "url": "https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent"
+        }
+      ],
+      "usage_note": "GitHub — About Copilot cloud agent. Coding workflow, ephemeral environment, tests/linters/PR.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 15,
+      "publisher_or_author": "GitHub",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "GitHub — Using Copilot code review",
+          "url": "https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review"
+        }
+      ],
+      "usage_note": "GitHub — Using Copilot code review. Review event mặc định và approval configuration/preview.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 16,
+      "publisher_or_author": "Deepak Kumar",
+      "published_date": "2026-03-27",
+      "accessed_date": "2026-09-12",
+      "version": "v1",
+      "sources": [
+        {
+          "title": "Kumar — SWE-PRBench v1, 27/03/2026",
+          "url": "https://arxiv.org/html/2603.26130v1"
+        }
+      ],
+      "usage_note": "Kumar — SWE-PRBench v1, 27/03/2026. Đọc cả limitations/sample/context methods, không chỉ abstract.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 17,
+      "publisher_or_author": "Kristen Pereira et al.",
+      "published_date": "2026-03-10",
+      "accessed_date": "2026-09-12",
+      "version": "v1",
+      "sources": [
+        {
+          "title": "Pereira et al. — CR-Bench v1, 10/03/2026",
+          "url": "https://arxiv.org/html/2603.11078v1"
+        }
+      ],
+      "usage_note": "Pereira et al. — CR-Bench v1, 10/03/2026. Utility/noise metrics và comparative agent experiments.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 18,
+      "publisher_or_author": "Dewu Zheng et al.",
+      "published_date": "2026-08-27",
+      "accessed_date": "2026-09-12",
+      "version": "v1",
+      "sources": [
+        {
+          "title": "Zheng et al. — MCR-Bench v1, 27/08/2026",
+          "url": "https://arxiv.org/html/2608.27442v1"
+        }
+      ],
+      "usage_note": "Zheng et al. — MCR-Bench v1, 27/08/2026. Multiround defect lifecycle và threats to validity.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 19,
+      "publisher_or_author": "Pi maintainers",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "0.73.1",
+      "sources": [
+        {
+          "title": "Pi 0.73.1 — Custom models",
+          "url": "https://raw.githubusercontent.com/badlogic/pi-mono/v0.73.1/packages/coding-agent/docs/models.md"
+        }
+      ],
+      "usage_note": "Pi 0.73.1 — Custom models. Provider API families và compatibility metadata.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 20,
+      "publisher_or_author": "OpenAI",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "OpenAI — Tools",
+          "url": "https://developers.openai.com/api/docs/guides/tools"
+        }
+      ],
+      "usage_note": "OpenAI — Tools. Native/custom tools/MCP; enforcement đề xuất là kết luận thiết kế của audit.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 21,
+      "publisher_or_author": "OpenAI",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "OpenAI — Evaluation best practices",
+          "url": "https://developers.openai.com/api/docs/guides/evaluation-best-practices"
+        }
+      ],
+      "usage_note": "OpenAI — Evaluation best practices. Continuous evaluation và dataset evolution.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 22,
+      "publisher_or_author": "OpenAI",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "OpenAI — Prompt caching",
+          "url": "https://developers.openai.com/api/docs/guides/prompt-caching"
+        }
+      ],
+      "usage_note": "OpenAI — Prompt caching. Prefix/caching controls phụ thuộc model; cần đo actual usage.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    },
+    {
+      "id": 23,
+      "publisher_or_author": "OpenAI",
+      "published_date": null,
+      "accessed_date": "2026-09-12",
+      "version": "current official documentation",
+      "sources": [
+        {
+          "title": "OpenAI — Data controls",
+          "url": "https://developers.openai.com/api/docs/guides/your-data"
+        }
+      ],
+      "usage_note": "OpenAI — Data controls. Abuse monitoring, application state, ZDR eligibility và third-party data policies.",
+      "limitations": "Product docs can change after access date; pinned package and research version kept explicit. Publication date unavailable where null."
+    }
+  ]
+}

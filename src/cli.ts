@@ -674,6 +674,17 @@ export async function main(argv: string[]): Promise<void> {
 			}
 			// ponytail: all security skills into default review (8 domains, ~4k chars); filter by domain when cost matters.
 			const allSecurityPrompt = renderSkillsForPrompt(CURATED_SECURITY_SKILLS);
+			const promptFile = await readPromptFileIfNeeded(
+				reviewContext.repositoryPath
+			);
+			const reviewRules = [
+				promptFile,
+				allSecurityPrompt,
+				legacyOptions.reviewPrompt,
+				rulesForProfiles(profiles),
+			]
+				.filter(Boolean)
+				.join('\n\n');
 			harness = new PiHarness({
 				binaryPath: piBinaryPath,
 				piArgs: core.getInput('pi-args'),
@@ -685,27 +696,15 @@ export async function main(argv: string[]): Promise<void> {
 				apiKey: llmConfig.apiKey,
 				includeFullContent: legacyOptions.includeFullContent,
 				maxContextChars: legacyOptions.maxContextChars,
-				extraRules: [allSecurityPrompt, rulesForProfiles(profiles)]
-					.filter(Boolean)
-					.join('\n\n'),
+				extraRules: reviewRules,
 				provider: llmConfig.provider,
 				toolFindings: prelintResult.findings,
 			});
-			const promptFile = await readPromptFileIfNeeded(
-				reviewContext.repositoryPath
-			);
 			const result = await runReview(reviewContext, harness, {
 				minConfidence: Number.parseFloat(
 					process.env.AI_REVIEW_MIN_CONFIDENCE || '0.8'
 				),
-				extraRules: [
-					promptFile,
-					allSecurityPrompt,
-					legacyOptions.reviewPrompt,
-					rulesForProfiles(profiles),
-				]
-					.filter(Boolean)
-					.join('\n\n'),
+				extraRules: reviewRules,
 				minSeverity: legacyOptions.minSeverity,
 			});
 			// Opt-in second LLM pass (env-only; V1 contract frozen, no new

@@ -180,6 +180,7 @@ async function fetchExistingSecurityCommentIds(
 			const comments = await octokit.rest.pulls.listCommentsForReview({
 				owner,
 				repo,
+				pull_number: prNumber,
 				review_id: review.id,
 				page: 1,
 				per_page: 100,

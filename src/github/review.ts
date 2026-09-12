@@ -123,6 +123,8 @@ export interface PublishParams {
 	 * Defaults to true via the action input; explicit false opts out.
 	 */
 	autoApproveWhenResolved?: boolean;
+	/** Re-read PR head before publishing when the Octokit adapter supports it. */
+	recheckHead?: boolean;
 }
 
 export function buildReviewPayload(
@@ -151,6 +153,31 @@ export async function publishReview(
 	params: PublishParams
 ): Promise<void> {
 	const { owner, repo, prNumber, headSha, result } = params;
+	if (
+		params.recheckHead !== false &&
+		typeof octokit.rest.pulls.get === 'function'
+	) {
+		try {
+			const current = await octokit.rest.pulls.get({
+				owner,
+				repo,
+				pull_number: prNumber,
+			});
+			if (current.data.head.sha !== headSha) {
+				result.reviewStatus = 'stale';
+				core.warning(
+					`[review] PR head changed during review (${headSha} -> ${current.data.head.sha}); skipped publishing stale findings.`
+				);
+				return;
+			}
+		} catch (error) {
+			core.warning(
+				`[review] Could not recheck PR head; refusing to publish: ${error instanceof Error ? error.message : String(error)}`
+			);
+			result.reviewStatus = 'stale';
+			return;
+		}
+	}
 	let hasWrite = true;
 	if (params.requireWritePermissions && params.actor) {
 		hasWrite = await hasWritePermission(octokit, owner, repo, params.actor);
@@ -246,9 +273,11 @@ export async function publishReview(
 		durationMs: params.durationMs,
 		filesTotal: params.filesTotal,
 		filesExcluded: params.filesExcluded,
+		filesTruncated: result.filesTruncated,
 		toolFindings: result.toolFindings,
 		diagnostics: result.diagnostics,
 		ruleCoverage: result.ruleCoverage,
+		reviewStatus: result.reviewStatus,
 	})}\n\n${marker}`;
 	if (params.stickySummary) {
 		const existing = await findStickyComment(
@@ -316,7 +345,10 @@ export async function publishReview(
  * clean bill of health.
  */
 function reviewFailed(result: PublishParams['result']): boolean {
-	return (result.diagnostics?.failedGroups ?? 0) > 0;
+	return (
+		(result.reviewStatus !== undefined && result.reviewStatus !== 'complete') ||
+		(result.diagnostics?.failedGroups ?? 0) > 0
+	);
 }
 
 /**

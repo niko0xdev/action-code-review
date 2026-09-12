@@ -82,7 +82,18 @@ describe('runVerifyPass', () => {
 			findings,
 			toolFindings: emptyTool,
 			context: ctx,
-			verify: async () => '{"findings":[]}',
+			verify: async () =>
+				JSON.stringify({
+					findings: [
+						{
+							path: 'src/app.ts',
+							line: 10,
+							category: 'correctness',
+							title: 'Hallucinated bug',
+							verified: false,
+						},
+					],
+				}),
 			inputTokenEstimate: 1000,
 			outputTokenBudget: 1024,
 		});
@@ -97,7 +108,18 @@ describe('runVerifyPass', () => {
 			findings,
 			toolFindings: emptyTool,
 			context: ctx,
-			verify: async () => '{"findings":[]}',
+			verify: async () =>
+				JSON.stringify({
+					findings: [
+						{
+							path: 'src/app.ts',
+							line: 10,
+							category: 'correctness',
+							title: 'To be dropped',
+							verified: false,
+						},
+					],
+				}),
 			inputTokenEstimate: 1_000_000, // huge
 			outputTokenBudget: 1024,
 			budgetUsd: 0.001,
@@ -154,7 +176,7 @@ describe('runVerifyPass', () => {
 		expect(result.droppedCount).toBe(0);
 	});
 
-	it('drops high/critical findings not returned by verify', async () => {
+	it('drops high/critical findings only when explicitly refuted', async () => {
 		const target = mkFinding({
 			severity: 'high',
 			path: 'src/app.ts',
@@ -165,7 +187,18 @@ describe('runVerifyPass', () => {
 			findings: [target],
 			toolFindings: emptyTool,
 			context: ctx,
-			verify: async () => '{"findings":[]}',
+			verify: async () =>
+				JSON.stringify({
+					findings: [
+						{
+							path: 'src/app.ts',
+							line: 10,
+							category: 'correctness',
+							title: 'Hallucinated bug',
+							verified: false,
+						},
+					],
+				}),
 			inputTokenEstimate: 1000,
 			outputTokenBudget: 1024,
 		});
@@ -174,7 +207,7 @@ describe('runVerifyPass', () => {
 		expect(result.droppedCount).toBe(1);
 	});
 
-	it('keeps low/medium findings even if verify pass returns empty', async () => {
+	it('keeps all findings when verify returns an incomplete verdict', async () => {
 		const findings = [
 			mkFinding({ severity: 'low' }),
 			mkFinding({ severity: 'medium' }),
@@ -188,8 +221,12 @@ describe('runVerifyPass', () => {
 			inputTokenEstimate: 1000,
 			outputTokenBudget: 1024,
 		});
-		expect(result.findings).toHaveLength(2);
-		expect(result.findings.map((f) => f.severity)).toEqual(['low', 'medium']);
+		expect(result.findings).toHaveLength(3);
+		expect(result.findings.map((f) => f.severity)).toEqual([
+			'low',
+			'medium',
+			'high',
+		]);
 	});
 
 	it('handles malformed verify output gracefully', async () => {
@@ -202,9 +239,10 @@ describe('runVerifyPass', () => {
 			inputTokenEstimate: 1000,
 			outputTokenBudget: 1024,
 		});
-		expect(result.skipped).toBe(false);
-		expect(result.findings).toHaveLength(0);
-		expect(result.droppedCount).toBe(1);
+		expect(result.skipped).toBe(true);
+		expect(result.findings).toHaveLength(1);
+		expect(result.droppedCount).toBe(0);
+		expect(result.verificationStatus).toBe('error');
 	});
 
 	it('ignores verify entries with verified=false', async () => {
@@ -266,6 +304,13 @@ describe('runVerifyPass', () => {
 							category: 'correctness',
 							title: 'Kept bug path',
 							verified: true,
+						},
+						{
+							path: 'src/app.ts',
+							line: 99,
+							category: 'correctness',
+							title: 'Dropped bug path',
+							verified: false,
 						},
 					],
 				}),

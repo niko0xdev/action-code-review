@@ -8,6 +8,7 @@ export interface StickySummaryOptions {
 	findings: SecurityFinding[];
 	scanners: ScannerExecution[];
 	domains: string[];
+	incomplete?: boolean;
 	model?: string;
 	durationMs?: number;
 }
@@ -59,10 +60,15 @@ export function buildStickySecuritySummary(
 			? `\n### Validated Findings\n| Severity | CWE | Title | Location | Confidence |\n|---|---|---|---|---|\n${findingTableRows.join('\n')}\n`
 			: '\n*No security vulnerabilities identified at or above the publish threshold.*\n';
 
+	const statusNotice = options.incomplete
+		? '\n> ⚠️ **SECURITY REVIEW INCOMPLETE** — one or more engines failed; do not treat this report as a clean security pass.\n'
+		: '';
+
 	const raw = `<!-- nim-security-sticky-summary -->
 ## 🔐 Nim Security Review
 
 **Risk:** \`${options.risk.toUpperCase()}\`
+${statusNotice}
 
 | Status | Count |
 |---|---|
