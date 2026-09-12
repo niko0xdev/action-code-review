@@ -59,13 +59,14 @@ export async function fetchPrContext(
 	const pageSize = options.pageSize ?? 100;
 	const maxPages = options.maxPages ?? 10;
 
-	const [{ data: pr }, files] = await Promise.all([
+	const [{ data: pr }, fileResult] = await Promise.all([
 		octokit.rest.pulls.get({
 			...repository,
 			pull_number: prNumber,
 		}),
 		fetchAllFiles(octokit, repository, prNumber, pageSize, maxPages),
 	]);
+	const files = fileResult.files;
 
 	const pullRequest: PullRequestInfo = {
 		number: pr.number,
@@ -91,6 +92,7 @@ export async function fetchPrContext(
 
 	const diff: DiffInfo = {
 		files: changedFiles,
+		...(fileResult.truncated ? { filesTruncated: true } : {}),
 		totalAdditions: changedFiles.reduce((sum, f) => sum + f.additions, 0),
 		totalDeletions: changedFiles.reduce((sum, f) => sum + f.deletions, 0),
 	};
@@ -110,7 +112,7 @@ async function fetchAllFiles(
 	prNumber: number,
 	pageSize: number,
 	maxPages: number
-): Promise<FileWire[]> {
+): Promise<{ files: FileWire[]; truncated: boolean }> {
 	const all: FileWire[] = [];
 	for (let page = 1; page <= maxPages; page += 1) {
 		const data = await fetchFilePage(
@@ -121,9 +123,9 @@ async function fetchAllFiles(
 			page
 		);
 		all.push(...data);
-		if (data.length < pageSize) break;
+		if (data.length < pageSize) return { files: all, truncated: false };
 	}
-	return all;
+	return { files: all, truncated: true };
 }
 
 async function fetchFilePage(

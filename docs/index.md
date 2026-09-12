@@ -9,6 +9,8 @@ Start here. Each doc states what it covers and who should read it.
 | [v1-interface-contract.md](v1-interface-contract.md) | Frozen public surface: inputs, outputs, defaults, behavior | Touching `pr-*/action.yml`, inputs, outputs, or env names |
 | [security-model.md](security-model.md) | Threat model: injection, secrets, permissions, plane separation | Touching prompts, subprocess calls, or anything published to GitHub |
 | [security-review.md](security-review.md) | Security engine: profiles, inputs/outputs, skills, workflow examples | Using `mode: security` or changing security behavior |
+| [research/code-review-deep-research.md](research/code-review-deep-research.md) | Source audit and primary-source research at commit `f59cfc3` (2026-09-12) | Assessing known defects and the competitive baseline; historical snapshot |
+| [research/improvement-roadmap.md](research/improvement-roadmap.md) | Proposed quality gates, implementation phases, feature backlog, and benchmark protocol | Planning improvements; proposed work, not shipped behavior |
 
 ## Historical decisions (folded in, files removed)
 

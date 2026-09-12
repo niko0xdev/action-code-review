@@ -183,6 +183,29 @@ describe('publishReview', () => {
 		};
 	}
 
+	it('refuses to publish when the PR head changed during review', async () => {
+		const octokit = makeOctokit() as any;
+		octokit.rest.pulls.get = vi.fn(async () => ({
+			data: { head: { sha: 'new-head' } },
+		}));
+		const result: ReviewResult = {
+			findings: [finding()],
+			summary: '',
+			risk: 'high',
+			counts: { critical: 0, high: 1, medium: 0, low: 0 },
+			filesReviewed: ['src/a.ts'],
+		};
+		await publishReview(octokit, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 1,
+			headSha: 'old-head',
+			result,
+		});
+		expect(result.reviewStatus).toBe('stale');
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
 	it('posts inline comments and the summary', async () => {
 		const octokit = makeOctokit();
 		await publishReview(octokit as never, {

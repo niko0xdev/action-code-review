@@ -1,0 +1,170 @@
+{
+  "auditedCommit": "f59cfc34f385d89754814f7b3649b7004fe7faa4",
+  "mode": "observe-current",
+  "witnessCount": 19,
+  "results": [
+    {
+      "id": "F03",
+      "reproduced": false,
+      "observed": {
+        "remaining": 1,
+        "risk": "critical"
+      }
+    },
+    {
+      "id": "F04",
+      "reproduced": false,
+      "observed": {
+        "approvedBanner": false,
+        "failedGroupsVisible": false
+      }
+    },
+    {
+      "id": "F05",
+      "reproduced": false,
+      "observed": {
+        "entityEscapedSuggestion": false
+      }
+    },
+    {
+      "id": "F06",
+      "reproduced": false,
+      "observed": {
+        "inlineLeaksSyntheticToken": false,
+        "debugLeaksSyntheticToken": false
+      }
+    },
+    {
+      "id": "F07",
+      "reproduced": false,
+      "observed": {
+        "harnessRulePresent": true,
+        "customRulePresent": true
+      }
+    },
+    {
+      "id": "F01-static",
+      "reproduced": false,
+      "observed": {
+        "noExtensions": true,
+        "noSkills": true
+      }
+    },
+    {
+      "id": "F09",
+      "reproduced": false,
+      "observed": {
+        "validated": 0,
+        "invalidRange": [
+          999999,
+          2
+        ]
+      }
+    },
+    {
+      "id": "F10",
+      "reproduced": false,
+      "observed": {
+        "distinctDefectsRetained": 2
+      }
+    },
+    {
+      "id": "F11",
+      "reproduced": false,
+      "observed": {
+        "multipleAssistantJsonFails": false
+      }
+    },
+    {
+      "id": "F12",
+      "reproduced": false,
+      "observed": {
+        "malformedFindingsAcceptedAsEmpty": false
+      }
+    },
+    {
+      "id": "F13",
+      "reproduced": false,
+      "observed": {
+        "unobservedRulesReportedPassed": 0,
+        "total": 4
+      }
+    },
+    {
+      "id": "F14",
+      "reproduced": false,
+      "observed": {
+        "missingPullNumber": false,
+        "createdReviews": 1
+      }
+    },
+    {
+      "id": "F15",
+      "reproduced": false,
+      "observed": {
+        "pages": 10,
+        "returnedFiles": 1000,
+        "truncationFlag": true
+      }
+    },
+    {
+      "id": "F16",
+      "reproduced": false,
+      "observed": {
+        "requestTimeoutMs": 5,
+        "bodyDelayMs": 40,
+        "bodyReturned": "ok",
+        "aborted": true
+      }
+    },
+    {
+      "id": "F17",
+      "reproduced": false,
+      "observed": {
+        "criticalAfterFirst20Retained": true
+      }
+    },
+    {
+      "id": "F18",
+      "reproduced": false,
+      "observed": {
+        "unknownCategoryMappedTo": "invented-category",
+        "severity": "critical"
+      }
+    },
+    {
+      "id": "F19-static",
+      "reproduced": true,
+      "observed": {
+        "allowlistedArgumentTokens": [
+          "--max-duration",
+          "10",
+          "--model-override",
+          "other"
+        ]
+      }
+    },
+    {
+      "id": "F02-static",
+      "reproduced": true,
+      "observed": {
+        "selectsWorkspaceBinary": true
+      }
+    },
+    {
+      "id": "F08",
+      "reproduced": false,
+      "observed": {
+        "profile": "diff",
+        "findings": 0,
+        "risk": "none",
+        "reasoningFailureRecorded": true
+      }
+    }
+  ],
+  "skillMirror": {
+    "profiles": 9,
+    "mismatches": []
+  },
+  "limitations": "Local deterministic witnesses; no live LLM/Copilot comparison; static witnesses do not execute malicious content."
+}

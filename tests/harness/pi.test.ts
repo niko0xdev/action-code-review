@@ -9,6 +9,7 @@ import {
 	buildAgentDebugSection,
 	buildPiArgs,
 	buildPiEnv,
+	extractAssistantText,
 } from '../../src/harness/pi.js';
 import type { ReviewContext } from '../../src/types/context.js';
 
@@ -87,6 +88,29 @@ describe('buildPiEnv', () => {
 	it('keeps PATH so the pi binary resolves', () => {
 		const env = buildPiEnv('/tmp/x');
 		expect(env.PATH).toBeDefined();
+	});
+});
+
+describe('extractAssistantText', () => {
+	it('selects the final structured assistant message', () => {
+		const progress = JSON.stringify({ type: 'progress' });
+		const first = JSON.stringify({
+			type: 'message_end',
+			message: {
+				role: 'assistant',
+				content: [{ type: 'text', text: 'Working…' }],
+			},
+		});
+		const final = JSON.stringify({
+			type: 'message_end',
+			message: {
+				role: 'assistant',
+				content: [{ type: 'text', text: '{"findings":[],"summary":"done"}' }],
+			},
+		});
+		expect(extractAssistantText(`${progress}\n${first}\n${final}`)).toBe(
+			'{"findings":[],"summary":"done"}'
+		);
 	});
 });
 

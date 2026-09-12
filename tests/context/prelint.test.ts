@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -35,6 +35,8 @@ function changedFile(filename: string, status = 'modified'): ChangedFile {
 }
 
 afterEach(() => {
+	Reflect.deleteProperty(process.env, 'AI_REVIEW_ALLOW_WORKSPACE_TOOLS');
+	Reflect.deleteProperty(process.env, 'AI_REVIEW_TRUSTED_ANALYZER_DIR');
 	rmSync(scratch, { recursive: true, force: true });
 });
 
@@ -49,6 +51,7 @@ describe('findBinary', () => {
 		mkdirSync(binDir, { recursive: true });
 		const fake = join(binDir, 'myfakebin');
 		writeFileSync(fake, '#!/bin/sh\necho ok\n');
+		chmodSync(fake, 0o755);
 		expect(findBinary(scratch, 'myfakebin')).toBe(fake);
 	});
 
@@ -57,7 +60,19 @@ describe('findBinary', () => {
 		mkdirSync(binDir, { recursive: true });
 		const fake = join(binDir, 'myfakebin.cmd');
 		writeFileSync(fake, '@echo off\r\necho ok\r\n');
+		chmodSync(fake, 0o755);
 		expect(findBinary(scratch, 'myfakebin')).toBe(fake);
+	});
+
+	it('can deny workspace binaries explicitly', () => {
+		const binDir = join(scratch, 'node_modules', '.bin');
+		mkdirSync(binDir, { recursive: true });
+		const fake = join(binDir, 'myfakebin');
+		writeFileSync(fake, '#!/bin/sh\necho ok\n');
+		chmodSync(fake, 0o755);
+		expect(
+			findBinary(scratch, 'myfakebin', { allowWorkspace: false })
+		).toBeNull();
 	});
 });
 
@@ -94,10 +109,12 @@ describe('runPrelint - no binary available', () => {
 	});
 
 	it('skips a tool when no changed files match its file filter', async () => {
+		process.env.AI_REVIEW_ALLOW_WORKSPACE_TOOLS = 'true';
 		const binDir = join(scratch, 'node_modules', '.bin');
 		mkdirSync(binDir, { recursive: true });
 		const fakeBin = join(binDir, 'biome');
 		writeFileSync(fakeBin, '#!/bin/sh\necho "[]"\n');
+		chmodSync(fakeBin, 0o755);
 		makeRepo({ 'main.py': 'x = 1' });
 
 		const result = await runPrelint({

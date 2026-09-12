@@ -1,0 +1,446 @@
+{
+  "audit_date": "2026-09-12",
+  "commit": "f59cfc34f385d89754814f7b3649b7004fe7faa4",
+  "source_file_count": 73,
+  "source_lines": 9326,
+  "files": [
+    {
+      "path": "src/adapter/engine-config.ts",
+      "lines": 38,
+      "sha256": "e6c3f09a17a959370d0d9cb3235ace22a37df4d359f7094c4474746d9a32795f",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/adapter/legacy-inputs.ts",
+      "lines": 290,
+      "sha256": "093875d4aa61a02f939b3e11f16d0c2cb1319841960327b8fd55f748d8bf31ae",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/adapter/pi-install.ts",
+      "lines": 24,
+      "sha256": "2b14528a9e683f8134b0a0e725ebe9ea19b365a1624ada0b5e7cb9f73b416fcb",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/adapter/runtime.ts",
+      "lines": 96,
+      "sha256": "277a9f5d4c5474eefadb43b1812bc9e9ab61e42bf02fc554e54ace66dacfeaf4",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/cli.ts",
+      "lines": 891,
+      "sha256": "497e2227549428087bce061f65f3503802abb3494cbe3c63ee93eeeb69eee378",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/context/diff.ts",
+      "lines": 77,
+      "sha256": "50b9b64d789bb5e6cc5610d3df4e4ebc4309a1d94624104dea94b8e83c0cd6b7",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/context/files.ts",
+      "lines": 75,
+      "sha256": "facd8fe75c0d2832aff494a20c29086a2940185ff006bbc708010db17498af80",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/context/pr.ts",
+      "lines": 160,
+      "sha256": "a333e81c10f126a484c907a14f340ca031a96d09e05a5c90c30e1288f99604f5",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/context/prelint.ts",
+      "lines": 580,
+      "sha256": "88b0d79537446a709e71cd4c376edd34f56fe39bc3f87748be58f69f35241337",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/context/repository.ts",
+      "lines": 47,
+      "sha256": "302f74cd615ccf7cfddfb9675f923a6da75dab31a9a49f4bcc08f2101e91866d",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/entry/pr-content.ts",
+      "lines": 16,
+      "sha256": "5b4eb982aab64223a34a6f3b8c445c354791eff2de9996b840af140de12f9cba",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/entry/pr-review.ts",
+      "lines": 17,
+      "sha256": "e97ebf2eaa5fb9c300b3251d481fd9b081128e08dedd8ef01f6532c351ec2f78",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/github/actor-filter.ts",
+      "lines": 65,
+      "sha256": "e7b1b20bda67604ed409a6c3346b8336e6094ff373f2898b9e4d34b0aa1f02dd",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/github/buffer.ts",
+      "lines": 190,
+      "sha256": "7d1688ba38804d94d4404904f1ea2004f5b7162e1dc11c733c600b41962c5e04",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/github/comments.ts",
+      "lines": 332,
+      "sha256": "9548be67f8711a433c3e1dfac5d10dc858f2311aeb29fe92945f375e31988a7d",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/github/permissions.ts",
+      "lines": 47,
+      "sha256": "3daa45f5fa71acffbc99eb5fa2c9488913d05084a04d0013c7c7107dc3513e47",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/github/pr-content.ts",
+      "lines": 93,
+      "sha256": "1175cb14181bccbe157e73b02213431f56a1bcc593fe3b2a844d678e341254b3",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/github/progress.ts",
+      "lines": 29,
+      "sha256": "acc60b7e12f94fe34313ec3ea9706fde76f3c3ec9fe5be2e05ae4a8da7cc577b",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/github/review.ts",
+      "lines": 642,
+      "sha256": "08cb8f2bec2c0155500f478002b1935001b5dca0691b00e36ec8136727b0195c",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/github/suggestions.ts",
+      "lines": 37,
+      "sha256": "720af99db43cef8f4a70e1f92da64b215607fbdb6ae6c7ec7667c5a800ac9744",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/harness/harness.ts",
+      "lines": 168,
+      "sha256": "f06a045e1e80bf3f02b609a063170532367d8066ec74645fc0e62e49f82b56c4",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/harness/pi.ts",
+      "lines": 343,
+      "sha256": "3a1aa88097273ef7ecec3997a0d49f32efb741717d06872a9642c40754f172e0",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/llm/config.ts",
+      "lines": 63,
+      "sha256": "2acecacff88f77a613d97f8c5b30d7d16cb4cb1e29b1014ccd140a52a73979fe",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/llm/openai-compatible.ts",
+      "lines": 184,
+      "sha256": "d2e23019146b2408dbf9a1b7aabed2007de2fb289123fb732586f9983938431c",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/llm/prompts/pr-content.ts",
+      "lines": 45,
+      "sha256": "90e42ede2135e2adbb4132617368b0a79b0241dace75d29e030e9dd6e445c039",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/llm/provider.ts",
+      "lines": 69,
+      "sha256": "f7ef58602cdcf4eb52402c2b5cd50b5ffad15c3b96f6c00a190b00edb09460b8",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/modes/detector.ts",
+      "lines": 67,
+      "sha256": "c19dcb5584f4b4494ff3197c4e19b0beb8e2d229b0b40b7a6506756c73732cf2",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/profiles/common.ts",
+      "lines": 192,
+      "sha256": "4791b20e300b2e3d1e0706408493f1d2c0299e46dde425f135618582643a00c6",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/profiles/index.ts",
+      "lines": 53,
+      "sha256": "904427a71a86dd0e90c81b978d84f91a321623fc4c66a758d0b3fe53c6c43dbe",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/profiles/rules.ts",
+      "lines": 148,
+      "sha256": "ad12edd67bf28bd5e942662eb92894209a5b1df9ed817274130e9131acb7df26",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/profiles/sql.ts",
+      "lines": 33,
+      "sha256": "1a1bff8e904da009e5d5aeff24414590d3e72f1d42df6084bbb53b507351826e",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/review/dedupe.ts",
+      "lines": 86,
+      "sha256": "b30162d0a3f3f0476060c6a92ae05f908634eb096b14722cb8f832367fa1590a",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/review/planner.ts",
+      "lines": 31,
+      "sha256": "d43293e2ff771edf0bf0ea7da7bff176992d85334049f2ca35096f824f5538df",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/review/reviewer.ts",
+      "lines": 162,
+      "sha256": "e1e541f55c4e637a973d7041f40f2605d5c3c8256382607b33023bcc636db77b",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/review/severity.ts",
+      "lines": 79,
+      "sha256": "8e1e8b3651968cae759ea080827baa8361088f3ea13db21a7b4fcfe31d160ae1",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/review/validation.ts",
+      "lines": 344,
+      "sha256": "c30322b1b26d85ec0caa5c22b23602b9be3c7cb420efed05217a1b65d32def6b",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/review/validator.ts",
+      "lines": 47,
+      "sha256": "55ee8658d2dbb31b3809f5645a5e2ad0b1565e7057b4b8f6beb82caf6f2b65dd",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/review/verify.ts",
+      "lines": 333,
+      "sha256": "0b3cc1dd97e274fb5bd23fedc1710043635540f40da5abf8188e3714bd197755",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/classifier/risk-classifier.ts",
+      "lines": 193,
+      "sha256": "c63b442153698e85a72c00c0aaf20e60e1fd052a18e8659e02c49ede3858f4e2",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/engines/pi-security-engine.ts",
+      "lines": 226,
+      "sha256": "bb9fc663eeb0709a548ac56474a4c66a224e93e87796556cb65b3948395279a3",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/engines/piolium-engine.ts",
+      "lines": 79,
+      "sha256": "4b4bbdb19f626f3121094cb995bebc62e66d4d6fd1e38450d558a30e2e77a268",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/engines/security-engine.ts",
+      "lines": 14,
+      "sha256": "561927bf4f370988d81d586ba9766b36777c09ffd72b3f14834fba20838e4cd5",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/findings/dedupe.ts",
+      "lines": 63,
+      "sha256": "617e8b4770ee6e318acb46c05af27a01ce12b18971f2a9822b6d9238f52c7279",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/findings/fingerprint.ts",
+      "lines": 39,
+      "sha256": "adfc4a73f3503b47176a4641927792a1a6e3bf6367c25d11caee101342e46b7f",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/findings/normalizer.ts",
+      "lines": 232,
+      "sha256": "a59f6227b70bbbf2eb5a8d2d296906a56812f9a702f751c51a504cbdc7d4ce46",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/orchestrator.ts",
+      "lines": 215,
+      "sha256": "5df7682481a74ac382c37be2f43c59edc9fa974cc5f1bc1edc3c8b38562f76c9",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/redaction/redactor.ts",
+      "lines": 86,
+      "sha256": "9847818e4455ce02d66a029fa20dfd7ebc1b58bb0edd7ff62cc72bc00b3ad084",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/reporters/audit-reporter.ts",
+      "lines": 98,
+      "sha256": "b61a27afa96addb6d61f55a9542fa98b96e38872ffd20df4da7c8869d74512ad",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/reporters/inline-reporter.ts",
+      "lines": 45,
+      "sha256": "eb56b48c274e58f29ff22244be65e001a98197d3669749763fb94dc1d104522b",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/reporters/security-publisher.ts",
+      "lines": 201,
+      "sha256": "909f1600daccf45c8051b9deaff8d1e9cc89f57b5215b7305115e2787bf02e86",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/reporters/sticky-summary.ts",
+      "lines": 94,
+      "sha256": "6ce4810e7e187596ec1d872e0367b1264f6bd93aa3e2244b935d534106f175b7",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/sarif/sarif-generator.ts",
+      "lines": 163,
+      "sha256": "d25e756810c087558d20404b851ea26ffa62f0a9f45894e17439089b72e471fe",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/scanners/dependency-scanner.ts",
+      "lines": 113,
+      "sha256": "542320815588b55f6bab43a3b7b2d45b03b949bc353819fc4e2e5db1d8a75273",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/scanners/scanner-engine.ts",
+      "lines": 88,
+      "sha256": "203b2440171f17088a1d86df041ed1977ac12f15c60f4324cbded63ddfccfd55",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/scanners/secret-scanner.ts",
+      "lines": 121,
+      "sha256": "2c46c46ff891f2a5f4da863c3df7e5ad7540a4d6a8421338869dc5d031569372",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/scanners/semgrep.ts",
+      "lines": 201,
+      "sha256": "9f04db288d941737db4759f8a8698ce6e2f89ed4d34e206a72a03fd8ba315232",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/skills/registry.ts",
+      "lines": 151,
+      "sha256": "9a3e8e6088041deae3672ab742b49209db839f463082e37bb8dd8b927503dbf8",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/skills/selector.ts",
+      "lines": 40,
+      "sha256": "37bf4b2df2aa4376a35e36c93ea64a3202b901113259368de21f2525648b4955",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/types.ts",
+      "lines": 174,
+      "sha256": "6c2136be3765854454aca81b4b201b17cc98ca0fcbbb55eccdef378e2cd0967d",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/security/validators/quality-gate.ts",
+      "lines": 110,
+      "sha256": "f7f86f5587b269bec876ee939730e5c8ac005b4a7d909877055f13a63d59793c",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/skills/javascript.ts",
+      "lines": 11,
+      "sha256": "c4b6810096068fc92288c14bb185c32a80e8de2cd3ba31acf365d0b6fb9e3504",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/skills/kotlin.ts",
+      "lines": 11,
+      "sha256": "84aeaacdccded87ed2b018f33ec6b534d872d41d2380ddb03c84e5a1fb5d3be0",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/skills/nestjs.ts",
+      "lines": 11,
+      "sha256": "2d629774724ec75774ab6d71d04843f1de5257012b57a83fa148b07bc3ae081b",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/skills/nextjs.ts",
+      "lines": 11,
+      "sha256": "7f6ffd1b2e0c47f647a0fb02458b7f35766eae08092422258374389e2e1e8145",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/skills/nodejs.ts",
+      "lines": 11,
+      "sha256": "901bdcf93358b59f9200d5d5c7d01e454426ba18a8df3d67849c35a5027593d4",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/skills/python.ts",
+      "lines": 11,
+      "sha256": "f18817ae363b7e4e649ba6fa6ed533b057161c2f1f45c6894abb1fe80941b7d5",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/skills/react.ts",
+      "lines": 11,
+      "sha256": "a091d51226d47cd354b168c4b471a24f407fdd4469c3563cc11d20de1c790eb9",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/skills/registry.ts",
+      "lines": 43,
+      "sha256": "bc395632ae12e3ca11e8394ec0b498627151cb2f5e7f7deb005eb5b5eb930e9d",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/skills/swift.ts",
+      "lines": 11,
+      "sha256": "85a017224ef15a4e272dbf574b2c1928c8141a315718d65acc51f15854ce0a12",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/skills/typescript.ts",
+      "lines": 11,
+      "sha256": "6ab451dfc3d456dd893761e7e7991f88a3312e9040aa29defb78cd3f97b71657",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/types/context.ts",
+      "lines": 80,
+      "sha256": "a1ca2e36d7c3582bf508794c74fa33f5eb05913377b443a8fb2c8b7bcaff5357",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/types/finding.ts",
+      "lines": 150,
+      "sha256": "c4792fbd446a7f4ba7818c342e41d34cb96bd36e1e6aaa87b2417ef70fc32410",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    },
+    {
+      "path": "src/types/reply.ts",
+      "lines": 15,
+      "sha256": "8044104ed4dcdec3b1513006b9fe750d744a4b981023205e4539a83957547960",
+      "review": "manual source inspection; grouped subsystem assessment in report"
+    }
+  ]
+}

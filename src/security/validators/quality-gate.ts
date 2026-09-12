@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { isAbsolute, relative, resolve } from 'node:path';
+import { isChangedLine } from '../../context/diff.js';
 import { deduplicateFindings } from '../findings/dedupe.js';
 import type {
 	SecurityConfidence,
@@ -41,8 +44,42 @@ export function applyQualityGate(
 	const deduped = deduplicateFindings(candidates);
 
 	for (const finding of deduped) {
+		const fileName = finding.file?.trim();
+		const startLine = finding.startLine;
+		const endLine = finding.endLine ?? startLine;
+		const absolute = fileName ? resolve(context.repositoryPath, fileName) : '';
+		const rel = fileName ? relative(context.repositoryPath, absolute) : '';
+		if (
+			!fileName ||
+			isAbsolute(fileName) ||
+			rel.startsWith('..') ||
+			isAbsolute(rel) ||
+			typeof startLine !== 'number' ||
+			!Number.isInteger(startLine) ||
+			startLine < 1 ||
+			typeof endLine !== 'number' ||
+			!Number.isInteger(endLine) ||
+			endLine < startLine ||
+			(context.scope === 'audit' && !existsSync(absolute))
+		) {
+			finding.status = 'rejected';
+			rejected.push(finding);
+			continue;
+		}
+		if (
+			context.scope !== 'audit' &&
+			context.changedFiles.some((f) => f.filename === fileName)
+		) {
+			const changed = context.changedFiles.find((f) => f.filename === fileName);
+			if (changed?.patch && !isChangedLine(changed.patch, startLine)) {
+				finding.status = 'rejected';
+				rejected.push(finding);
+				continue;
+			}
+		}
 		// 1. File existence / PR boundary check (if file is provided)
 		if (
+			context.scope !== 'audit' &&
 			finding.file &&
 			allowedFiles.size > 0 &&
 			!allowedFiles.has(finding.file)

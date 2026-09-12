@@ -82,6 +82,63 @@ describe('fetchPrContext', () => {
 		expect(context.diff.files.length).toBe(30);
 	});
 
+	it('marks the diff when the pagination safety cap is reached', async () => {
+		const { octokit } = makeOctokit(
+			Array.from({ length: 4 }, (_, i) => ({
+				filename: `f${i}.ts`,
+				status: 'modified',
+				additions: 1,
+				deletions: 0,
+				changes: 1,
+			}))
+		);
+		octokit.rest.pulls.listFiles = vi.fn(
+			async ({ page }: { page?: number }) => ({
+				data:
+					page === 1
+						? [
+								{
+									filename: 'f0.ts',
+									status: 'modified',
+									additions: 1,
+									deletions: 0,
+									changes: 1,
+								},
+								{
+									filename: 'f1.ts',
+									status: 'modified',
+									additions: 1,
+									deletions: 0,
+									changes: 1,
+								},
+							]
+						: [
+								{
+									filename: 'f2.ts',
+									status: 'modified',
+									additions: 1,
+									deletions: 0,
+									changes: 1,
+								},
+								{
+									filename: 'f3.ts',
+									status: 'modified',
+									additions: 1,
+									deletions: 0,
+									changes: 1,
+								},
+							],
+			})
+		);
+		const context = await fetchPrContext(
+			octokit,
+			{ owner: 'o', repo: 'r' },
+			1,
+			{ pageSize: 2, maxPages: 2 }
+		);
+		expect(context.diff.filesTruncated).toBe(true);
+	});
+
 	it('sums additions and deletions across files', async () => {
 		const { octokit } = makeOctokit([
 			{

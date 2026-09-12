@@ -29,6 +29,7 @@ export async function runSecurityWorkflow(
 	options: SecurityOptions
 ): Promise<SecurityResult> {
 	const startTime = Date.now();
+	context.scope = options.profile === 'diff' ? 'diff' : 'audit';
 
 	// 1. Pre-LLM Risk Classification
 	const riskClassification = classifyPrRisk(context.changedFiles);
@@ -49,6 +50,7 @@ export async function runSecurityWorkflow(
 
 	// 4. Run Security Reasoning via selected engine
 	let engineCandidates: SecurityFinding[] = [];
+	let engineStatus: 'success' | 'failed' = 'success';
 	try {
 		if (options.profile === 'diff') {
 			engineCandidates = await engine.diff(context);
@@ -63,8 +65,10 @@ export async function runSecurityWorkflow(
 			);
 		}
 	} catch {
-		// If reasoning engine fails, proceed with static scanner findings
+		// Static findings remain useful, but a failed reasoning engine is never
+		// equivalent to a clean audit and must be visible to policy/reporters.
 		engineCandidates = [];
+		engineStatus = 'failed';
 	}
 
 	const allCandidates = [...scannerCandidates, ...engineCandidates];
@@ -131,6 +135,10 @@ export async function runSecurityWorkflow(
 		failThresholdReached,
 		scanners: scannerExecutions,
 		domains: riskClassification.domains,
+		engineStatus,
+		incomplete:
+			engineStatus === 'failed' ||
+			scannerExecutions.some((s) => s.status === 'failed'),
 	};
 
 	// 10. Generate Summaries & Reports
@@ -141,6 +149,9 @@ export async function runSecurityWorkflow(
 		findings: validatedFindings,
 		scanners: scannerExecutions,
 		domains: riskClassification.domains,
+		incomplete:
+			engineStatus === 'failed' ||
+			scannerExecutions.some((s) => s.status === 'failed'),
 		model: options.model,
 		durationMs: Date.now() - startTime,
 	});

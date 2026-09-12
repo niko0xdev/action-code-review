@@ -1,4 +1,5 @@
 import { commentIdentityBody, normalizeCommentId } from '../review/dedupe.js';
+import { redactSecrets } from '../security/redaction/redactor.js';
 import type {
 	Finding,
 	ReviewDiagnostics,
@@ -46,12 +47,16 @@ const CATEGORY_LABEL: Record<string, string> = {
 export function buildFindingBody(finding: Finding): string {
 	const safeFinding = {
 		...finding,
-		title: mdSafe(finding.title),
-		description: mdSafe(finding.description),
-		impact: mdSafe(finding.impact),
-		suggestion: finding.suggestion ? mdSafe(finding.suggestion) : undefined,
+		title: mdSafe(redactSecrets(finding.title)),
+		description: mdSafe(redactSecrets(finding.description)),
+		impact: mdSafe(redactSecrets(finding.impact)),
+		suggestion: finding.suggestion
+			? mdSafe(redactSecrets(finding.suggestion))
+			: undefined,
+		// Replacement is code inside a fenced suggestion block. Escaping it as
+		// HTML text changes the bytes GitHub applies (e.g. `<T>` or `&&`).
 		replacement: finding.replacement
-			? mdSafe(finding.replacement)
+			? redactSecrets(finding.replacement)
 			: finding.replacement,
 	};
 	const body = commentIdentityBody(safeFinding);
@@ -75,6 +80,7 @@ type SummaryResult = {
 	risk: RiskLevel;
 	counts: { critical: number; high: number; medium: number; low: number };
 	filesReviewed: string[];
+	filesTruncated?: boolean;
 	summary?: string;
 	findings?: Finding[];
 	model?: string;
@@ -84,6 +90,7 @@ type SummaryResult = {
 	toolFindings?: ToolFinding[];
 	diagnostics?: ReviewDiagnostics;
 	ruleCoverage?: RuleCoverage;
+	reviewStatus?: 'complete' | 'incomplete' | 'failed' | 'stale';
 };
 
 function hasBlockingFindings(
@@ -98,8 +105,11 @@ function hasBlockingFindings(
 export function formatDecisionBanner(
 	risk: RiskLevel,
 	findings: Finding[] = [],
-	counts: SummaryResult['counts'] = { critical: 0, high: 0, medium: 0, low: 0 }
+	counts: SummaryResult['counts'] = { critical: 0, high: 0, medium: 0, low: 0 },
+	reviewStatus: SummaryResult['reviewStatus'] = 'complete'
 ): string {
+	if (reviewStatus !== 'complete')
+		return '> ⚠️ **REVIEW INCOMPLETE — NO APPROVAL**';
 	if (
 		risk === 'critical' ||
 		findings.some((finding) => finding.severity === 'critical')
@@ -122,7 +132,9 @@ export function buildChecksTable(
 			(categoryCounts.get(finding.category) ?? 0) + 1
 		);
 	const rulesCell = ruleCoverage
-		? `${ruleCoverage.passed}/${ruleCoverage.total} passed`
+		? ruleCoverage.assessed !== undefined
+			? `${ruleCoverage.assessed}/${ruleCoverage.total} assessed`
+			: `${ruleCoverage.passed}/${ruleCoverage.total} passed`
 		: 'N/A';
 	const failedCell =
 		ruleCoverage && ruleCoverage.failedRules.length > 0
@@ -181,6 +193,9 @@ function findingLines(findings: Finding[] = []): string[] {
 /** Render rich PR summary while keeping the legacy heading recognizable. */
 export function buildSummaryBody(result: SummaryResult): string {
 	const findings = result.findings ?? [];
+	const reviewStatus =
+		result.reviewStatus ??
+		(result.diagnostics?.failedGroups ? 'incomplete' : 'complete');
 	const blocking = hasBlockingFindings(findings, result.counts);
 	const reviewed = result.filesReviewed.length;
 	const excluded =
@@ -191,22 +206,29 @@ export function buildSummaryBody(result: SummaryResult): string {
 		result.filesTotal !== undefined || result.filesExcluded !== undefined
 			? `**Files reviewed:** ${reviewed} of ${total} (${excluded} excluded by filter)`
 			: `**Files reviewed:** ${reviewed}`;
-	const decision = blocking
-		? result.risk === 'critical' ||
-			findings.some((finding) => finding.severity === 'critical')
-			? '❌ **Changes requested** — critical findings block merge.'
-			: `❌ **Changes requested** — ${findings.filter((finding) => finding.severity !== 'low').length || result.counts.critical + result.counts.high + result.counts.medium} blocking finding(s). Please address before merge.`
-		: '✅ **All clear** — no blocking findings. Approving.';
+	const truncationNotice = result.filesTruncated
+		? '\n> ⚠️ **FILE LIST TRUNCATED** — GitHub pagination reached its safety limit; this review does not cover every changed file.\n'
+		: '';
+	const decision =
+		reviewStatus !== 'complete'
+			? `⚠️ **Review incomplete** — status: ${reviewStatus}. No clean approval is implied; rerun after the failed or stale scope is fixed.`
+			: blocking
+				? result.risk === 'critical' ||
+					findings.some((finding) => finding.severity === 'critical')
+					? '❌ **Changes requested** — critical findings block merge.'
+					: `❌ **Changes requested** — ${findings.filter((finding) => finding.severity !== 'low').length || result.counts.critical + result.counts.high + result.counts.medium} blocking finding(s). Please address before merge.`
+				: '✅ **All clear** — no blocking findings. Approving.';
 	const footer = footerComment(
 		result.model ?? process.env.OPENAI_API_MODEL ?? 'unknown'
 	);
 	const lines = [
 		'# ✨ AI Code Review',
 		'',
-		formatDecisionBanner(result.risk, findings, result.counts),
+		formatDecisionBanner(result.risk, findings, result.counts, reviewStatus),
 		'',
 		`**Risk:** ${RISK_LABEL[result.risk]}`,
 		`**Duration:** ${formatDuration(result.durationMs)}`,
+		truncationNotice,
 		filesLine,
 		`**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,
 	];

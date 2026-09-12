@@ -52,6 +52,7 @@ export interface VerifyPassResult {
 	skipped: boolean;
 	skipReason?: string;
 	estimatedCostUsd: number;
+	verificationStatus: 'complete' | 'error' | 'incomplete' | 'skipped';
 }
 
 const DEFAULT_BUDGET_USD = 0.5;
@@ -145,6 +146,7 @@ export async function runVerifyPass(
 			skipped: true,
 			skipReason: 'no high/critical findings to verify',
 			estimatedCostUsd: 0,
+			verificationStatus: 'skipped',
 		};
 	}
 
@@ -162,6 +164,7 @@ export async function runVerifyPass(
 			skipped: true,
 			skipReason: `estimated cost $${estimatedCostUsd.toFixed(3)} exceeds budget $${budgetUsd}`,
 			estimatedCostUsd,
+			verificationStatus: 'skipped',
 		};
 	}
 
@@ -184,10 +187,22 @@ export async function runVerifyPass(
 				error instanceof Error ? error.message : String(error)
 			}`,
 			estimatedCostUsd,
+			verificationStatus: 'error',
 		};
 	}
 
 	const parsed = parseVerifyOutput(raw, highCritical);
+	if (parsed.status !== 'complete') {
+		return {
+			findings: options.findings,
+			verifiedCount: 0,
+			droppedCount: 0,
+			skipped: true,
+			skipReason: parsed.reason,
+			estimatedCostUsd,
+			verificationStatus: parsed.status,
+		};
+	}
 
 	// Build verified output: keep highCritical that survived verification,
 	// plus all other findings (unchanged).
@@ -203,6 +218,7 @@ export async function runVerifyPass(
 		droppedCount: highCritical.length - parsed.verified.length,
 		skipped: false,
 		estimatedCostUsd,
+		verificationStatus: 'complete',
 	};
 }
 
@@ -247,7 +263,13 @@ export async function applyVerifyPass(
 			...result.diagnostics,
 			verifySkippedReason: outcome.skipReason,
 			verifyCostUsd: outcome.estimatedCostUsd,
+			verifyStatus: outcome.verificationStatus,
 		};
+		if (
+			outcome.verificationStatus === 'error' ||
+			outcome.verificationStatus === 'incomplete'
+		)
+			result.reviewStatus = 'incomplete';
 		return;
 	}
 	result.findings = outcome.findings;
@@ -258,6 +280,7 @@ export async function applyVerifyPass(
 		verifyVerified: outcome.verifiedCount,
 		verifyDropped: outcome.droppedCount,
 		verifyCostUsd: outcome.estimatedCostUsd,
+		verifyStatus: outcome.verificationStatus,
 	};
 }
 
@@ -299,26 +322,56 @@ interface VerifyOutput {
 function parseVerifyOutput(
 	raw: string,
 	expected: Finding[]
-): { verified: Finding[] } {
+): {
+	verified: Finding[];
+	status: 'complete' | 'error' | 'incomplete';
+	reason?: string;
+} {
 	// Best-effort JSON extraction. The LLM may include prose; we look for
 	// the first {...} block.
 	const jsonStart = raw.indexOf('{');
 	const jsonEnd = raw.lastIndexOf('}');
-	if (jsonStart < 0 || jsonEnd <= jsonStart) return { verified: [] };
+	if (jsonStart < 0 || jsonEnd <= jsonStart)
+		return {
+			verified: [],
+			status: 'error',
+			reason: 'verify output was not JSON; findings retained',
+		};
 	let parsed: VerifyOutput | null = null;
 	try {
 		parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
 	} catch {
-		return { verified: [] };
+		return {
+			verified: [],
+			status: 'error',
+			reason: 'verify output JSON was malformed; findings retained',
+		};
 	}
-	if (!parsed?.findings?.length) return { verified: [] };
+	if (
+		!parsed ||
+		!Array.isArray(parsed.findings) ||
+		parsed.findings.length === 0
+	)
+		return {
+			verified: [],
+			status: 'incomplete',
+			reason:
+				'verify output did not include a verdict for each candidate; findings retained',
+		};
 
 	// Coerce + filter to verified entries.
 	const verified: Finding[] = [];
 	const expectedByKey = new Map<string, Finding>();
 	for (const f of expected) expectedByKey.set(identifyFinding(f), f);
+	const seen = new Set<string>();
 	for (const item of parsed.findings) {
-		if (!item || item.verified !== true) continue;
+		if (!item || typeof item.verified !== 'boolean')
+			return {
+				verified: [],
+				status: 'incomplete',
+				reason:
+					'verify output contained an incomplete verdict; findings retained',
+			};
 		// Find original via identity.
 		const candidate: Finding = {
 			...expected[0],
@@ -326,8 +379,21 @@ function parseVerifyOutput(
 		} as Finding;
 		const key = identifyFinding(candidate);
 		const original = expectedByKey.get(key);
-		if (!original) continue;
-		verified.push(original);
+		if (!original)
+			return {
+				verified: [],
+				status: 'incomplete',
+				reason:
+					'verify output referenced an unknown candidate; findings retained',
+			};
+		seen.add(key);
+		if (item.verified) verified.push(original);
 	}
-	return { verified };
+	if (seen.size !== expectedByKey.size)
+		return {
+			verified: [],
+			status: 'incomplete',
+			reason: 'verify output omitted one or more candidates; findings retained',
+		};
+	return { verified, status: 'complete' };
 }

@@ -32560,9 +32560,8 @@ class OpenAiCompatibleProvider {
         };
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-        let response;
         try {
-            response = await this.fetchImpl(url, {
+            const response = await this.fetchImpl(url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -32571,29 +32570,33 @@ class OpenAiCompatibleProvider {
                 body: JSON.stringify(body),
                 signal: controller.signal,
             });
+            if (!response.ok) {
+                const detail = (await safeErrorDetail(response)).replaceAll(this.config.apiKey, '[redacted]');
+                throw new LlmError(`LLM endpoint returned ${response.status}: ${detail}`, response.status);
+            }
+            // Keep the same deadline through response body parsing. A server can
+            // send headers and then stall indefinitely on a large JSON body.
+            const payload = (await response.json());
+            const choice = payload.choices?.[0];
+            return {
+                content: stripReasoningArtifacts(choice?.message?.content, choice?.message?.reasoning_content),
+                finishReason: choice?.finish_reason,
+                usage: payload.usage
+                    ? {
+                        inputTokens: payload.usage.prompt_tokens ?? 0,
+                        outputTokens: payload.usage.completion_tokens ?? 0,
+                    }
+                    : undefined,
+            };
         }
         catch (error) {
+            if (error instanceof LlmError)
+                throw error;
             throw new LlmError(`LLM request failed: ${error instanceof Error ? error.message : String(error)}`);
         }
         finally {
             clearTimeout(timer);
         }
-        if (!response.ok) {
-            const detail = (await safeErrorDetail(response)).replaceAll(this.config.apiKey, '[redacted]');
-            throw new LlmError(`LLM endpoint returned ${response.status}: ${detail}`, response.status);
-        }
-        const payload = (await response.json());
-        const choice = payload.choices?.[0];
-        return {
-            content: stripReasoningArtifacts(choice?.message?.content, choice?.message?.reasoning_content),
-            finishReason: choice?.finish_reason,
-            usage: payload.usage
-                ? {
-                    inputTokens: payload.usage.prompt_tokens ?? 0,
-                    outputTokens: payload.usage.completion_tokens ?? 0,
-                }
-                : undefined,
-        };
     }
     /**
      * Gateways that reject the "developer" role get everything mapped to
@@ -35923,13 +35926,14 @@ function prioritizeFiles(files, maxFiles) {
 async function fetchPrContext(octokit, repository, prNumber, options = {}) {
     const pageSize = options.pageSize ?? 100;
     const maxPages = options.maxPages ?? 10;
-    const [{ data: pr }, files] = await Promise.all([
+    const [{ data: pr }, fileResult] = await Promise.all([
         octokit.rest.pulls.get({
             ...repository,
             pull_number: prNumber,
         }),
         fetchAllFiles(octokit, repository, prNumber, pageSize, maxPages),
     ]);
+    const files = fileResult.files;
     const pullRequest = {
         number: pr.number,
         title: pr.title,
@@ -35952,6 +35956,7 @@ async function fetchPrContext(octokit, repository, prNumber, options = {}) {
     }));
     const diff = {
         files: changedFiles,
+        ...(fileResult.truncated ? { filesTruncated: true } : {}),
         totalAdditions: changedFiles.reduce((sum, f) => sum + f.additions, 0),
         totalDeletions: changedFiles.reduce((sum, f) => sum + f.deletions, 0),
     };
@@ -35969,9 +35974,9 @@ async function fetchAllFiles(octokit, repository, prNumber, pageSize, maxPages) 
         const data = await fetchFilePage(octokit, repository, prNumber, pageSize, page);
         all.push(...data);
         if (data.length < pageSize)
-            break;
+            return { files: all, truncated: false };
     }
-    return all;
+    return { files: all, truncated: true };
 }
 async function fetchFilePage(octokit, repository, prNumber, pageSize, page) {
     for (let attempt = 0;; attempt += 1) {
@@ -36015,23 +36020,64 @@ var external_node_fs_ = __nccwpck_require__(3024);
  *
  * Missing binaries are skipped, never errors. Opt-in via
  * `AI_REVIEW_ENABLE_PRELINT=true` (cannot add a new action input - the
- * V1 contract in docs/v1-interface-contract.md is frozen).
+ * V1 contract in docs/v1-interface-contract.md is frozen). Workspace-local
+ * binaries require `AI_REVIEW_ALLOW_WORKSPACE_TOOLS=true`; otherwise use a
+ * pinned directory via `AI_REVIEW_TRUSTED_ANALYZER_DIR`.
  */
 
 
 
 const PRELINT_TIMEOUT_MS = 60_000;
 const MAX_FINDINGS_PER_TOOL = 100;
-function findBinary(repositoryPath, binary) {
+function findBinary(repositoryPath, binary, options = { allowWorkspace: true }) {
     const candidates = [
-        (0,external_node_path_.join)(repositoryPath, 'node_modules', '.bin', binary),
-        (0,external_node_path_.join)(repositoryPath, 'node_modules', '.bin', `${binary}.cmd`),
+        ...(process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR
+            ? [
+                (0,external_node_path_.join)(process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR, binary),
+                (0,external_node_path_.join)(process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR, `${binary}.cmd`),
+            ]
+            : []),
+        ...(options.allowWorkspace === false
+            ? []
+            : [
+                (0,external_node_path_.join)(repositoryPath, 'node_modules', '.bin', binary),
+                (0,external_node_path_.join)(repositoryPath, 'node_modules', '.bin', `${binary}.cmd`),
+            ]),
     ];
+    const allowWorkspace = options.allowWorkspace !== false;
     for (const candidate of candidates) {
-        if ((0,external_node_fs_.existsSync)(candidate))
-            return candidate;
+        if (!(0,external_node_fs_.existsSync)(candidate))
+            continue;
+        try {
+            const resolvedRoot = (0,external_node_fs_.realpathSync)(repositoryPath);
+            const resolvedCandidate = (0,external_node_fs_.realpathSync)(candidate);
+            const rel = (0,external_node_path_.relative)(resolvedRoot, resolvedCandidate);
+            const trustedRoot = process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR
+                ? (0,external_node_fs_.realpathSync)(process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR)
+                : null;
+            const isTrustedCandidate = trustedRoot !== null &&
+                (resolvedCandidate === trustedRoot ||
+                    resolvedCandidate.startsWith(`${trustedRoot}${external_node_path_.sep}`));
+            // Never execute a symlink that escapes the checked-out repository and
+            // never accept a directory or non-executable regular file as a tool.
+            if ((!isTrustedCandidate && !allowWorkspace) ||
+                (!isTrustedCandidate &&
+                    ((0,external_node_path_.isAbsolute)(rel) || rel === '..' || rel.startsWith(`..${external_node_path_.sep}`))))
+                continue;
+            const stat = (0,external_node_fs_.statSync)(resolvedCandidate);
+            if (stat.isFile() && (stat.mode & 0o111) !== 0)
+                return candidate;
+        }
+        catch {
+            // A disappearing or unreadable candidate is treated as unavailable.
+        }
     }
     return null;
+}
+function configuredBinary(repositoryPath, binary) {
+    return findBinary(repositoryPath, binary, {
+        allowWorkspace: process.env.AI_REVIEW_ALLOW_WORKSPACE_TOOLS === 'true',
+    });
 }
 function spawnCollect(cmd, args, options) {
     return new Promise((resolve, reject) => {
@@ -36072,11 +36118,11 @@ function spawnCollect(cmd, args, options) {
 }
 const biomeRunner = {
     id: 'biome',
-    isAvailable: (repo) => findBinary(repo, 'biome') !== null,
+    isAvailable: (repo) => configuredBinary(repo, 'biome') !== null,
     matches: (file) => /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(file.filename) &&
         !file.filename.includes('node_modules/'),
     run: async ({ repositoryPath, files, timeoutMs }) => {
-        const binary = findBinary(repositoryPath, 'biome');
+        const binary = configuredBinary(repositoryPath, 'biome');
         if (!binary)
             return [];
         const fileList = files.map((f) => f.filename);
@@ -36086,10 +36132,10 @@ const biomeRunner = {
 };
 const ruffRunner = {
     id: 'ruff',
-    isAvailable: (repo) => findBinary(repo, 'ruff') !== null,
+    isAvailable: (repo) => configuredBinary(repo, 'ruff') !== null,
     matches: (file) => /\.py$/i.test(file.filename),
     run: async ({ repositoryPath, files, timeoutMs }) => {
-        const binary = findBinary(repositoryPath, 'ruff');
+        const binary = configuredBinary(repositoryPath, 'ruff');
         if (!binary)
             return [];
         const fileList = files.map((f) => f.filename);
@@ -36104,10 +36150,10 @@ const ruffRunner = {
  */
 const swiftlintRunner = {
     id: 'swiftlint',
-    isAvailable: (repo) => findBinary(repo, 'swiftlint') !== null,
+    isAvailable: (repo) => configuredBinary(repo, 'swiftlint') !== null,
     matches: (file) => /\.swift$/i.test(file.filename),
     run: async ({ repositoryPath, files, timeoutMs }) => {
-        const binary = findBinary(repositoryPath, 'swiftlint');
+        const binary = configuredBinary(repositoryPath, 'swiftlint');
         if (!binary)
             return [];
         const fileList = files.map((f) => f.filename);
@@ -36123,10 +36169,10 @@ const swiftlintRunner = {
  */
 const ktlintRunner = {
     id: 'ktlint',
-    isAvailable: (repo) => findBinary(repo, 'ktlint') !== null,
+    isAvailable: (repo) => configuredBinary(repo, 'ktlint') !== null,
     matches: (file) => /\.(kt|kts)$/i.test(file.filename) && !file.filename.includes('/build/'),
     run: async ({ repositoryPath, files, timeoutMs }) => {
-        const binary = findBinary(repositoryPath, 'ktlint');
+        const binary = configuredBinary(repositoryPath, 'ktlint');
         if (!binary)
             return [];
         const fileList = files.map((f) => f.filename);
@@ -36141,10 +36187,10 @@ const ktlintRunner = {
  */
 const sqlfluffRunner = {
     id: 'sqlfluff',
-    isAvailable: (repo) => findBinary(repo, 'sqlfluff') !== null,
+    isAvailable: (repo) => configuredBinary(repo, 'sqlfluff') !== null,
     matches: (file) => /\.sql$/i.test(file.filename),
     run: async ({ repositoryPath, files, timeoutMs }) => {
-        const binary = findBinary(repositoryPath, 'sqlfluff');
+        const binary = configuredBinary(repositoryPath, 'sqlfluff');
         if (!binary)
             return [];
         const fileList = files.map((f) => f.filename);
@@ -36656,7 +36702,10 @@ function dedupe_normalizeCommentId(finding) {
         .slice(0, 12);
 }
 
+// EXTERNAL MODULE: ./src/security/redaction/redactor.ts
+var redactor = __nccwpck_require__(8759);
 ;// CONCATENATED MODULE: ./src/github/comments.ts
+
 
 function mdSafe(value) {
     return value
@@ -36693,12 +36742,16 @@ const CATEGORY_LABEL = {
 function comments_buildFindingBody(finding) {
     const safeFinding = {
         ...finding,
-        title: mdSafe(finding.title),
-        description: mdSafe(finding.description),
-        impact: mdSafe(finding.impact),
-        suggestion: finding.suggestion ? mdSafe(finding.suggestion) : undefined,
+        title: mdSafe((0,redactor/* redactSecrets */.f)(finding.title)),
+        description: mdSafe((0,redactor/* redactSecrets */.f)(finding.description)),
+        impact: mdSafe((0,redactor/* redactSecrets */.f)(finding.impact)),
+        suggestion: finding.suggestion
+            ? mdSafe((0,redactor/* redactSecrets */.f)(finding.suggestion))
+            : undefined,
+        // Replacement is code inside a fenced suggestion block. Escaping it as
+        // HTML text changes the bytes GitHub applies (e.g. `<T>` or `&&`).
         replacement: finding.replacement
-            ? mdSafe(finding.replacement)
+            ? (0,redactor/* redactSecrets */.f)(finding.replacement)
             : finding.replacement,
     };
     const body = commentIdentityBody(safeFinding);
@@ -36718,7 +36771,9 @@ function hasBlockingFindings(findings, counts) {
         ? findings.some((finding) => finding.severity !== 'low')
         : counts.critical + counts.high + counts.medium > 0;
 }
-function formatDecisionBanner(risk, findings = [], counts = { critical: 0, high: 0, medium: 0, low: 0 }) {
+function formatDecisionBanner(risk, findings = [], counts = { critical: 0, high: 0, medium: 0, low: 0 }, reviewStatus = 'complete') {
+    if (reviewStatus !== 'complete')
+        return '> ⚠️ **REVIEW INCOMPLETE — NO APPROVAL**';
     if (risk === 'critical' ||
         findings.some((finding) => finding.severity === 'critical'))
         return '> 🚨 **CRITICAL — merge blocked**';
@@ -36731,7 +36786,9 @@ function buildChecksTable(findings, _counts, ruleCoverage) {
     for (const finding of findings)
         categoryCounts.set(finding.category, (categoryCounts.get(finding.category) ?? 0) + 1);
     const rulesCell = ruleCoverage
-        ? `${ruleCoverage.passed}/${ruleCoverage.total} passed`
+        ? ruleCoverage.assessed !== undefined
+            ? `${ruleCoverage.assessed}/${ruleCoverage.total} assessed`
+            : `${ruleCoverage.passed}/${ruleCoverage.total} passed`
         : 'N/A';
     const failedCell = ruleCoverage && ruleCoverage.failedRules.length > 0
         ? ruleCoverage.failedRules
@@ -36782,6 +36839,8 @@ function findingLines(findings = []) {
 /** Render rich PR summary while keeping the legacy heading recognizable. */
 function buildSummaryBody(result) {
     const findings = result.findings ?? [];
+    const reviewStatus = result.reviewStatus ??
+        (result.diagnostics?.failedGroups ? 'incomplete' : 'complete');
     const blocking = hasBlockingFindings(findings, result.counts);
     const reviewed = result.filesReviewed.length;
     const excluded = result.filesExcluded ??
@@ -36790,20 +36849,26 @@ function buildSummaryBody(result) {
     const filesLine = result.filesTotal !== undefined || result.filesExcluded !== undefined
         ? `**Files reviewed:** ${reviewed} of ${total} (${excluded} excluded by filter)`
         : `**Files reviewed:** ${reviewed}`;
-    const decision = blocking
-        ? result.risk === 'critical' ||
-            findings.some((finding) => finding.severity === 'critical')
-            ? '❌ **Changes requested** — critical findings block merge.'
-            : `❌ **Changes requested** — ${findings.filter((finding) => finding.severity !== 'low').length || result.counts.critical + result.counts.high + result.counts.medium} blocking finding(s). Please address before merge.`
-        : '✅ **All clear** — no blocking findings. Approving.';
+    const truncationNotice = result.filesTruncated
+        ? '\n> ⚠️ **FILE LIST TRUNCATED** — GitHub pagination reached its safety limit; this review does not cover every changed file.\n'
+        : '';
+    const decision = reviewStatus !== 'complete'
+        ? `⚠️ **Review incomplete** — status: ${reviewStatus}. No clean approval is implied; rerun after the failed or stale scope is fixed.`
+        : blocking
+            ? result.risk === 'critical' ||
+                findings.some((finding) => finding.severity === 'critical')
+                ? '❌ **Changes requested** — critical findings block merge.'
+                : `❌ **Changes requested** — ${findings.filter((finding) => finding.severity !== 'low').length || result.counts.critical + result.counts.high + result.counts.medium} blocking finding(s). Please address before merge.`
+            : '✅ **All clear** — no blocking findings. Approving.';
     const footer = footerComment(result.model ?? process.env.OPENAI_API_MODEL ?? 'unknown');
     const lines = [
         '# ✨ AI Code Review',
         '',
-        formatDecisionBanner(result.risk, findings, result.counts),
+        formatDecisionBanner(result.risk, findings, result.counts, reviewStatus),
         '',
         `**Risk:** ${RISK_LABEL[result.risk]}`,
         `**Duration:** ${formatDuration(result.durationMs)}`,
+        truncationNotice,
         filesLine,
         `**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,
     ];
@@ -37103,6 +37168,26 @@ function buildReviewPayload(findings, headSha, options = {}) {
 }
 async function publishReview(octokit, params) {
     const { owner, repo, prNumber, headSha, result } = params;
+    if (params.recheckHead !== false &&
+        typeof octokit.rest.pulls.get === 'function') {
+        try {
+            const current = await octokit.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: prNumber,
+            });
+            if (current.data.head.sha !== headSha) {
+                result.reviewStatus = 'stale';
+                lib_core.warning(`[review] PR head changed during review (${headSha} -> ${current.data.head.sha}); skipped publishing stale findings.`);
+                return;
+            }
+        }
+        catch (error) {
+            lib_core.warning(`[review] Could not recheck PR head; refusing to publish: ${error instanceof Error ? error.message : String(error)}`);
+            result.reviewStatus = 'stale';
+            return;
+        }
+    }
     let hasWrite = true;
     if (params.requireWritePermissions && params.actor) {
         hasWrite = await hasWritePermission(octokit, owner, repo, params.actor);
@@ -37181,9 +37266,11 @@ async function publishReview(octokit, params) {
         durationMs: params.durationMs,
         filesTotal: params.filesTotal,
         filesExcluded: params.filesExcluded,
+        filesTruncated: result.filesTruncated,
         toolFindings: result.toolFindings,
         diagnostics: result.diagnostics,
         ruleCoverage: result.ruleCoverage,
+        reviewStatus: result.reviewStatus,
     })}\n\n${marker}`;
     if (params.stickySummary) {
         const existing = await findStickyComment(octokit, owner, repo, prNumber, marker);
@@ -37243,7 +37330,8 @@ async function publishReview(octokit, params) {
  * clean bill of health.
  */
 function reviewFailed(result) {
-    return (result.diagnostics?.failedGroups ?? 0) > 0;
+    return ((result.reviewStatus !== undefined && result.reviewStatus !== 'complete') ||
+        (result.diagnostics?.failedGroups ?? 0) > 0);
 }
 /**
  * Resolve whether every AI-authored review thread on the PR is resolved.
@@ -37479,18 +37567,6 @@ function renderToolFindingsSection(toolFindings, diagnostics) {
 
 const harness_SEVERITIES = ['critical', 'high', 'medium', 'low'];
 const RISKS = ['critical', 'high', 'medium', 'low', 'none'];
-const harness_CATEGORIES = [
-    'correctness',
-    'security',
-    'regression',
-    'error-handling',
-    'data-integrity',
-    'concurrency',
-    'performance',
-    'maintainability',
-    'testing',
-    'compatibility',
-];
 function buildReviewPrompt(context, extraRules, options = {}) {
     const { pullRequest, diff, profiles } = context;
     const fileLines = diff.files
@@ -37539,6 +37615,8 @@ function parseHarnessFindings(raw) {
         throw new Error(`Unable to parse harness output as JSON. Output started with: ${raw.slice(0, 120)}`);
     if (!json.findings && !('summary' in json))
         throw new Error('harness output JSON does not look like a review result');
+    if ('findings' in json && !Array.isArray(json.findings))
+        throw new Error('harness output findings must be an array');
     const findings = Array.isArray(json.findings)
         ? json.findings.map(coerceFinding).filter((f) => f !== null)
         : [];
@@ -37581,9 +37659,11 @@ function coerceFinding(item) {
     return {
         severity: f.severity,
         confidence,
-        category: harness_CATEGORIES.includes(f.category)
+        // Preserve unknown values so the single normalizeCategories policy can
+        // bucket them and report drift instead of changing their meaning here.
+        category: (typeof f.category === 'string'
             ? f.category
-            : 'correctness',
+            : 'maintainability'),
         path: f.path,
         line: Math.floor(line),
         title: typeof f.title === 'string' ? f.title : 'Untitled finding',
@@ -37600,6 +37680,7 @@ function coerceFinding(item) {
 }
 
 ;// CONCATENATED MODULE: ./src/harness/pi.ts
+
 
 
 
@@ -37643,20 +37724,16 @@ function parsePiArgs(raw) {
     }
     return out;
 }
-function buildPiArgs(repositoryPath, model, provider = 'openai', extraArgs = []) {
+function buildPiArgs(repositoryPath, model, provider = 'openai', extraArgs = [], skillPaths = []) {
     const args = [
         '-p',
         '--mode',
         'json',
         '--no-session',
-        // Extensions ON so built-in profile skills at
-        // ${PI_CODING_AGENT_DIR}/skills/<id>/SKILL.md are discoverable
-        // (Pi progressive-disclosure). Keep --no-context-files below to
-        // block repo-controlled prompt injection via AGENTS.md/README.md.
-        // Skills ARE on now: the runtime copies per-profile SKILL.md files
-        // into ${PI_CODING_AGENT_DIR}/skills/<id>/SKILL.md based on the
-        // detected profiles. Pi auto-discovers them at startup and progressive-
-        // disclosure loads them on demand for matching tasks.
+        // Never load project-local TypeScript extensions. Built-in skills are
+        // written to the isolated config directory by preparePiRuntimeConfig.
+        '--no-extensions',
+        '--no-skills',
         '--no-prompt-templates',
         // Context files (AGENTS.md, README.md, etc.) are still off — they
         // are repo-controlled and could leak prompt-injection bait into the
@@ -37669,6 +37746,8 @@ function buildPiArgs(repositoryPath, model, provider = 'openai', extraArgs = [])
     ];
     if (model)
         args.push('--model', model);
+    for (const skillPath of skillPaths)
+        args.push('--skill', skillPath);
     for (const a of extraArgs) {
         if (a === '--model-override')
             continue;
@@ -37713,7 +37792,8 @@ function buildPiEnv(configDir, apiKey) {
     };
 }
 function extractAssistantText(stdout) {
-    const texts = [];
+    const messages = [];
+    let currentMessage = [];
     for (const line of stdout.split('\n')) {
         const trimmed = line.trim();
         if (!trimmed.startsWith('{'))
@@ -37722,16 +37802,35 @@ function extractAssistantText(stdout) {
             const event = JSON.parse(trimmed);
             if (event.type === 'message_end' &&
                 event.message?.role === 'assistant' &&
-                Array.isArray(event.message.content))
+                Array.isArray(event.message.content)) {
+                currentMessage = [];
                 for (const block of event.message.content)
                     if (block?.type === 'text' && typeof block.text === 'string')
-                        texts.push(block.text);
+                        currentMessage.push(block.text);
+                if (currentMessage.length > 0)
+                    messages.push(currentMessage.join(''));
+            }
         }
         catch {
             /* ignore non-JSON event lines */
         }
     }
-    return texts.join('\n');
+    // Pi can emit multiple assistant messages (for example, a progress answer
+    // followed by the final structured artifact). Prefer the last message that
+    // contains a JSON object with findings so progress text cannot corrupt the
+    // harness parser by being concatenated with the final answer.
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const candidate = messages[i];
+        try {
+            const parsed = JSON.parse(candidate);
+            if (parsed && typeof parsed === 'object' && 'findings' in parsed)
+                return candidate;
+        }
+        catch {
+            /* Try the next assistant message. */
+        }
+    }
+    return messages.at(-1) ?? '';
 }
 const AGENT_DEBUG_MAX_CHARS = 60 * 1024;
 function buildAgentDebugSection(runs) {
@@ -37740,8 +37839,8 @@ function buildAgentDebugSection(runs) {
     const combined = runs
         .map((r, i) => {
         const header = runs.length > 1 ? `--- run ${i + 1}/${runs.length} ---\n` : '';
-        const err = r.stderr ? `\n[stderr]\n${r.stderr}` : '';
-        return `${header}${r.stdout}${err}`;
+        const err = r.stderr ? `\n[stderr]\n${(0,redactor/* redactSecrets */.f)(r.stderr)}` : '';
+        return `${header}${(0,redactor/* redactSecrets */.f)(r.stdout)}${err}`;
     })
         .join('\n\n');
     if (!combined.trim())
@@ -37773,14 +37872,20 @@ class PiHarness {
     }
     async review(context) {
         let run;
+        const configDir = await resolveRuntimeConfigDir();
+        const skillPaths = context.profiles.map((profile) => (0,external_node_path_.join)(configDir, 'skills', profile.id, 'SKILL.md'));
+        const extraRules = [this.options.extraRules, context.reviewRules]
+            .filter((value) => Boolean(value?.trim()))
+            .filter((value, index, values) => values.indexOf(value) === index)
+            .join('\n\n');
         try {
             run = await runPi({
                 binaryPath: this.options.binaryPath ?? 'pi',
-                args: buildPiArgs(context.repositoryPath, this.options.model ?? process.env.OPENAI_API_MODEL, this.options.provider ?? 'openai', parsePiArgs(this.options.piArgs ?? '')),
+                args: buildPiArgs(context.repositoryPath, this.options.model ?? process.env.OPENAI_API_MODEL, this.options.provider ?? 'openai', parsePiArgs(this.options.piArgs ?? ''), skillPaths),
                 cwd: context.repositoryPath,
-                configDir: await resolveRuntimeConfigDir(),
+                configDir,
                 apiKey: this.options.apiKey,
-                prompt: buildReviewPrompt(context, this.options.extraRules, {
+                prompt: buildReviewPrompt(context, extraRules || undefined, {
                     includeFullContent: this.options.includeFullContent,
                     maxContextChars: this.options.maxContextChars,
                     toolFindings: this.options.toolFindings,
@@ -37817,6 +37922,7 @@ function runPi(params) {
         let stdoutBytes = 0;
         let stderrBytes = 0;
         let settled = false;
+        let timedOut = false;
         let killTimer;
         const finish = (error) => {
             if (settled)
@@ -37838,14 +37944,38 @@ function runPi(params) {
         const timer = setTimeout(() => {
             if (settled)
                 return;
-            child.kill('SIGTERM');
-            killTimer = setTimeout(() => child.kill('SIGKILL'), 250);
-            finish(new Error(`Pi review process timed out after ${params.timeoutMs}ms`));
+            timedOut = true;
+            const signalProcess = (signal) => {
+                if (process.platform !== 'win32' && child.pid) {
+                    try {
+                        process.kill(-child.pid, signal);
+                        return;
+                    }
+                    catch {
+                        // Fall back to the direct child when the process group is gone.
+                    }
+                }
+                child.kill(signal);
+            };
+            signalProcess('SIGTERM');
+            killTimer = setTimeout(() => {
+                signalProcess('SIGKILL');
+                finish(new Error(`Pi review process timed out after ${params.timeoutMs}ms`));
+            }, 250);
         }, params.timeoutMs);
         const killAndFail = (stream) => {
             if (settled)
                 return;
-            child.kill('SIGKILL');
+            if (process.platform !== 'win32' && child.pid) {
+                try {
+                    process.kill(-child.pid, 'SIGKILL');
+                }
+                catch {
+                    child.kill('SIGKILL');
+                }
+            }
+            else
+                child.kill('SIGKILL');
             finish(new Error(`Pi ${stream} output exceeded ${MAX_OUTPUT_BYTES} byte cap`));
         };
         const append = (current, size, chunk, stream) => {
@@ -37869,6 +37999,10 @@ function runPi(params) {
         child.on('close', (code) => {
             if (settled)
                 return;
+            if (timedOut) {
+                finish(new Error(`Pi review process timed out after ${params.timeoutMs}ms`));
+                return;
+            }
             if (code !== 0)
                 finish(new Error(`Pi review process failed (exit ${code}): ${stderr.slice(-500)}`));
             else
@@ -38542,11 +38676,9 @@ function riskFromFindings(findings) {
  *   don't exist in the file (best-effort heuristic). `suggestion` (prose)
  *   is kept.
  *
- * - NEW CHECK 3: Cross-finding consistency. Two findings on the same
- *   `(path, line range of 5)` with the SAME category that give
- *   contradictory advice (one positive, one negative body keywords) get
- *   the lower-confidence one dropped. Implemented as a pairwise scan
- *   after dedupe.
+ * - NEW CHECK 3: Cross-finding consistency is intentionally conservative.
+ *   Candidate conflicts are retained until evidence-based verification; a
+ *   keyword polarity heuristic must never suppress an independent defect.
  *
  * All checks operate on the post-validate, post-dedupe finding set so
  * the order in the pipeline stays: validate -> dedupe -> cross-check ->
@@ -38694,81 +38826,17 @@ function hasBalancedDelimiters(text) {
     return braces === 0 && brackets === 0 && parens === 0;
 }
 /**
- * For each `(path, category)` group, scan pairs of findings within a
- * `LINE_PROXIMITY` window of each other. If two findings in the same
- * group contain contradictory advice (one says the code is missing
- * something, the other says it's over-engineered / remove something),
- * keep the higher-confidence one and drop the lower.
- *
- * Heuristic: presence of positive markers ("missing", "add", "should",
- * "required") vs negative markers ("remove", "delete", "unnecessary",
- * "redundant", "over-engineered") in `description` or `title`.
+ * Lexical polarity is not sufficient to establish a shared invariant, so
+ * this stage preserves candidates. A future verifier may emit an explicit
+ * contradiction record with evidence without silently dropping either one.
  */
 const LINE_PROXIMITY = 5;
 function resolveCrossFindingConflicts(findings) {
-    const result = [];
-    let droppedCount = 0;
-    const groups = groupByPathCategory(findings);
-    for (const group of groups.values()) {
-        group.sort((a, b) => a.line - b.line);
-        const survivors = [];
-        for (const candidate of group) {
-            let dropped = false;
-            for (const survivor of survivors) {
-                if (Math.abs(survivor.line - candidate.line) <= LINE_PROXIMITY &&
-                    isContradictory(survivor, candidate)) {
-                    if (candidate.confidence > survivor.confidence) {
-                        const idx = survivors.indexOf(survivor);
-                        survivors.splice(idx, 1);
-                        survivors.push(candidate);
-                    }
-                    dropped = true;
-                    droppedCount += 1;
-                    break;
-                }
-            }
-            if (!dropped)
-                survivors.push(candidate);
-        }
-        result.push(...survivors);
-    }
-    return { findings: result, droppedCount };
-}
-function groupByPathCategory(findings) {
-    const groups = new Map();
-    for (const finding of findings) {
-        const key = `${finding.path}|${finding.category}`;
-        const bucket = groups.get(key) ?? [];
-        bucket.push(finding);
-        groups.set(key, bucket);
-    }
-    return groups;
-}
-const POSITIVE_MARKERS = [
-    /\bmissing\b/i,
-    /\badd\b/i,
-    /\bshould\b/i,
-    /\brequired\b/i,
-    /\bneed\b/i,
-    /\bmust\b/i,
-];
-const NEGATIVE_MARKERS = [
-    /\bremove\b/i,
-    /\bdelete\b/i,
-    /\bunnecessary\b/i,
-    /\bredundant\b/i,
-    /\bover-engineered\b/i,
-    /\bexcessive\b/i,
-    /\bdead\b/i,
-];
-function isContradictory(a, b) {
-    const aText = `${a.title} ${a.description}`;
-    const bText = `${b.title} ${b.description}`;
-    const aPositive = POSITIVE_MARKERS.some((re) => re.test(aText));
-    const aNegative = NEGATIVE_MARKERS.some((re) => re.test(aText));
-    const bPositive = POSITIVE_MARKERS.some((re) => re.test(bText));
-    const bNegative = NEGATIVE_MARKERS.some((re) => re.test(bText));
-    return (aPositive && bNegative) || (aNegative && bPositive);
+    // Natural-language polarity is not evidence that two findings describe the
+    // same invariant. Preserve both candidates until a verifier can establish
+    // identity; dropping one here can hide independent fixes (for example an
+    // added tenant check and a removed admin bypass).
+    return { findings: [...findings], droppedCount: 0 };
 }
 /**
  * Cap findings to a small number for PRs that touch only a few lines.
@@ -38922,6 +38990,7 @@ async function runReview(context, harness, options = {}) {
     const reviewable = prioritizeFiles(context.diff.files, Number.MAX_SAFE_INTEGER);
     const scoped = {
         ...context,
+        ...(options.extraRules ? { reviewRules: options.extraRules } : {}),
         diff: { ...context.diff, files: reviewable },
     };
     const groups = planReviewGroups(scoped, options.maxFilesPerGroup ?? 15);
@@ -38943,7 +39012,9 @@ async function runReview(context, harness, options = {}) {
         for (const [index, outcome] of outcomes.entries()) {
             const group = groups[start + index];
             if (outcome.status === 'fulfilled') {
-                allFindings.push(...capFindings(outcome.value.result.findings.slice(0, FINDING_LIMITS.overall)));
+                // Validate and rank the complete candidate set before applying a
+                // presentation cap, so output ordering cannot hide critical issues.
+                allFindings.push(...outcome.value.result.findings);
                 filesReviewed.push(...group.files);
                 if (outcome.value.result.summary)
                     summaries.push(outcome.value.result.summary);
@@ -38979,7 +39050,9 @@ async function runReview(context, harness, options = {}) {
         risk: riskFromFindings(findings),
         counts: computeCounts(findings),
         filesReviewed,
+        ...(context.diff.filesTruncated ? { filesTruncated: true } : {}),
         ruleCoverage: deriveRuleCoverage(context, findings),
+        reviewStatus: failedGroups > 0 ? 'incomplete' : 'complete',
     };
     // Phase 3 diagnostics: bucket count + conflict drop count + trivial flag.
     // Preserve any toolFindings already set by cli.ts so reviewers don't
@@ -39010,8 +39083,17 @@ function deriveRuleCoverage(context, findings) {
             .map((f) => f.ruleId?.trim())
             .filter((id) => Boolean(id && id.length > 0))),
     ];
-    const passed = Math.max(total - failedRules.length, 0);
-    return { total, passed, failedRules };
+    // A finding can prove a rule failed, but its absence cannot prove the rule
+    // passed. Keep the legacy `passed` field for compatibility while exposing
+    // the assessed/unassessed split used by the renderer.
+    const assessed = failedRules.length;
+    return {
+        total,
+        passed: 0,
+        assessed,
+        unassessed: Math.max(total - assessed, 0),
+        failedRules,
+    };
 }
 
 ;// CONCATENATED MODULE: ./src/review/verify.ts
@@ -39100,6 +39182,7 @@ async function runVerifyPass(options) {
             skipped: true,
             skipReason: 'no high/critical findings to verify',
             estimatedCostUsd: 0,
+            verificationStatus: 'skipped',
         };
     }
     // Cost gate.
@@ -39112,6 +39195,7 @@ async function runVerifyPass(options) {
             skipped: true,
             skipReason: `estimated cost $${estimatedCostUsd.toFixed(3)} exceeds budget $${budgetUsd}`,
             estimatedCostUsd,
+            verificationStatus: 'skipped',
         };
     }
     const prompt = buildVerifyPrompt(highCritical, options.toolFindings, options.context);
@@ -39127,9 +39211,21 @@ async function runVerifyPass(options) {
             skipped: true,
             skipReason: `verify call failed: ${error instanceof Error ? error.message : String(error)}`,
             estimatedCostUsd,
+            verificationStatus: 'error',
         };
     }
     const parsed = parseVerifyOutput(raw, highCritical);
+    if (parsed.status !== 'complete') {
+        return {
+            findings: options.findings,
+            verifiedCount: 0,
+            droppedCount: 0,
+            skipped: true,
+            skipReason: parsed.reason,
+            estimatedCostUsd,
+            verificationStatus: parsed.status,
+        };
+    }
     // Build verified output: keep highCritical that survived verification,
     // plus all other findings (unchanged).
     const verifiedSet = new Set(parsed.verified.map((f) => identifyFinding(f)));
@@ -39144,6 +39240,7 @@ async function runVerifyPass(options) {
         droppedCount: highCritical.length - parsed.verified.length,
         skipped: false,
         estimatedCostUsd,
+        verificationStatus: 'complete',
     };
 }
 /** Default budget (USD) and output token budget for the pipeline verify pass. */
@@ -39174,7 +39271,11 @@ async function applyVerifyPass(result, args) {
             ...result.diagnostics,
             verifySkippedReason: outcome.skipReason,
             verifyCostUsd: outcome.estimatedCostUsd,
+            verifyStatus: outcome.verificationStatus,
         };
+        if (outcome.verificationStatus === 'error' ||
+            outcome.verificationStatus === 'incomplete')
+            result.reviewStatus = 'incomplete';
         return;
     }
     result.findings = outcome.findings;
@@ -39185,6 +39286,7 @@ async function applyVerifyPass(result, args) {
         verifyVerified: outcome.verifiedCount,
         verifyDropped: outcome.droppedCount,
         verifyCostUsd: outcome.estimatedCostUsd,
+        verifyStatus: outcome.verificationStatus,
     };
 }
 /** Rough input estimate: ~4 chars/token over the verify prompt inputs. */
@@ -39218,24 +39320,43 @@ function parseVerifyOutput(raw, expected) {
     const jsonStart = raw.indexOf('{');
     const jsonEnd = raw.lastIndexOf('}');
     if (jsonStart < 0 || jsonEnd <= jsonStart)
-        return { verified: [] };
+        return {
+            verified: [],
+            status: 'error',
+            reason: 'verify output was not JSON; findings retained',
+        };
     let parsed = null;
     try {
         parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
     }
     catch {
-        return { verified: [] };
+        return {
+            verified: [],
+            status: 'error',
+            reason: 'verify output JSON was malformed; findings retained',
+        };
     }
-    if (!parsed?.findings?.length)
-        return { verified: [] };
+    if (!parsed ||
+        !Array.isArray(parsed.findings) ||
+        parsed.findings.length === 0)
+        return {
+            verified: [],
+            status: 'incomplete',
+            reason: 'verify output did not include a verdict for each candidate; findings retained',
+        };
     // Coerce + filter to verified entries.
     const verified = [];
     const expectedByKey = new Map();
     for (const f of expected)
         expectedByKey.set(identifyFinding(f), f);
+    const seen = new Set();
     for (const item of parsed.findings) {
-        if (!item || item.verified !== true)
-            continue;
+        if (!item || typeof item.verified !== 'boolean')
+            return {
+                verified: [],
+                status: 'incomplete',
+                reason: 'verify output contained an incomplete verdict; findings retained',
+            };
         // Find original via identity.
         const candidate = {
             ...expected[0],
@@ -39244,10 +39365,22 @@ function parseVerifyOutput(raw, expected) {
         const key = identifyFinding(candidate);
         const original = expectedByKey.get(key);
         if (!original)
-            continue;
-        verified.push(original);
+            return {
+                verified: [],
+                status: 'incomplete',
+                reason: 'verify output referenced an unknown candidate; findings retained',
+            };
+        seen.add(key);
+        if (item.verified)
+            verified.push(original);
     }
-    return { verified };
+    if (seen.size !== expectedByKey.size)
+        return {
+            verified: [],
+            status: 'incomplete',
+            reason: 'verify output omitted one or more candidates; findings retained',
+        };
+    return { verified, status: 'complete' };
 }
 
 ;// CONCATENATED MODULE: ./src/security/classifier/risk-classifier.ts
@@ -39455,7 +39588,7 @@ class PioliumSecurityEngine {
             // Fallback: use PiSecurityEngine for audit if Piolium native CLI is unavailable
             const { PiSecurityEngine } = await Promise.resolve(/* import() */).then(__nccwpck_require__.bind(__nccwpck_require__, 7924));
             const fallbackEngine = new PiSecurityEngine();
-            return fallbackEngine.diff(ctx);
+            return await fallbackEngine.diff(ctx);
         }
         finally {
             await (0,promises_namespaceObject.rm)(tempWorkDir, { recursive: true, force: true }).catch(() => { });
@@ -39468,8 +39601,6 @@ class PioliumSecurityEngine {
     }
 }
 
-// EXTERNAL MODULE: ./src/security/redaction/redactor.ts
-var redactor = __nccwpck_require__(8759);
 ;// CONCATENATED MODULE: ./src/security/reporters/audit-reporter.ts
 
 /**
@@ -39586,10 +39717,14 @@ function buildStickySecuritySummary(options) {
     const tableSection = findingTableRows.length > 0
         ? `\n### Validated Findings\n| Severity | CWE | Title | Location | Confidence |\n|---|---|---|---|---|\n${findingTableRows.join('\n')}\n`
         : '\n*No security vulnerabilities identified at or above the publish threshold.*\n';
+    const statusNotice = options.incomplete
+        ? '\n> ⚠️ **SECURITY REVIEW INCOMPLETE** — one or more engines failed; do not treat this report as a clean security pass.\n'
+        : '';
     const raw = `<!-- nim-security-sticky-summary -->
 ## 🔐 Nim Security Review
 
 **Risk:** \`${options.risk.toUpperCase()}\`
+${statusNotice}
 
 | Status | Count |
 |---|---|
@@ -40254,6 +40389,9 @@ function deduplicateFindings(findings) {
 ;// CONCATENATED MODULE: ./src/security/validators/quality-gate.ts
 
 
+
+
+
 /**
  * Quality gate pipeline:
  * 1. Confidence threshold check
@@ -40274,8 +40412,38 @@ function applyQualityGate(candidates, context, minSeverity = 'medium', minConfid
     // Deduplicate before gating
     const deduped = deduplicateFindings(candidates);
     for (const finding of deduped) {
+        const fileName = finding.file?.trim();
+        const startLine = finding.startLine;
+        const endLine = finding.endLine ?? startLine;
+        const absolute = fileName ? (0,external_node_path_.resolve)(context.repositoryPath, fileName) : '';
+        const rel = fileName ? (0,external_node_path_.relative)(context.repositoryPath, absolute) : '';
+        if (!fileName ||
+            (0,external_node_path_.isAbsolute)(fileName) ||
+            rel.startsWith('..') ||
+            (0,external_node_path_.isAbsolute)(rel) ||
+            typeof startLine !== 'number' ||
+            !Number.isInteger(startLine) ||
+            startLine < 1 ||
+            typeof endLine !== 'number' ||
+            !Number.isInteger(endLine) ||
+            endLine < startLine ||
+            (context.scope === 'audit' && !(0,external_node_fs_.existsSync)(absolute))) {
+            finding.status = 'rejected';
+            rejected.push(finding);
+            continue;
+        }
+        if (context.scope !== 'audit' &&
+            context.changedFiles.some((f) => f.filename === fileName)) {
+            const changed = context.changedFiles.find((f) => f.filename === fileName);
+            if (changed?.patch && !isChangedLine(changed.patch, startLine)) {
+                finding.status = 'rejected';
+                rejected.push(finding);
+                continue;
+            }
+        }
         // 1. File existence / PR boundary check (if file is provided)
-        if (finding.file &&
+        if (context.scope !== 'audit' &&
+            finding.file &&
             allowedFiles.size > 0 &&
             !allowedFiles.has(finding.file)) {
             finding.status = 'rejected';
@@ -40349,6 +40517,7 @@ function applyQualityGate(candidates, context, minSeverity = 'medium', minConfid
  */
 async function runSecurityWorkflow(context, options) {
     const startTime = Date.now();
+    context.scope = options.profile === 'diff' ? 'diff' : 'audit';
     // 1. Pre-LLM Risk Classification
     const riskClassification = classifyPrRisk(context.changedFiles);
     context.riskClassification = riskClassification;
@@ -40366,6 +40535,7 @@ async function runSecurityWorkflow(context, options) {
     }
     // 4. Run Security Reasoning via selected engine
     let engineCandidates = [];
+    let engineStatus = 'success';
     try {
         if (options.profile === 'diff') {
             engineCandidates = await engine.diff(context);
@@ -40379,8 +40549,10 @@ async function runSecurityWorkflow(context, options) {
         }
     }
     catch {
-        // If reasoning engine fails, proceed with static scanner findings
+        // Static findings remain useful, but a failed reasoning engine is never
+        // equivalent to a clean audit and must be visible to policy/reporters.
         engineCandidates = [];
+        engineStatus = 'failed';
     }
     const allCandidates = [...scannerCandidates, ...engineCandidates];
     // 5. Initial Quality Gate filtering
@@ -40424,6 +40596,9 @@ async function runSecurityWorkflow(context, options) {
         failThresholdReached,
         scanners: scannerExecutions,
         domains: riskClassification.domains,
+        engineStatus,
+        incomplete: engineStatus === 'failed' ||
+            scannerExecutions.some((s) => s.status === 'failed'),
     };
     // 10. Generate Summaries & Reports
     const summaryMarkdown = buildStickySecuritySummary({
@@ -40433,6 +40608,8 @@ async function runSecurityWorkflow(context, options) {
         findings: validatedFindings,
         scanners: scannerExecutions,
         domains: riskClassification.domains,
+        incomplete: engineStatus === 'failed' ||
+            scannerExecutions.some((s) => s.status === 'failed'),
         model: options.model,
         durationMs: Date.now() - startTime,
     });
@@ -40663,6 +40840,7 @@ async function fetchExistingSecurityCommentIds(octokit, owner, repo, prNumber) {
             const comments = await octokit.rest.pulls.listCommentsForReview({
                 owner,
                 repo,
+                pull_number: prNumber,
                 review_id: review.id,
                 page: 1,
                 per_page: 100,
@@ -41204,6 +41382,15 @@ async function main(argv) {
             }
             // ponytail: all security skills into default review (8 domains, ~4k chars); filter by domain when cost matters.
             const allSecurityPrompt = (0,selector/* renderSkillsForPrompt */.a)(registry/* CURATED_SECURITY_SKILLS */.J);
+            const promptFile = await readPromptFileIfNeeded(reviewContext.repositoryPath);
+            const reviewRules = [
+                promptFile,
+                allSecurityPrompt,
+                legacyOptions.reviewPrompt,
+                rulesForProfiles(profiles),
+            ]
+                .filter(Boolean)
+                .join('\n\n');
             harness = new PiHarness({
                 binaryPath: piBinaryPath,
                 piArgs: lib_core.getInput('pi-args'),
@@ -41212,23 +41399,13 @@ async function main(argv) {
                 apiKey: llmConfig.apiKey,
                 includeFullContent: legacyOptions.includeFullContent,
                 maxContextChars: legacyOptions.maxContextChars,
-                extraRules: [allSecurityPrompt, rulesForProfiles(profiles)]
-                    .filter(Boolean)
-                    .join('\n\n'),
+                extraRules: reviewRules,
                 provider: llmConfig.provider,
                 toolFindings: prelintResult.findings,
             });
-            const promptFile = await readPromptFileIfNeeded(reviewContext.repositoryPath);
             const result = await runReview(reviewContext, harness, {
                 minConfidence: Number.parseFloat(process.env.AI_REVIEW_MIN_CONFIDENCE || '0.8'),
-                extraRules: [
-                    promptFile,
-                    allSecurityPrompt,
-                    legacyOptions.reviewPrompt,
-                    rulesForProfiles(profiles),
-                ]
-                    .filter(Boolean)
-                    .join('\n\n'),
+                extraRules: reviewRules,
                 minSeverity: legacyOptions.minSeverity,
             });
             // Opt-in second LLM pass (env-only; V1 contract frozen, no new

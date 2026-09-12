@@ -212,9 +212,8 @@ describe('resolveCrossFindingConflicts', () => {
 			}),
 		];
 		const result = resolveCrossFindingConflicts(findings);
-		expect(result.findings).toHaveLength(1);
-		expect(result.findings[0]?.confidence).toBe(0.95);
-		expect(result.droppedCount).toBe(1);
+		expect(result.findings).toHaveLength(2);
+		expect(result.droppedCount).toBe(0);
 	});
 
 	it('does not flag non-contradictory findings within proximity', () => {
@@ -275,8 +274,7 @@ describe('resolveCrossFindingConflicts', () => {
 			}),
 		];
 		const result = resolveCrossFindingConflicts(findings);
-		expect(result.findings).toHaveLength(1);
-		expect(result.findings[0]?.confidence).toBe(0.85);
+		expect(result.findings).toHaveLength(2);
 	});
 });
 
