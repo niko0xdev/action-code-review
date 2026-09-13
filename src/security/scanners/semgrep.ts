@@ -23,6 +23,68 @@ interface SemgrepCliFinding {
 	};
 }
 
+function toFinding(r: unknown): SecurityFinding | undefined {
+	const rec = r as Partial<SemgrepCliFinding>;
+	if (
+		typeof rec?.check_id !== 'string' ||
+		typeof rec?.path !== 'string' ||
+		typeof rec?.start?.line !== 'number' ||
+		typeof rec?.end?.line !== 'number' ||
+		typeof rec?.extra?.message !== 'string' ||
+		typeof rec?.extra?.severity !== 'string'
+	) {
+		return undefined;
+	}
+	const sevMap: Record<string, SecuritySeverity> = {
+		ERROR: 'high',
+		WARNING: 'medium',
+		INFO: 'low',
+	};
+	const severity = sevMap[rec.extra.severity] || 'medium';
+	const cwe = Array.isArray(rec.extra.metadata?.cwe)
+		? rec.extra.metadata?.cwe[0]
+		: typeof rec.extra.metadata?.cwe === 'string'
+			? rec.extra.metadata.cwe
+			: undefined;
+	const owasp = Array.isArray(rec.extra.metadata?.owasp)
+		? rec.extra.metadata?.owasp[0]
+		: typeof rec.extra.metadata?.owasp === 'string'
+			? rec.extra.metadata.owasp
+			: undefined;
+
+	return {
+		id: `semgrep-${rec.check_id}-${rec.path}-${rec.start.line}`,
+		fingerprint: computeFindingFingerprint({
+			title: rec.check_id,
+			file: rec.path,
+			category: 'sast',
+			cwe,
+		}),
+		title: rec.check_id.split('.').pop() || rec.check_id,
+		severity,
+		confidence: 'high',
+		status: 'candidate',
+		category: 'security',
+		cwe,
+		owasp,
+		file: rec.path,
+		startLine: rec.start.line,
+		endLine: rec.end.line,
+		evidence: [
+			{
+				type: 'scanner',
+				description: rec.extra.message,
+				file: rec.path,
+				line: rec.start.line,
+				source: 'semgrep',
+			},
+		],
+		exploitability: 'likely',
+		remediation: `Address rule violation reported by Semgrep (${rec.check_id}).`,
+		scannerSources: ['semgrep'],
+	};
+}
+
 /**
  * Execute Semgrep CLI if installed and parse JSON output.
  * Spec reference: §13.
@@ -88,11 +150,29 @@ export async function runSemgrepScanner(
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
+			const code = (err as NodeJS.ErrnoException).code;
+			if (code === 'ENOENT') {
+				resolve({
+					execution: {
+						name: 'semgrep',
+						status: 'skipped',
+						reason: `Semgrep CLI not available: ${err.message}`.slice(0, 200),
+						findings: 0,
+						durationMs: Date.now() - start,
+					},
+					findings: [],
+				});
+				return;
+			}
 			resolve({
 				execution: {
 					name: 'semgrep',
-					status: 'skipped',
-					reason: `Semgrep CLI not available: ${err.message}`,
+					status: 'failed',
+					reason:
+						`Semgrep failed to launch (${code ?? 'error'}): ${err.message}`.slice(
+							0,
+							200
+						),
 					findings: 0,
 					durationMs: Date.now() - start,
 				},
@@ -100,17 +180,27 @@ export async function runSemgrepScanner(
 			});
 		});
 
-		proc.on('close', (code) => {
+		proc.on('close', (code, signal) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
 
-			if (code !== 0 && !stdout.trim()) {
+			const abnormal = code !== 0 || signal !== null;
+			const stderrHint = stderr.trim().slice(0, 100);
+
+			let data: { results?: unknown; errors?: unknown };
+			try {
+				data = JSON.parse(stdout);
+			} catch (parseError) {
 				resolve({
 					execution: {
 						name: 'semgrep',
 						status: 'failed',
-						reason: `Semgrep exited with code ${code}: ${stderr.slice(0, 100)}`,
+						reason:
+							`Failed to parse Semgrep output JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`.slice(
+								0,
+								200
+							),
 						findings: 0,
 						durationMs: Date.now() - start,
 					},
@@ -119,83 +209,59 @@ export async function runSemgrepScanner(
 				return;
 			}
 
-			try {
-				const data = JSON.parse(stdout);
-				const results: SemgrepCliFinding[] = Array.isArray(data.results)
-					? data.results
-					: [];
-				const findings: SecurityFinding[] = results.map((r) => {
-					const sevMap: Record<string, SecuritySeverity> = {
-						ERROR: 'high',
-						WARNING: 'medium',
-						INFO: 'low',
-					};
-					const severity = sevMap[r.extra.severity] || 'medium';
-					const cwe = Array.isArray(r.extra.metadata?.cwe)
-						? r.extra.metadata?.cwe[0]
-						: typeof r.extra.metadata?.cwe === 'string'
-							? r.extra.metadata.cwe
-							: undefined;
-					const owasp = Array.isArray(r.extra.metadata?.owasp)
-						? r.extra.metadata?.owasp[0]
-						: typeof r.extra.metadata?.owasp === 'string'
-							? r.extra.metadata.owasp
-							: undefined;
-
-					return {
-						id: `semgrep-${r.check_id}-${r.path}-${r.start.line}`,
-						fingerprint: computeFindingFingerprint({
-							title: r.check_id,
-							file: r.path,
-							category: 'sast',
-							cwe,
-						}),
-						title: r.check_id.split('.').pop() || r.check_id,
-						severity,
-						confidence: 'high',
-						status: 'candidate',
-						category: 'security',
-						cwe,
-						owasp,
-						file: r.path,
-						startLine: r.start.line,
-						endLine: r.end.line,
-						evidence: [
-							{
-								type: 'scanner',
-								description: r.extra.message,
-								file: r.path,
-								line: r.start.line,
-								source: 'semgrep',
-							},
-						],
-						exploitability: 'likely',
-						remediation: `Address rule violation reported by Semgrep (${r.check_id}).`,
-						scannerSources: ['semgrep'],
-					};
-				});
-
-				resolve({
-					execution: {
-						name: 'semgrep',
-						status: 'success',
-						findings: findings.length,
-						durationMs: Date.now() - start,
-					},
-					findings,
-				});
-			} catch (parseError) {
+			if (!data || !Array.isArray(data.results)) {
 				resolve({
 					execution: {
 						name: 'semgrep',
 						status: 'failed',
-						reason: `Failed to parse Semgrep output JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+						reason: 'Semgrep output missing results array'.slice(0, 200),
 						findings: 0,
 						durationMs: Date.now() - start,
 					},
 					findings: [],
 				});
+				return;
 			}
+
+			const structuredErrors = Array.isArray(data.errors) ? data.errors : [];
+			const incomplete = abnormal || structuredErrors.length > 0;
+
+			const findings: SecurityFinding[] = [];
+			for (const r of data.results as unknown[]) {
+				const finding = toFinding(r);
+				if (finding) findings.push(finding);
+			}
+
+			if (incomplete) {
+				const detail =
+					structuredErrors.length > 0
+						? `${structuredErrors.length} error(s)`
+						: signal
+							? `signal ${signal}`
+							: `exit ${code}`;
+				const reason = `Semgrep scan incomplete (${detail})${stderrHint ? `: ${stderrHint}` : ''}`;
+				resolve({
+					execution: {
+						name: 'semgrep',
+						status: 'failed',
+						reason: reason.slice(0, 200),
+						findings: findings.length,
+						durationMs: Date.now() - start,
+					},
+					findings,
+				});
+				return;
+			}
+
+			resolve({
+				execution: {
+					name: 'semgrep',
+					status: 'success',
+					findings: findings.length,
+					durationMs: Date.now() - start,
+				},
+				findings,
+			});
 		});
 	});
 }
