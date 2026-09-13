@@ -20,6 +20,7 @@ import { updatePrContent } from './github/pr-content.js';
 import { trackPhase } from './github/progress.js';
 import { buildJobSummary, publishReview } from './github/review.js';
 import type { PublisherOctokit } from './github/review.js';
+import { listReviewThreads } from './github/threads.js';
 import {
 	PiHarness,
 	type PiRunLog,
@@ -40,6 +41,7 @@ import {
 import { resolveProfiles, rulesForProfiles } from './profiles/index.js';
 import { runReview } from './review/reviewer.js';
 import { applyVerifyPass } from './review/verify.js';
+import { securityFailureMessage } from './security/completion.js';
 import { runSecurityWorkflow } from './security/orchestrator.js';
 import { publishSecurityReview } from './security/reporters/security-publisher.js';
 import { CURATED_SECURITY_SKILLS } from './security/skills/registry.js';
@@ -171,28 +173,14 @@ function toPublisherOctokit(
 			};
 		},
 		listThreads: async (args: Record<string, unknown>) => {
-			const anyOctokit = client as unknown as {
-				paginate?: (
-					route: string,
-					params: Record<string, unknown>
-				) => Promise<unknown[]>;
-				rest?: { pulls?: unknown };
-			};
-			if (anyOctokit.paginate) {
-				const threads = await anyOctokit.paginate(
-					'GET /repos/{owner}/{repo}/pulls/{pull_number}/threads',
-					{
-						owner: requiredString(args, 'owner'),
-						repo: requiredString(args, 'repo'),
-						pull_number: requiredNumber(args, 'pull_number'),
-					}
-				);
-				return threads as Array<{
-					resolved?: boolean;
-					comments?: Array<{ user?: { login?: string } | null }>;
-				}>;
-			}
-			return [];
+			return listReviewThreads(
+				(query, variables) => client.graphql(query, variables),
+				{
+					owner: requiredString(args, 'owner'),
+					repo: requiredString(args, 'repo'),
+					pullNumber: requiredNumber(args, 'pull_number'),
+				}
+			);
 		},
 	};
 	return {
@@ -437,11 +425,11 @@ async function runSecurity(
 		`${result.findings.length} security finding(s) validated (Risk: ${result.conclusion.risk})`
 	);
 
-	if (result.conclusion.failThresholdReached) {
-		core.setFailed(
-			`Security review failed: found vulnerabilities reaching or exceeding fail threshold (${options.failOn}).`
-		);
-	}
+	const failureMessage = securityFailureMessage(
+		result.conclusion,
+		options.failOn
+	);
+	if (failureMessage) core.setFailed(failureMessage);
 }
 
 export async function main(argv: string[]): Promise<void> {

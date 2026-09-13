@@ -37562,6 +37562,68 @@ function renderToolFindingsSection(toolFindings, diagnostics) {
     return lines.join('\n');
 }
 
+;// CONCATENATED MODULE: ./src/github/threads.ts
+const REVIEW_THREADS_QUERY = `
+query ReviewThreads($owner: String!, $repo: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100, after: $after) {
+        nodes {
+          isResolved
+          comments(first: 1) {
+            nodes {
+              author {
+                login
+              }
+            }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}
+`.trim();
+async function listReviewThreads(graphql, args) {
+    const threads = [];
+    let after = null;
+    do {
+        const raw = (await graphql(REVIEW_THREADS_QUERY, {
+            owner: args.owner,
+            repo: args.repo,
+            number: args.pullNumber,
+            after,
+        }));
+        const connection = raw.repository?.pullRequest?.reviewThreads;
+        if (!connection?.pageInfo || !Array.isArray(connection.nodes)) {
+            throw new Error('GitHub GraphQL reviewThreads response is incomplete');
+        }
+        for (const node of connection.nodes) {
+            if (!node || typeof node.isResolved !== 'boolean') {
+                throw new Error('GitHub GraphQL review thread is incomplete');
+            }
+            const author = node.comments?.nodes?.[0]?.author?.login ?? undefined;
+            if (!author) {
+                throw new Error('GitHub GraphQL review thread is incomplete');
+            }
+            threads.push({
+                resolved: node.isResolved,
+                comments: [{ user: { login: author } }],
+            });
+        }
+        if (connection.pageInfo.hasNextPage !== true)
+            break;
+        after = connection.pageInfo.endCursor ?? null;
+        if (!after) {
+            throw new Error('GitHub GraphQL reviewThreads pagination cursor is missing');
+        }
+    } while (after);
+    return threads;
+}
+
 ;// CONCATENATED MODULE: ./src/harness/harness.ts
 
 
@@ -39383,6 +39445,21 @@ function parseVerifyOutput(raw, expected) {
     return { verified, status: 'complete' };
 }
 
+;// CONCATENATED MODULE: ./src/security/completion.ts
+/**
+ * Convert security completion state into the action-level failure decision.
+ * An incomplete analysis is never equivalent to a clean security review.
+ */
+function securityFailureMessage(conclusion, failOn) {
+    if (conclusion.incomplete) {
+        return 'Security review incomplete: one or more required analysis components failed.';
+    }
+    if (conclusion.failThresholdReached) {
+        return `Security review failed: found vulnerabilities reaching or exceeding fail threshold (${failOn}).`;
+    }
+    return undefined;
+}
+
 ;// CONCATENATED MODULE: ./src/security/classifier/risk-classifier.ts
 /**
  * Deterministic Pre-LLM Risk Classifier.
@@ -39585,10 +39662,7 @@ class PioliumSecurityEngine {
                     .map((f) => (0,normalizer/* normalizeSecurityFinding */.X)(f, ctx.repo, 'piolium'))
                     .filter((f) => f !== null);
             }
-            // Fallback: use PiSecurityEngine for audit if Piolium native CLI is unavailable
-            const { PiSecurityEngine } = await Promise.resolve(/* import() */).then(__nccwpck_require__.bind(__nccwpck_require__, 7924));
-            const fallbackEngine = new PiSecurityEngine();
-            return await fallbackEngine.diff(ctx);
+            throw new Error(`Full repository security audit requires a compatible Piolium adapter exposing runAudit(); profile "${profile}" cannot be downgraded to diff review.`);
         }
         finally {
             await (0,promises_namespaceObject.rm)(tempWorkDir, { recursive: true, force: true }).catch(() => { });
@@ -40944,6 +41018,8 @@ var selector = __nccwpck_require__(9347);
 
 
 
+
+
 function positiveTimeout(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -41047,16 +41123,11 @@ function toPublisherOctokit(client) {
             };
         },
         listThreads: async (args) => {
-            const anyOctokit = client;
-            if (anyOctokit.paginate) {
-                const threads = await anyOctokit.paginate('GET /repos/{owner}/{repo}/pulls/{pull_number}/threads', {
-                    owner: requiredString(args, 'owner'),
-                    repo: requiredString(args, 'repo'),
-                    pull_number: requiredNumber(args, 'pull_number'),
-                });
-                return threads;
-            }
-            return [];
+            return listReviewThreads((query, variables) => client.graphql(query, variables), {
+                owner: requiredString(args, 'owner'),
+                repo: requiredString(args, 'repo'),
+                pullNumber: requiredNumber(args, 'pull_number'),
+            });
         },
     };
     return {
@@ -41255,9 +41326,9 @@ async function runSecurity(options, octokit, repoInfo, prNumber) {
         lib_core.setOutput('security_report_path', result.reportPath);
     lib_core.setOutput('security_conclusion', JSON.stringify(result.conclusion));
     lib_core.setOutput('review-summary', `${result.findings.length} security finding(s) validated (Risk: ${result.conclusion.risk})`);
-    if (result.conclusion.failThresholdReached) {
-        lib_core.setFailed(`Security review failed: found vulnerabilities reaching or exceeding fail threshold (${options.failOn}).`);
-    }
+    const failureMessage = securityFailureMessage(result.conclusion, options.failOn);
+    if (failureMessage)
+        lib_core.setFailed(failureMessage);
 }
 async function main(argv) {
     try {

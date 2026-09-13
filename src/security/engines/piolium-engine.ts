@@ -59,10 +59,9 @@ export class PioliumSecurityEngine implements SecurityEngine {
 					.filter((f): f is SecurityFinding => f !== null);
 			}
 
-			// Fallback: use PiSecurityEngine for audit if Piolium native CLI is unavailable
-			const { PiSecurityEngine } = await import('./pi-security-engine.js');
-			const fallbackEngine = new PiSecurityEngine();
-			return await fallbackEngine.diff(ctx);
+			throw new Error(
+				`Full repository security audit requires a compatible Piolium adapter exposing runAudit(); profile "${profile}" cannot be downgraded to diff review.`
+			);
 		} finally {
 			await rm(tempWorkDir, { recursive: true, force: true }).catch(() => {});
 		}
