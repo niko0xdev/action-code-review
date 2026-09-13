@@ -1,0 +1,58 @@
+[
+  {
+    "id": "opp-20260913-security-verdicts",
+    "title": "Make security discovery and confirmation uncertainty explicit",
+    "insight_ids": ["insight-20260913-completion-truth"],
+    "problem": "Malformed security answers can become empty results or negative confirmations.",
+    "hypothesis": "A strict discovery schema and supported/refuted/uncertain/error ledger preserve candidates without claiming unsupported confirmation.",
+    "scores": {"strategic_fit":10,"user_pain":9,"market_evidence":7,"differentiation":6,"business_value":8,"feasibility":7,"timing":9,"raw":82,"adjusted":69.7},
+    "confidence":0.85,"effort":"M","recommendation":"WATCH","state":"PROPOSE",
+    "why_build":"Direct synthetic witness demonstrates another false-clean path; honest security assessment fits existing repository priorities.",
+    "why_not_build":"Requires explicit security verdict and fail-on/incomplete policy across engines, reporters and consumers. Not treated as the scanner fix or silently promoted into implementation.",
+    "decision":"Pending human agreement on confirmation semantics and consumer failure behavior.",
+    "counter_evidence":"Thrown exceptions already preserve findings; explicit true/false answers are supported. Existing research qualifies hardening as partial.",
+    "next_validation":"Require malformed/refused/partial answers to preserve candidates, expose uncertainty and never assert confirmed; test all engine profiles."
+  },
+  {
+    "id":"opp-20260913-trusted-execution",
+    "title":"Establish trusted security tool and resource boundaries",
+    "insight_ids":["insight-20260913-completion-truth"],
+    "problem":"Security CLI fallback and Semgrep still lack verified executable/config/resource provenance and full isolation guarantees.",
+    "hypothesis":"An agreed credential/filesystem/network and trusted-binary/config policy can bound untrusted analysis execution.",
+    "scores":{"strategic_fit":10,"user_pain":9,"market_evidence":7,"differentiation":6,"business_value":8,"feasibility":3,"timing":9,"raw":78,"adjusted":58.5},
+    "confidence":0.75,"effort":"L","recommendation":"WATCH","state":"PROPOSE",
+    "why_build":"Read-only untrusted review is an explicit security requirement; source establishes inconsistent guarantees.",
+    "why_not_build":"Architecture/security decision, not a narrow safe automation edit. No exploit execution, production incidence or complete sandbox validation exists.",
+    "decision":"Pending human trust/sandbox policy; no execution-policy changes authorized by this finding.",
+    "counter_evidence":"Normal Pi restricts tools/resource discovery and uses an allowlisted environment; configured API keys take HTTP instead of fallback; prelint rejects workspace binaries by default.",
+    "next_validation":"Agree trusted resources and egress/credential bounds; run harmless adversarial fixtures in a credential-free isolated environment."
+  },
+  {
+    "id":"opp-20260913-dependency-triage",
+    "title":"Triage transitive production advisories before choosing an upgrade",
+    "insight_ids":["insight-20260913-completion-truth"],
+    "problem":"Production audit lists 15 advisories, including 3 high WebSocket-related Undici entries, without verified action-path exploit reachability.",
+    "hypothesis":"Call-path analysis and compatible upstream upgrade tests identify a bounded upgrade instead of an unsafe major override.",
+    "scores":{"strategic_fit":10,"user_pain":6,"market_evidence":7,"differentiation":2,"business_value":7,"feasibility":5,"timing":8,"raw":66.5,"adjusted":43.225},
+    "confidence":0.65,"effort":"M","recommendation":"WATCH","state":"WATCH",
+    "why_build":"Advisory presence is directly observed in production dependencies; risk reduction fits runtime reliability.",
+    "why_not_build":"Presence is not exploitation; high advisories involve APIs not established in this action. Major package upgrades/overrides may change Octokit/HTTP contracts.",
+    "decision":"No dependency edits this run; investigate reachability and compatible upgrade separately.",
+    "counter_evidence":"Frozen consumer tests and current runtime tests pass; no WebSocket use was established in action source.",
+    "next_validation":"Map advisory API to shipped bundle usage, then test a supported upstream upgrade on Node 24 and both action contracts."
+  },
+  {
+    "id":"opp-20260913-release-readiness",
+    "title":"Verify canary and rollback before changing consumer refs",
+    "insight_ids":["insight-20260913-completion-truth"],
+    "problem":"Main consumers, latest release/tag, package version and changelog differ; no tested rollback procedure or named canary is documented.",
+    "hypothesis":"A named trusted canary, immutable action ref and tested rollback/readiness procedure permit measurable compatible rollout.",
+    "scores":{"strategic_fit":10,"user_pain":7,"market_evidence":7,"differentiation":3,"business_value":8,"feasibility":6,"timing":9,"raw":72.5,"adjusted":58},
+    "confidence":0.8,"effort":"M","recommendation":"WATCH","state":"PROPOSE",
+    "why_build":"Standing release authorization explicitly requires verified rollout, health and rollback; merge to main can affect existing consumers.",
+    "why_not_build":"No authority to invent production consumers, move existing tags, manufacture health telemetry or assume a rollback command is tested.",
+    "decision":"Merge/release BLOCKED until verified canary/rollback evidence is supplied or established within scope. Do not change CI, protection or consumer repositories.",
+    "counter_evidence":"GitHub Action has no long-running service or migration; previous PR review workflows succeeded. This does not prove zero consumer impact or rollback readiness.",
+    "next_validation":"Select authorized canary and prior known-good immutable ref; test rollback and critical consumer journeys with secrets isolated from untrusted code."
+  }
+]

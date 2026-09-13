@@ -144,6 +144,30 @@ jobs:
           security-fail-on: critical
 ```
 
+## 7. Scanner Completion Contract (Semgrep)
+
+A Semgrep execution reports `success` only when the CLI exits with code `0`,
+no termination signal, an empty `errors` array, and a `results` array in the
+JSON output. Malformed records inside `results` are skipped without failing
+the run.
+
+Anything else reports `failed` while retaining the valid findings parsed so
+far: a missing or non-array `results` envelope, malformed JSON, a nonzero
+exit or signal, a non-empty structured `errors` array, a launch failure other
+than `ENOENT`, or a 60s timeout. Only a missing binary (`ENOENT`) or an empty
+target list reports `skipped`. Error reasons are bounded to 200 characters. A
+`failed` scanner marks the workflow conclusion `incomplete` and adds a
+`SECURITY REVIEW INCOMPLETE` notice to the sticky summary, so a partial scan is
+never presented as a clean pass.
+
+WATCH: Semgrep CLI exit-code semantics may vary by version (findings-present
+vs findings-absent exits); re-verify the nonzero-exit rule against the pinned
+CLI version. WATCH: ruleset or network failures surface as structured `errors`
+with exit 0 — coverage can still be partial when only the failing subset is
+excluded.
+
+---
+
 ### Scheduled Security Audit
 
 ```yaml
