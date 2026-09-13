@@ -152,10 +152,12 @@ matching ids are skipped.
   ```
 
 - Sets output `review-summary`.
-- When `auto-approve-when-resolved` is enabled (default `true`): resolves the bot login, lists
-  review threads; if every AI-authored thread is resolved, submits an
-  `APPROVE` review with body
+- When `auto-approve-when-resolved` is enabled (default `true`): resolves the
+  bot login and paginates GitHub's GraphQL `reviewThreads` connection. A thread
+  is treated as AI-authored only when its root comment author matches that bot.
+  If every AI-authored thread is resolved, submits an `APPROVE` review with body
   `All AI-generated review comments have been resolved. Auto-approving PR.`
+  Missing or malformed thread data fails closed and never triggers approval.
 
 ### Failure modes
 

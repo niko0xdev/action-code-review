@@ -11,6 +11,7 @@ Start here. Each doc states what it covers and who should read it.
 | [security-review.md](security-review.md) | Security engine: profiles, inputs/outputs, skills, workflow examples | Using `mode: security` or changing security behavior |
 | [research/code-review-deep-research.md](research/code-review-deep-research.md) | Source audit and primary-source research at commit `f59cfc3` (2026-09-12) | Assessing known defects and the competitive baseline; historical snapshot |
 | [research/improvement-roadmap.md](research/improvement-roadmap.md) | Proposed quality gates, implementation phases, feature backlog, and benchmark protocol | Planning improvements; proposed work, not shipped behavior |
+| [research/audit-team-2026-09-13.md](research/audit-team-2026-09-13.md) | Audit-team delta: security gaps, scanner/skill research, and selected implementation order | Reviewing the 2026-09-13 audit findings and next security/product work |
 
 ## Historical decisions (folded in, files removed)
 
