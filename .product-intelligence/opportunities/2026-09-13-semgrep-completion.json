@@ -1,0 +1,19 @@
+{
+  "id": "opp-20260913-semgrep-completion",
+  "title": "Preserve scanner failure truth when Semgrep returns JSON",
+  "insight_ids": ["insight-20260913-completion-truth"],
+  "problem": "Semgrep exit 2 with structured errors, and exit 0 with an absent results array, are reported as successful scans. Existing orchestration marks incomplete only on scanner failed status.",
+  "hypothesis": "Validate Semgrep completion metadata independently of parsed findings so structured failures cannot appear as clean security passes.",
+  "alternative_solutions": ["Disable Semgrep integration until a trusted execution design exists", "Keep current behavior with a warning only; rejected because completion remains incorrect"],
+  "scores": {"strategic_fit": 10, "user_pain": 9, "market_evidence": 7, "differentiation": 6, "business_value": 8, "feasibility": 10, "timing": 9, "raw": 85, "adjusted": 80.75},
+  "confidence": 0.95,
+  "effort": "S",
+  "recommendation": "BUILD",
+  "state": "ACCEPTED",
+  "why_build": "Direct synthetic reproduction and source establish a narrow false-clean bug; docs/design-spec.md requires understandable infrastructure failure and honest assessment. Standing scheduled authorization approves bounded low/medium-risk BUILD fixes.",
+  "why_not_build": "Does not establish trusted binaries/config provenance, sandboxing or complete scan coverage; malformed individual findings need conservative handling. No measured user demand or exploit incidence.",
+  "risk": "medium",
+  "acceptance_criteria": ["Only a normal successful exit and a valid results array without structured errors may report success", "Nonzero exit, signal termination, structured errors or malformed envelope report failed", "Valid parsed findings survive a failed/partial scan", "A failed scan propagates incomplete conclusion and summary", "No action input/output defaults, scanner arguments, executable selection, CI or dependency changes"],
+  "human_decision": "Pre-approved for bounded implementation by this scheduled task; merge/release separately gated on rollout and rollback readiness.",
+  "what_would_change_conclusion": "A documented Semgrep completion contract showing the synthetic error payload is a successful complete scan."
+}

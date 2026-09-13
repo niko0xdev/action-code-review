@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "last_daily_scan": "2026-09-13T01:08:00+07:00",
+  "active_run": "2026-09-13",
+  "baseline_commit": "f501074",
+  "implemented_commit": "180353c",
+  "pr_branch": "fix/semgrep-completion-truth",
+  "release_status": "BLOCKED_ROLLBACK_UNKNOWN",
+  "next_validation": ["review PR and CI", "trusted security verdict policy", "canary and tested rollback", "dependency reachability"],
+  "tracked_competitors": [],
+  "tracked_topics": ["GitHub Action consumer contracts", "Pi runtime provenance", "honest review state", "release and rollback readiness"],
+  "unknowns": ["production adoption", "competitive quality", "canary consumers", "tested rollback"],
+  "previous_research": ["docs/research/code-review-deep-research.md", "docs/research/improvement-roadmap.md"]
+}
