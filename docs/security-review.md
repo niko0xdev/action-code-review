@@ -51,6 +51,10 @@
 - **`deep`**: Exhaustive security audit evaluating data flows, indirect attack chains, and multi-file vulnerabilities.
 - **`confirm`**: Independent verification pass for high-risk findings without anchoring to discoverer reasoning.
 
+Repository-wide profiles require a compatible Piolium adapter exposing
+`runAudit()`. If that adapter is unavailable, the run is marked incomplete and
+fails closed; it is never silently downgraded to a diff-only review.
+
 ---
 
 ## 3. Public Inputs & Outputs
@@ -158,7 +162,8 @@ than `ENOENT`, or a 60s timeout. Only a missing binary (`ENOENT`) or an empty
 target list reports `skipped`. Error reasons are bounded to 200 characters. A
 `failed` scanner marks the workflow conclusion `incomplete` and adds a
 `SECURITY REVIEW INCOMPLETE` notice to the sticky summary, so a partial scan is
-never presented as a clean pass.
+never presented as a clean pass. The action also fails when the final security
+conclusion is incomplete, even when no finding reaches `security-fail-on`.
 
 WATCH: Semgrep CLI exit-code semantics may vary by version (findings-present
 vs findings-absent exits); re-verify the nonzero-exit rule against the pinned
@@ -198,3 +203,7 @@ jobs:
           mode: security
           security-profile: balanced
 ```
+
+This scheduled example requires the compatible full-audit adapter described in
+the profile contract above. Missing full-audit support fails the run instead of
+reporting an empty diff as a successful repository audit.
