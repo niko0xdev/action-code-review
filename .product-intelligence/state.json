@@ -10,8 +10,19 @@
   "pr_url": "https://github.com/niko0xdev/action-code-review/pull/114",
   "ci_run": "34751056672",
   "next_validation": ["security confirmation verdict policy", "trusted security execution boundaries", "dependency reachability and supported upgrades", "named canary and tested rollback"],
-  "tracked_competitors": [],
+  "tracked_competitors": [
+    {
+      "name": "alibaba-open-code-review",
+      "repository": "https://github.com/alibaba/open-code-review",
+      "observed_at": "2026-09-18",
+      "revision": "6ada4acf",
+      "artifacts": [
+        ".product-intelligence/competitors/alibaba-open-code-review/profile.md",
+        "docs/research/alibaba-open-code-review-2026-09-18.md"
+      ]
+    }
+  ],
   "tracked_topics": ["GitHub Action consumer contracts", "Pi runtime provenance", "honest review state", "release and rollback readiness"],
-  "unknowns": ["production adoption", "competitive quality", "canary consumers", "tested rollback", "security confirmation semantics"],
-  "previous_research": ["docs/research/code-review-deep-research.md", "docs/research/improvement-roadmap.md"]
+  "unknowns": ["production adoption", "competitive quality", "canary consumers", "tested rollback", "security confirmation semantics", "alibaba-open-code-review pricing, adoption and UX"],
+  "previous_research": ["docs/research/code-review-deep-research.md", "docs/research/improvement-roadmap.md", "docs/research/alibaba-open-code-review-2026-09-18.md"]
 }

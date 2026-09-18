@@ -139,6 +139,9 @@ outputs:
   review-summary:
     description: 'Summary of the code review'
     value: ${{ steps.run-review.outputs.review-summary }}
+  review-report:
+    description: 'Machine-readable review report as JSON (schemaVersion 1; status, risk, counts, coverage, findings, diagnostics, ruleCoverage). Populated once a normal PR review produces a review result; empty whenever no review result exists — the action was skipped, runs in security mode, or errored during or before the review. String values are pattern-redacted, not exhaustively secret-scanned.'
+    value: ${{ steps.run-review.outputs.review-report }}
   security_findings:
     description: 'Validated security findings as JSON array'
     value: ${{ steps.run-review.outputs.security_findings }}

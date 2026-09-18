@@ -38573,6 +38573,140 @@ function rulesForProfiles(profiles) {
     return combinedRules(profiles.map((p) => p.id));
 }
 
+;// CONCATENATED MODULE: ./src/review/report.ts
+/**
+ * Machine-readable review report (`review-report` action output).
+ *
+ * Serializes a copy of the validated review result into a versioned,
+ * stable JSON shape. This is an additive output: the frozen V1 surface
+ * (`docs/v1-interface-contract.md`) is unchanged.
+ *
+ * Redaction is pattern-based (`redactSecrets`), applied to every string
+ * value of the serialized copy. It is a defence-in-depth backstop, not a
+ * general secret detector.
+ */
+
+/** Bumped only for breaking changes to the serialized shape. */
+const REVIEW_REPORT_SCHEMA_VERSION = 1;
+/**
+ * Derive the reported status conservatively: a group failure can never be
+ * reported as complete, and an unknown status is treated as incomplete
+ * rather than assumed clean.
+ */
+function deriveStatus(result) {
+    const failedGroups = typeof result.diagnostics?.failedGroups === 'number'
+        ? result.diagnostics.failedGroups
+        : 0;
+    if (failedGroups > 0)
+        return 'incomplete';
+    const status = result.reviewStatus;
+    if (status === 'failed' || status === 'stale' || status === 'incomplete')
+        return status;
+    if (status === 'complete')
+        return 'complete';
+    return 'incomplete';
+}
+function copyFinding(finding) {
+    return { ...finding };
+}
+/**
+ * Build the report object. The returned value is a fresh copy: mutating it
+ * cannot affect the engine result, and no redaction is applied here (only
+ * {@link serializeReviewReport} redacts).
+ */
+function buildReviewReport(input) {
+    const { result } = input;
+    const report = {
+        schemaVersion: REVIEW_REPORT_SCHEMA_VERSION,
+        status: deriveStatus(result),
+        risk: result.risk,
+        counts: { ...result.counts },
+        coverage: {
+            filesReviewed: result.filesReviewed.length,
+            filesTotal: input.filesTotal,
+            filesExcluded: input.filesExcluded,
+            filesTruncated: Boolean(result.filesTruncated),
+        },
+        findings: result.findings.map(copyFinding),
+    };
+    if (result.diagnostics) {
+        report.diagnostics = { ...result.diagnostics };
+        if (result.diagnostics.prelintRan)
+            report.diagnostics.prelintRan = [...result.diagnostics.prelintRan];
+        if (result.diagnostics.prelintSkipped)
+            report.diagnostics.prelintSkipped = [
+                ...result.diagnostics.prelintSkipped,
+            ];
+    }
+    if (result.ruleCoverage) {
+        report.ruleCoverage = {
+            ...result.ruleCoverage,
+            failedRules: [...result.ruleCoverage.failedRules],
+        };
+    }
+    return report;
+}
+/**
+ * Apply pattern-based redaction to every string in a JSON-ish value while
+ * building a fresh copy. Arrays and plain objects are rebuilt; primitives
+ * are returned unchanged.
+ */
+function redactValue(value) {
+    if (typeof value === 'string')
+        return (0,redactor/* redactSecrets */.f)(value);
+    if (Array.isArray(value))
+        return value.map(redactValue);
+    if (value !== null && typeof value === 'object') {
+        const source = value;
+        const copy = {};
+        for (const key of Object.keys(source))
+            copy[key] = redactValue(source[key]);
+        return copy;
+    }
+    return value;
+}
+/**
+ * Serialize the report to JSON with every string value passed through
+ * `redactSecrets`. The input report is not mutated.
+ */
+function serializeReviewReport(report) {
+    return JSON.stringify(redactValue(report));
+}
+/**
+ * Run `action`, then always attempt to hand `buildReport()` to `writeOutput`;
+ * report emission is attempted even when `action` rejects.
+ *
+ * `buildReport` runs after `action` has settled, so state it mutates (for
+ * example a `stale` status set while publishing) is reflected in the report.
+ * Kept generic and separate from the CLI so the emission path is testable
+ * without a live GitHub client: the report describes the analysis result and
+ * must usually survive a publication failure.
+ *
+ * Error precedence: when `action` rejects, its error is the original cause of
+ * the failure and is rethrown unchanged, even if building or writing the
+ * report also throws — a report-emission error must never mask the real
+ * failure. When `action` succeeds, a build or write error propagates as-is.
+ */
+async function withReviewReportOutput(action, buildReport, writeOutput) {
+    let result;
+    try {
+        result = await action();
+    }
+    catch (actionError) {
+        try {
+            writeOutput(buildReport());
+        }
+        catch {
+            // Deliberately swallowed: the action error stays primary.
+        }
+        throw actionError;
+    }
+    // Action succeeded: a report build/write failure is the only error and
+    // must surface.
+    writeOutput(buildReport());
+    return result;
+}
+
 ;// CONCATENATED MODULE: ./src/types/finding.ts
 /**
  * Normalized finding model used across the review pipeline.
@@ -41020,6 +41154,7 @@ var selector = __nccwpck_require__(9347);
 
 
 
+
 function positiveTimeout(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -41564,27 +41699,36 @@ async function main(argv) {
             // harness group fails, which would misreport an outage as a filter
             // exclusion. Shared by the PR comment and the job summary below.
             const filesExcluded = Math.max(filesTotal - filesSelected, 0);
-            await publishReview(octokit, {
-                owner: repoInfo.owner,
-                repo: repoInfo.repo,
-                prNumber,
-                headSha: reviewContext.pullRequest.headSha,
-                result,
-                model: llmConfig.model,
-                filesTotal,
-                filesExcluded,
-                blockOnIssues: legacyOptions.blockOnIssues,
-                minSeverity: legacyOptions.minSeverity,
-                requireWritePermissions: lib_core.getInput('require-write-permissions') === 'true',
-                stickySummary: lib_core.getInput('sticky-summary') !== 'false',
-                bufferInlineComments: lib_core.getInput('buffer-inline-comments') !== 'false' &&
-                    lib_core.getInput('classify-inline-comments') !== 'false',
-                autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
-                actor: process.env.GITHUB_ACTOR ??
-                    github.context.payload.pull_request?.user?.login ??
-                    github.context.actor,
-            });
-            trackPhase('publish', 'review published', { enabled: trackEnabled });
+            // Report emission is attempted even when publishing fails: the
+            // JSON describes the analysis result, which exists either way.
+            // `buildReport` runs after publishReview settles, so a `stale`
+            // status set while publishing is included. Redaction runs on a
+            // serialized copy; the engine result is not mutated. Emission is
+            // best effort: if building or writing the report also fails, the
+            // publish error stays primary. See docs/v1-interface-contract.md.
+            await withReviewReportOutput(async () => {
+                await publishReview(octokit, {
+                    owner: repoInfo.owner,
+                    repo: repoInfo.repo,
+                    prNumber,
+                    headSha: reviewContext.pullRequest.headSha,
+                    result,
+                    model: llmConfig.model,
+                    filesTotal,
+                    filesExcluded,
+                    blockOnIssues: legacyOptions.blockOnIssues,
+                    minSeverity: legacyOptions.minSeverity,
+                    requireWritePermissions: lib_core.getInput('require-write-permissions') === 'true',
+                    stickySummary: lib_core.getInput('sticky-summary') !== 'false',
+                    bufferInlineComments: lib_core.getInput('buffer-inline-comments') !== 'false' &&
+                        lib_core.getInput('classify-inline-comments') !== 'false',
+                    autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
+                    actor: process.env.GITHUB_ACTOR ??
+                        github.context.payload.pull_request?.user?.login ??
+                        github.context.actor,
+                });
+                trackPhase('publish', 'review published', { enabled: trackEnabled });
+            }, () => serializeReviewReport(buildReviewReport({ result, filesTotal, filesExcluded })), (serialized) => lib_core.setOutput('review-report', serialized));
             await lib_core.summary
                 .addRaw(buildJobSummary({
                 model: llmConfig.model,

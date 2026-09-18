@@ -39,6 +39,11 @@ import {
 	validateReviewEvent,
 } from './modes/detector.js';
 import { resolveProfiles, rulesForProfiles } from './profiles/index.js';
+import {
+	buildReviewReport,
+	serializeReviewReport,
+	withReviewReportOutput,
+} from './review/report.js';
 import { runReview } from './review/reviewer.js';
 import { applyVerifyPass } from './review/verify.js';
 import { securityFailureMessage } from './security/completion.js';
@@ -746,34 +751,50 @@ export async function main(argv: string[]): Promise<void> {
 			// harness group fails, which would misreport an outage as a filter
 			// exclusion. Shared by the PR comment and the job summary below.
 			const filesExcluded = Math.max(filesTotal - filesSelected, 0);
-			await publishReview(octokit, {
-				owner: repoInfo.owner,
-				repo: repoInfo.repo,
-				prNumber,
-				headSha: reviewContext.pullRequest.headSha,
-				result,
-				model: llmConfig.model,
-				filesTotal,
-				filesExcluded,
-				blockOnIssues: legacyOptions.blockOnIssues,
-				minSeverity: legacyOptions.minSeverity,
-				requireWritePermissions:
-					core.getInput('require-write-permissions') === 'true',
-				stickySummary: core.getInput('sticky-summary') !== 'false',
-				bufferInlineComments:
-					core.getInput('buffer-inline-comments') !== 'false' &&
-					core.getInput('classify-inline-comments') !== 'false',
-				autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
-				actor:
-					process.env.GITHUB_ACTOR ??
-					(
-						github.context.payload.pull_request?.user as
-							| { login?: string }
-							| undefined
-					)?.login ??
-					(github.context.actor as string | undefined),
-			});
-			trackPhase('publish', 'review published', { enabled: trackEnabled });
+			// Report emission is attempted even when publishing fails: the
+			// JSON describes the analysis result, which exists either way.
+			// `buildReport` runs after publishReview settles, so a `stale`
+			// status set while publishing is included. Redaction runs on a
+			// serialized copy; the engine result is not mutated. Emission is
+			// best effort: if building or writing the report also fails, the
+			// publish error stays primary. See docs/v1-interface-contract.md.
+			await withReviewReportOutput(
+				async () => {
+					await publishReview(octokit, {
+						owner: repoInfo.owner,
+						repo: repoInfo.repo,
+						prNumber,
+						headSha: reviewContext.pullRequest.headSha,
+						result,
+						model: llmConfig.model,
+						filesTotal,
+						filesExcluded,
+						blockOnIssues: legacyOptions.blockOnIssues,
+						minSeverity: legacyOptions.minSeverity,
+						requireWritePermissions:
+							core.getInput('require-write-permissions') === 'true',
+						stickySummary: core.getInput('sticky-summary') !== 'false',
+						bufferInlineComments:
+							core.getInput('buffer-inline-comments') !== 'false' &&
+							core.getInput('classify-inline-comments') !== 'false',
+						autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
+						actor:
+							process.env.GITHUB_ACTOR ??
+							(
+								github.context.payload.pull_request?.user as
+									| { login?: string }
+									| undefined
+							)?.login ??
+							(github.context.actor as string | undefined),
+					});
+					trackPhase('publish', 'review published', { enabled: trackEnabled });
+				},
+				() =>
+					serializeReviewReport(
+						buildReviewReport({ result, filesTotal, filesExcluded })
+					),
+				(serialized) => core.setOutput('review-report', serialized)
+			);
 			await core.summary
 				.addRaw(
 					buildJobSummary({

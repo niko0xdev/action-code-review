@@ -88,6 +88,58 @@ None declared.
 | Output | Description |
 |--------|-------------|
 | `review-summary` | e.g. `"12 files reviewed, 3 issues found"` |
+| `review-report` | Additive machine-readable JSON report (see below) |
+
+#### `review-report` (additive)
+
+Emitted after a normal PR review completes. Not part of the frozen V1 surface —
+it was added additively and may be extended; `schemaVersion` bumps only on a
+breaking shape change.
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "status": "complete",           // complete | incomplete | failed | stale
+  "risk": "low",
+  "counts": { "critical": 0, "high": 0, "medium": 1, "low": 0 },
+  "coverage": {
+    "filesReviewed": 4,
+    "filesTotal": 6,
+    "filesExcluded": 2,
+    "filesTruncated": false
+  },
+  "findings": [ /* validated, capped findings */ ],
+  "diagnostics": { /* pipeline diagnostics, when present */ },
+  "ruleCoverage": { /* rule-level coverage, when present */ }
+}
+```
+
+- `status` is derived conservatively: `failedGroups > 0` forces `incomplete`,
+  and an unknown status is reported as `incomplete` rather than assumed clean.
+  `failed` is reserved and accepted defensively, but the current pipeline never
+  emits it (failed groups are reported as `incomplete`).
+- `coverage.filesTotal` counts the PR files returned by the listing before any
+  filtering. When the listing safety cap is hit, `filesTruncated` is `true` and
+  `filesTotal` may be below the actual PR file count.
+- `coverage.filesExcluded` is `filesTotal` minus the files that survived
+  filtering, so it bundles every reason a file was not reviewed: exclude
+  patterns, a missing patch, and the `max-files` cap. On an incomplete review,
+  `filesReviewed + filesExcluded` can be less than `filesTotal`: files in a
+  failed review group are counted as neither reviewed nor excluded.
+- Every string value is pattern-redacted (`redactSecrets`) on a serialized
+  copy; the engine result is not mutated. Redaction is pattern-based and is not
+  a general secret detector.
+- The output is empty whenever no review result exists: the action is skipped,
+  runs in security mode, or errors during or before the review. An empty value
+  means "no report", not "no findings".
+- The report describes the **analysis** result, so emission is **attempted**
+  even if publishing to GitHub fails: the report is built after publication
+  settles, so a publish failure does not discard it. This is best effort, not a
+  guarantee — if building or writing the report also fails, the publish error
+  stays primary and no report is emitted. The action still fails as it did
+  before.
+- Content is limited to the validated/capped review result: no prompts, raw
+  model traces, tokens, credentials, or full PR source.
 
 ### Environment variables honored by consumers
 

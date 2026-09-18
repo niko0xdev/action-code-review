@@ -1,0 +1,65 @@
+{
+  "id": "opp-20260918-review-report-output",
+  "title": "Add an additive machine-readable review-report action output",
+  "insight_ids": ["sig-20260918-ocr-json", "sig-20260918-ocr-manifest-demand"],
+  "problem": "The normal PR-review path exposes only the prose review-summary output. ReviewResult already carries findings, status, risk, counts, coverage and diagnostics internally, but no consumer can read them without parsing a human-readable sentence or scraping the PR comment.",
+  "hypothesis": "Serializing a copy of the validated ReviewResult into a versioned JSON action output closes the integration gap without changing any input, permission, or existing output, and without mutating the engine result.",
+  "alternative_solutions": [
+    "Ask consumers to parse review-summary prose; rejected because it does not expose status, coverage, or per-finding data reliably",
+    "Publish the report as an artifact file instead of an output; rejected because it requires consumers to add upload/download steps and the frozen contract permits additive outputs directly",
+    "Adopt the competitor's automatic thread resolution instead; rejected because it requires contents:write, above this repository's documented least-privilege contract"
+  ],
+  "scores": {
+    "weights": {
+      "strategic_fit": 0.25,
+      "user_pain": 0.2,
+      "market_evidence": 0.15,
+      "differentiation": 0.15,
+      "business_value": 0.1,
+      "feasibility": 0.1,
+      "timing": 0.05
+    },
+    "dimensions": {
+      "strategic_fit": 10,
+      "user_pain": 7,
+      "market_evidence": 6,
+      "differentiation": 3,
+      "business_value": 6,
+      "feasibility": 10,
+      "timing": 9
+    },
+    "raw": 73,
+    "units": "out of 100",
+    "formula": "raw = sum(score * weight) * 10 = 7.30 * 10 = 73",
+    "confidence": 0.85,
+    "adjusted": 62.05,
+    "adjusted_formula": "adjusted = raw * confidence = 73 * 0.85 = 62.05"
+  },
+  "confidence": 0.85,
+  "confidence_rationale": "The implementation side is strongly evidenced: the review result model already carries every serialized field (src/types/finding.ts), runReview sets completion status (src/review/reviewer.ts), and the frozen contract explicitly permits additive outputs (docs/v1-interface-contract.md). Held below 1.0 because the demand side rests on one public competitor issue plus a competitor's shipped feature, and this repository has no direct user reports.",
+  "effort": "S",
+  "recommendation": "PROTOTYPE",
+  "score_band": "PROTOTYPE (55-74 raw). Raw 73/100 falls in the PROTOTYPE band, so this is a prototype slice rather than a BUILD commitment.",
+  "state": "ACCEPTED",
+  "authorization": "The user explicitly authorized this bounded implementation for both the ideation and the implementation, so the prototype proceeds now. That authorization covers local implementation, tests, docs and research artifacts only; it is not a broader roadmap commitment and does not authorize push, release, merge, or any permission change.",
+  "why_build": "Small additive diff with no new dependency, no new input, and no permission change; the frozen contract explicitly allows additive outputs; the competitor demonstrates a machine-readable review result is a real consumer need. The user explicitly requested both the ideation and this bounded implementation slice, which authorizes the work.",
+  "why_not_build": "Differentiation is low: the competitor already ships a JSON review output, so this is parity rather than a differentiator. No measured demand exists in this repository's own user base, and one public issue is a single signal. It does not improve review quality or accuracy, only the machine-readability and honesty of what the review already produces.",
+  "counterevidence": [
+    "Issue #367 is one public demand signal from one project's community; it is not proof of broad market demand and says nothing about willingness to pay.",
+    "The issue was closed via PR #520, but the closure was not read line-by-line, so whether it fully ships the requested manifest is INFERRED, not verified.",
+    "No head-to-head quality, cost, or latency benchmark against the competitor was run; the comparison is capability-shaped, not outcome-shaped.",
+    "Competitor README architecture claims are marketing surfaces and were not independently reproduced."
+  ],
+  "risk": "low",
+  "acceptance_criteria": [
+    "The action exposes an additive review-report output whose JSON shape is versioned with schemaVersion 1",
+    "status is derived conservatively from ReviewResult and a failed review group can never serialize as complete",
+    "coverage carries filesReviewed, filesTotal, filesExcluded and filesTruncated; counts and risk are present for a clean review",
+    "findings, diagnostics and ruleCoverage serialize when present",
+    "Every string value is pattern-redacted on a serialized copy and the engine result is not mutated",
+    "No input, output value, permission, or existing behavior changes; no new dependency",
+    "Skipped, security-mode and failed-before-review runs may leave the output empty, and that is documented"
+  ],
+  "human_decision": "Authorized for bounded local implementation, tests, docs and research artifacts by the user's explicit request for both ideation and implementation. Push, release, merge and any permission change remain separately gated.",
+  "what_would_change_conclusion": "Evidence that the empty-output behavior or the conservative status derivation misrepresents review state for real consumers, or direct user evidence that consumers need a different artifact (for example a signed immutable manifest or a published file artifact) rather than an action output."
+}
