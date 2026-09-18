@@ -13,6 +13,7 @@ Start here. Each doc states what it covers and who should read it.
 | [research/improvement-roadmap.md](research/improvement-roadmap.md) | Proposed quality gates, implementation phases, feature backlog, and benchmark protocol | Planning improvements; proposed work, not shipped behavior |
 | [research/audit-team-2026-09-13.md](research/audit-team-2026-09-13.md) | Audit-team delta: security gaps, scanner/skill research, and selected implementation order | Reviewing the 2026-09-13 audit findings and next security/product work |
 | [research/alibaba-open-code-review-2026-09-18.md](research/alibaba-open-code-review-2026-09-18.md) | Competitor teardown of Alibaba's open-code-review and the bounded decision to ship the `review-report` output | Assessing competitive capability gaps and why the machine-readable report slice was chosen |
+| [research/cloudflare-security-audit-skill-2026-09-18.md](research/cloudflare-security-audit-skill-2026-09-18.md) | Current-source research and bounded report-evidence opportunity from Cloudflare's `security-audit-skill` | Comparing security audit workflow and evidence reporting |
 
 ## Historical decisions (folded in, files removed)
 

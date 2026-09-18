@@ -39811,6 +39811,72 @@ class PioliumSecurityEngine {
 
 ;// CONCATENATED MODULE: ./src/security/reporters/audit-reporter.ts
 
+/** Unicode line/paragraph separators a renderer may treat as line breaks. */
+const LINE_SEPARATORS = String.fromCharCode(0x85, 0x2028, 0x2029);
+/**
+ * Normalize untrusted value text to a single line so it cannot start a new
+ * Markdown block (heading, list, table row, or raw HTML). Collapses CR/LF and
+ * the Unicode line/paragraph separators a renderer may also treat as breaks.
+ */
+function normalizeInline(value) {
+    return value
+        .replace(/[\r\n]+/g, ' ')
+        .replace(new RegExp(`[${LINE_SEPARATORS}]`, 'g'), ' ');
+}
+/**
+ * Escape untrusted prose so a single line cannot open a Markdown block, link,
+ * table row, or raw HTML element. Angle brackets become entities; the
+ * remaining punctuation is backslash-escaped, which renders as the literal
+ * character. A leading unordered or ordered list marker is escaped too, so a
+ * value cannot become a list item. The colon is escaped so a bare URL
+ * (`https://…`) cannot autolink even without explicit link syntax.
+ */
+function proseEscape(value) {
+    const escaped = normalizeInline(value)
+        .replace(/[\\`*_[\]()|#:]/g, '\\$&')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    return escaped.replace(/^(\s*)([-+]|\d+\.)(?=\s|$)/, (_match, lead, marker) => marker.endsWith('.')
+        ? `${lead}${marker.slice(0, -1)}\\.`
+        : `${lead}\\${marker}`);
+}
+function longestBacktickRun(value) {
+    let longest = 0;
+    let current = 0;
+    for (const char of value) {
+        current = char === '`' ? current + 1 : 0;
+        if (current > longest)
+            longest = current;
+    }
+    return longest;
+}
+/**
+ * Render an untrusted value as an inline code span. The fence is always
+ * longer than any backtick run inside the value, so the value cannot close
+ * the span early and leak Markdown syntax.
+ */
+function codeSpan(value) {
+    const normalized = normalizeInline(value);
+    const fence = '`'.repeat(longestBacktickRun(normalized) + 1);
+    const padded = normalized.startsWith('`') || normalized.endsWith('`')
+        ? ` ${normalized} `
+        : normalized;
+    return `${fence}${padded}${fence}`;
+}
+/** Evidence location from optional file and positive finite line. */
+function evidenceLocation(evidence) {
+    const file = evidence.file?.trim();
+    if (!file)
+        return undefined;
+    const line = evidence.line;
+    if (typeof line !== 'number' ||
+        !Number.isFinite(line) ||
+        !Number.isInteger(line) ||
+        line < 1) {
+        return file;
+    }
+    return `${file}:${line}`;
+}
 /**
  * Generate full markdown audit report for repository security audits.
  * Spec reference: §19.
@@ -39822,24 +39888,47 @@ function buildFullAuditReport(options) {
             counts[f.severity]++;
     }
     const findingsSections = options.findings.map((f, i) => {
-        const evidenceList = f.evidence.map((e) => `- [${e.type}] ${e.description}`);
+        const evidenceList = f.evidence.map((e) => {
+            const location = evidenceLocation(e);
+            const prefix = location
+                ? `- [${e.type}] ${codeSpan(location)} — `
+                : `- [${e.type}] `;
+            return `${prefix}${proseEscape(e.description)}`;
+        });
         const loc = f.file
-            ? `${f.file}${f.startLine ? `:${f.startLine}` : ''}`
+            ? codeSpan(`${f.file}${f.startLine ? `:${f.startLine}` : ''}`)
             : 'N/A';
+        const source = f.source?.trim();
+        const sink = f.sink?.trim();
+        const attackPath = (f.attackPath ?? [])
+            .map((step) => step.trim())
+            .filter((step) => step.length > 0);
+        const contextLines = [
+            source ? `- **Source:** ${codeSpan(source)}` : '',
+            sink ? `- **Sink:** ${codeSpan(sink)}` : '',
+        ].filter((line) => line !== '');
+        const contextBlock = contextLines.length > 0
+            ? `\n#### Evidence Context:\n${contextLines.join('\n')}\n`
+            : '';
+        const attackPathBlock = attackPath.length > 0
+            ? `\n#### Attack Path:\n${attackPath
+                .map((step, index) => `${index + 1}. ${codeSpan(step)}`)
+                .join('\n')}\n`
+            : '';
         return `
-### ${i + 1}. ${f.title}
+### ${i + 1}. ${proseEscape(f.title)}
 
 - **Severity:** \`${f.severity.toUpperCase()}\`
 - **Confidence:** \`${f.confidence.toUpperCase()}\`
 - **Location:** \`${loc}\`
-- **CWE / OWASP:** ${f.cwe || 'N/A'} ${f.owasp ? `(${f.owasp})` : ''}
+- **CWE / OWASP:** ${proseEscape(f.cwe || 'N/A')}${f.owasp ? ` (${proseEscape(f.owasp)})` : ''}
 - **Exploitability:** ${f.exploitability}
-
+${contextBlock}
 #### Evidence:
 ${evidenceList.join('\n') || '- No specific code evidence attached'}
-
+${attackPathBlock}
 #### Remediation:
-${f.remediation || 'Follow secure coding guidelines.'}
+${f.remediation ? proseEscape(f.remediation) : 'Follow secure coding guidelines.'}
 `;
     });
     const raw = `
