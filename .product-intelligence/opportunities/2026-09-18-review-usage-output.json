@@ -1,0 +1,49 @@
+{
+  "id": "opp-20260918-machine-readable-review-usage",
+  "title": "Expose provider-reported Pi usage in the machine-readable review report",
+  "insight_ids": ["ins-20260918-review-usage-observability"],
+  "problem": "The action retains Pi JSON event logs for debugging and emits a machine-readable review report, but the report has no usage summary. On incomplete runs, consumers cannot see provider-reported token counts, tool-call attempts, or elapsed review time alongside the partial status.",
+  "hypothesis": "If the report includes numeric usage aggregated from Pi events for all started review groups, including failed groups, maintainers can audit review consumption and diagnose partial runs without parsing raw logs or PR comments.",
+  "alternative_solutions": [
+    "Only document the existing debug log; this requires enabling debug mode and leaves CI consumers to parse unversioned raw events.",
+    "Add dollar estimates; rejected because custom OpenAI-compatible providers and model pricing make USD estimates unreliable.",
+    "Add a wall-clock timeout instead; lower confidence because time is a proxy for token cost and the same competitor explicitly deferred this separate control."
+  ],
+  "scores": {
+    "weights": {"strategic_fit": 0.25, "user_pain": 0.2, "market_evidence": 0.15, "differentiation": 0.15, "business_value": 0.1, "feasibility": 0.1, "timing": 0.05},
+    "dimensions": {"strategic_fit": 9, "user_pain": 7, "market_evidence": 7, "differentiation": 2, "business_value": 6, "feasibility": 9, "timing": 8},
+    "raw": 67.5,
+    "units": "out of 100",
+    "formula": "raw = sum(score * weight) * 10 = 6.75 * 10 = 67.5",
+    "confidence": 0.82,
+    "adjusted": 55.35,
+    "adjusted_formula": "adjusted = raw * confidence = 67.5 * 0.82 = 55.35"
+  },
+  "confidence": 0.82,
+  "confidence_rationale": "Several distinct user reports and the merged response to the cost incident establish a real observability job in one competitor community. This repo's Pi 0.73.1 JSON events carry usage and tool-start data, and the report already supports additive fields. Confidence is capped because this repo has no direct request and usage may be absent for interrupted provider calls.",
+  "effort": "M",
+  "recommendation": "PROTOTYPE",
+  "score_band": "PROTOTYPE (55-74 confidence-adjusted).",
+  "state": "ACCEPTED",
+  "authorization": "The user's current instruction explicitly requests product research followed by Claude Code implementation. This authorizes this bounded local prototype; it does not authorize a broader roadmap commitment, push, release, merge, or permission change.",
+  "why_build": "The additive report can expose counters Pi already emits, preserve the per-run view for CI consumers, and include usage from failed groups. It does not require a new dependency, input, permission, or raw-log disclosure.",
+  "why_not_build": "There is no direct usage-report request in this repository, the feature is parity rather than differentiation, and provider-reported counts may be incomplete when a process is interrupted. Token usage does not establish exact billing cost.",
+  "counterevidence": [
+    "All public user reports considered here are from one competitor community.",
+    "The comparator has already shipped usage reporting and token/tool-call controls, so the case is integration parity rather than a competitive moat.",
+    "Pi may not emit a final usage record for an interrupted in-flight provider request.",
+    "No cost, adoption, or duration measurement exists for this repository's users."
+  ],
+  "risk": "low: additive numeric fields can be ignored by existing consumers; the report must label counters as provider-reported and avoid implying complete billing totals.",
+  "acceptance_criteria": [
+    "The review-report output adds a documented usage object with input, output, cache-read, cache-write, total tokens, tool-call attempts, elapsed milliseconds, and process counts.",
+    "Usage aggregates across all Pi group processes, including process failures with any completed provider messages and tool starts already observed.",
+    "The report marks usage as partial whenever one or more Pi processes fail or the review itself is incomplete; complete runs report complete aggregation.",
+    "Missing/zero provider counters are handled without NaN, negative totals, or claims of exact USD cost; in-flight unreported calls may be absent and this is documented.",
+    "Only numeric counters and bounded status values are emitted; raw stdout, stderr, source excerpts, credentials, and model prompts are never added to review-report.",
+    "No existing output value, input, permission, or dependency changes; additive report fields retain schemaVersion 1.",
+    "Tests cover valid usage events, multiple process aggregation, malformed lines, failed processes with partial counters, and absence of raw logs; docs are updated and both bundles are rebuilt."
+  ],
+  "human_decision": "Approved for this bounded prototype by the user's explicit request to research and then implement via Claude Code.",
+  "what_would_change_conclusion": "Direct maintainer feedback or fixtures showing supported Pi providers do not supply usable counters would change the recommendation or narrow the fields."
+}
