@@ -141,6 +141,176 @@ describe('buildReviewReport', () => {
 		expect(report.findings).toEqual([]);
 	});
 
+	it('always emits a zeroed usage object when the result recorded none', () => {
+		const report = buildReviewReport({
+			result: emptyResult({ filesReviewed: ['src/a.ts'] }),
+			filesTotal: 3,
+			filesExcluded: 2,
+		});
+		expect(report.usage).toEqual({
+			status: 'complete',
+			inputTokens: 0,
+			outputTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0,
+			totalTokens: 0,
+			assistantMessages: 0,
+			toolCallsStarted: 0,
+			durationMs: 0,
+			processes: { started: 0, succeeded: 0, failed: 0 },
+		});
+	});
+
+	it('copies usage counters and marks a fully completed run complete', () => {
+		const report = buildReviewReport({
+			result: emptyResult({
+				reviewStatus: 'complete',
+				usage: {
+					inputTokens: 100,
+					outputTokens: 40,
+					cacheReadTokens: 5,
+					cacheWriteTokens: 2,
+					totalTokens: 147,
+					assistantMessages: 3,
+					toolCallsStarted: 7,
+					durationMs: 12_345,
+					processes: { started: 2, succeeded: 2, failed: 0 },
+				},
+			}),
+			filesTotal: 1,
+			filesExcluded: 0,
+		});
+		expect(report.usage).toEqual({
+			status: 'complete',
+			inputTokens: 100,
+			outputTokens: 40,
+			cacheReadTokens: 5,
+			cacheWriteTokens: 2,
+			totalTokens: 147,
+			assistantMessages: 3,
+			toolCallsStarted: 7,
+			durationMs: 12_345,
+			processes: { started: 2, succeeded: 2, failed: 0 },
+		});
+	});
+
+	it('marks usage partial when a Pi process failed', () => {
+		const report = buildReviewReport({
+			result: emptyResult({
+				reviewStatus: 'complete',
+				usage: {
+					inputTokens: 10,
+					outputTokens: 4,
+					cacheReadTokens: 0,
+					cacheWriteTokens: 0,
+					totalTokens: 14,
+					assistantMessages: 1,
+					toolCallsStarted: 1,
+					durationMs: 500,
+					processes: { started: 2, succeeded: 1, failed: 1 },
+				},
+			}),
+			filesTotal: 1,
+			filesExcluded: 0,
+		});
+		expect(report.usage.status).toBe('partial');
+		// Observed counters survive a group failure.
+		expect(report.usage.inputTokens).toBe(10);
+		expect(report.usage.processes.failed).toBe(1);
+	});
+
+	it('marks usage partial for a non-complete review status', () => {
+		for (const status of ['incomplete', 'failed', 'stale'] as const) {
+			const report = buildReviewReport({
+				result: emptyResult({ reviewStatus: status }),
+				filesTotal: 1,
+				filesExcluded: 0,
+			});
+			expect(report.usage.status).toBe('partial');
+		}
+	});
+
+	it('clamps malformed counters to finite non-negative numbers', () => {
+		const report = buildReviewReport({
+			result: emptyResult({
+				usage: {
+					inputTokens: Number.NaN,
+					outputTokens: -50,
+					cacheReadTokens: Number.POSITIVE_INFINITY,
+					cacheWriteTokens: 1.9,
+					totalTokens: Number.POSITIVE_INFINITY,
+					assistantMessages: 3,
+					toolCallsStarted: -1,
+					durationMs: -100,
+					processes: { started: 1.7, succeeded: -2, failed: Number.NaN },
+				},
+			}),
+			filesTotal: 1,
+			filesExcluded: 0,
+		});
+		expect(report.usage).toEqual({
+			status: 'complete',
+			inputTokens: 0,
+			outputTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 1,
+			totalTokens: 0,
+			assistantMessages: 3,
+			toolCallsStarted: 0,
+			durationMs: 0,
+			processes: { started: 1, succeeded: 0, failed: 0 },
+		});
+	});
+
+	it('serializes the usage object and never leaks raw runtime fields', () => {
+		const result = emptyResult({
+			usage: {
+				inputTokens: 8,
+				outputTokens: 2,
+				cacheReadTokens: 0,
+				cacheWriteTokens: 0,
+				totalTokens: 10,
+				assistantMessages: 1,
+				toolCallsStarted: 1,
+				durationMs: 42,
+				processes: { started: 1, succeeded: 1, failed: 0 },
+			},
+		});
+		const parsed = JSON.parse(
+			serializeReviewReport(
+				buildReviewReport({ result, filesTotal: 1, filesExcluded: 0 })
+			)
+		);
+		expect(parsed.usage).toEqual({
+			status: 'complete',
+			inputTokens: 8,
+			outputTokens: 2,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0,
+			totalTokens: 10,
+			assistantMessages: 1,
+			toolCallsStarted: 1,
+			durationMs: 42,
+			processes: { started: 1, succeeded: 1, failed: 0 },
+		});
+		// The report is numeric/structured only: no raw logs, prompts, source,
+		// stderr, credentials, or estimated USD cost.
+		const serialized = JSON.stringify(parsed.usage);
+		expect(serialized).not.toMatch(/stdout|stderr|prompt|patch|costUsd|usd/i);
+	});
+
+	it('surfaces no-usage caveats without inventing cost fields', () => {
+		const report = buildReviewReport({
+			result: emptyResult({ reviewStatus: 'stale' }),
+			filesTotal: 1,
+			filesExcluded: 0,
+		});
+		// A stale run can report zero provider counters and must not imply cost.
+		expect(report.usage.totalTokens).toBe(0);
+		expect(report.usage.status).toBe('partial');
+		expect(Object.keys(report.usage)).not.toContain('costUsd');
+	});
+
 	it('surfaces pagination truncation in coverage', () => {
 		const report = buildReviewReport({
 			result: emptyResult({ filesTruncated: true }),

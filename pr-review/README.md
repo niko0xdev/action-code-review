@@ -156,8 +156,33 @@ Shape (`schemaVersion: 1`):
 | `counts` | Validated finding counts per severity (`critical`/`high`/`medium`/`low`). |
 | `coverage` | `filesReviewed`, `filesTotal`, `filesExcluded`, `filesTruncated`. `filesTotal` is the number of files returned by the PR file listing before any filtering; when the listing safety cap is hit, `filesTruncated` is `true` and `filesTotal` may be below the actual PR file count. `filesExcluded` is `filesTotal` minus the files that survived filtering, so it bundles every reason a file was not reviewed: exclude patterns, a missing patch, and the `max-files` cap. On an incomplete review, `filesReviewed + filesExcluded` can be less than `filesTotal`, because files in a failed review group are counted as neither reviewed nor excluded. |
 | `findings` | Validated, capped findings (same data as the inline comments, including `ruleId` and `replacement` when present). |
+| `usage` | Provider-reported review usage (see below). Always present. |
 | `diagnostics` | Present when the pipeline recorded them (failed groups, prelint tools, verify pass, truncation of the trivial-PR fast path, …). |
 | `ruleCoverage` | Present when rule coverage could be derived deterministically. |
+
+**`usage`.** An additive, numeric summary of the work the harness actually did,
+aggregated across every review-group process — including groups that failed
+after emitting events. It is **not** a billing ledger. Fields:
+
+| Field | Meaning |
+|-------|---------|
+| `status` | `complete` \| `partial`. `partial` whenever any harness process failed **or** the review itself is not `complete`; a degraded run can never read as a complete accounting. |
+| `inputTokens` | Provider-reported input tokens summed from completed assistant messages. |
+| `outputTokens` | Provider-reported output tokens summed from completed assistant messages. |
+| `cacheReadTokens` | Provider-reported cache-read tokens. |
+| `cacheWriteTokens` | Provider-reported cache-write tokens. |
+| `totalTokens` | Provider-reported total tokens; falls back to the sum of the components when the provider omits it. |
+| `assistantMessages` | Completed assistant `message_end` events observed. |
+| `toolCallsStarted` | `tool_execution_start` events observed. |
+| `durationMs` | Wall-clock span from the earliest started harness process to the latest process exit — **not** the sum of concurrent process durations. `0` when no process started. |
+| `processes` | `{ started, succeeded, failed }` — the harness subprocess tallies for one review run. |
+
+Counters are **provider-reported** and may be zero or incomplete. A request that
+is killed mid-flight may never emit a final usage event, so an **interrupted**
+run can under-report; custom OpenAI-compatible endpoints may not supply counters
+at all. Malformed events and non-finite or negative values are ignored or
+clamped to `0` rather than poisoning the totals. No USD cost is estimated, and
+no raw logs, prompts, source excerpts, stderr, or credentials appear here.
 
 **Redaction.** Every string value in the report is passed through the engine's
 pattern-based secret redaction (`src/security/redaction/redactor.ts`) before
@@ -180,8 +205,9 @@ publish step settles, so if building or writing the report also fails, the
 publish error stays primary and no report is emitted. The action itself still
 fails as before.
 
-The report never contains prompts, raw model traces, tokens, credentials, or
-full PR source: it is limited to the already-validated and capped review result.
+The report never contains prompts, raw model traces, credentials, raw
+stdout/stderr, or full PR source: it is limited to the already-validated and
+capped review result plus the numeric `usage` summary above.
 
 ## Severity levels
 

@@ -5,6 +5,7 @@ import type {
 	Finding,
 	FindingCategory,
 	ReviewResult,
+	ReviewUsageMetrics,
 	RiskLevel,
 	Severity,
 	ToolFinding,
@@ -13,6 +14,12 @@ import type {
 export interface ReviewHarness {
 	readonly name: string;
 	review(context: ReviewContext): Promise<ReviewResult>;
+	/**
+	 * Provider-reported usage aggregated over every process this harness ran,
+	 * including failed groups. Optional: harnesses that do not report usage
+	 * leave `ReviewResult.usage` unset.
+	 */
+	readonly usage?: ReviewUsageMetrics;
 }
 export interface HarnessOutput {
 	findings: Partial<Finding>[];

@@ -32,7 +32,7 @@
       ]
     }
   ],
-  "tracked_topics": ["GitHub Action consumer contracts", "Pi runtime provenance", "honest review state", "release and rollback readiness"],
-  "unknowns": ["production adoption", "competitive quality", "canary consumers", "tested rollback", "security confirmation semantics", "alibaba-open-code-review pricing, adoption and UX"],
-  "previous_research": ["docs/research/code-review-deep-research.md", "docs/research/improvement-roadmap.md", "docs/research/alibaba-open-code-review-2026-09-18.md", "docs/research/cloudflare-security-audit-skill-2026-09-18.md"]
+  "tracked_topics": ["GitHub Action consumer contracts", "Pi runtime provenance", "honest review state", "release and rollback readiness", "machine-readable usage and failed-run observability"],
+  "unknowns": ["production adoption", "competitive quality", "canary consumers", "tested rollback", "security confirmation semantics", "alibaba-open-code-review pricing, adoption and UX", "direct demand for machine-readable usage in this repository", "provider usage accuracy and completeness when a process is interrupted"],
+  "previous_research": ["docs/research/code-review-deep-research.md", "docs/research/improvement-roadmap.md", "docs/research/alibaba-open-code-review-2026-09-18.md", "docs/research/cloudflare-security-audit-skill-2026-09-18.md", "docs/research/review-usage-observability-2026-09-18.md"]
 }

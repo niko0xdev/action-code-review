@@ -54,6 +54,40 @@ export interface FindingCounts {
 	low: number;
 }
 
+/** Whether every recorded Pi process and the analysis itself completed. */
+export type ReviewUsageStatus = 'complete' | 'partial';
+
+/** Per-process tallies for the Pi review-group subprocesses. */
+export interface ReviewUsageProcessCounts {
+	/** Pi processes the harness spawned. */
+	started: number;
+	/** Started processes that exited cleanly. */
+	succeeded: number;
+	/** Started processes that timed out, were killed, or exited non-zero. */
+	failed: number;
+}
+
+/**
+ * Provider-reported review usage aggregated from Pi JSON events. These are
+ * counters the provider/runtime reported, not a billing ledger: a request that
+ * is killed in flight may never emit a final usage event, so an interrupted run
+ * can under-report. Never treat these as exact dollar cost.
+ */
+export interface ReviewUsageMetrics {
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	totalTokens: number;
+	/** Completed assistant `message_end` events observed. */
+	assistantMessages: number;
+	/** `tool_execution_start` events observed. */
+	toolCallsStarted: number;
+	/** Wall-clock span from the earliest started process to the latest exit. */
+	durationMs: number;
+	processes: ReviewUsageProcessCounts;
+}
+
 export interface ReviewResult {
 	/** Findings that survived validation, sorted by severity then confidence. */
 	findings: Finding[];
@@ -74,6 +108,8 @@ export interface ReviewResult {
 	ruleCoverage?: RuleCoverage;
 	/** Overall assessment state; incomplete work is never a clean approval. */
 	reviewStatus?: 'complete' | 'incomplete' | 'failed' | 'stale';
+	/** Provider-reported Pi usage aggregated across review-group processes. */
+	usage?: ReviewUsageMetrics;
 }
 
 export interface RuleCoverage {

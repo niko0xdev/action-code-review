@@ -120,6 +120,9 @@ export async function runReview(
 		...(context.diff.filesTruncated ? { filesTruncated: true } : {}),
 		ruleCoverage: deriveRuleCoverage(context, findings),
 		reviewStatus: failedGroups > 0 ? 'incomplete' : 'complete',
+		// Read after every group settled so failed processes that still emitted
+		// usage before exiting are included in the aggregate.
+		...(harness.usage ? { usage: harness.usage } : {}),
 	};
 	// Phase 3 diagnostics: bucket count + conflict drop count + trivial flag.
 	// Preserve any toolFindings already set by cli.ts so reviewers don't

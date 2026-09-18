@@ -109,6 +109,18 @@ breaking shape change.
     "filesTruncated": false
   },
   "findings": [ /* validated, capped findings */ ],
+  "usage": {
+    "status": "complete",         // complete | partial
+    "inputTokens": 1200,
+    "outputTokens": 340,
+    "cacheReadTokens": 0,
+    "cacheWriteTokens": 0,
+    "totalTokens": 1540,
+    "assistantMessages": 3,
+    "toolCallsStarted": 12,
+    "durationMs": 84000,
+    "processes": { "started": 2, "succeeded": 2, "failed": 0 }
+  },
   "diagnostics": { /* pipeline diagnostics, when present */ },
   "ruleCoverage": { /* rule-level coverage, when present */ }
 }
@@ -126,6 +138,29 @@ breaking shape change.
   patterns, a missing patch, and the `max-files` cap. On an incomplete review,
   `filesReviewed + filesExcluded` can be less than `filesTotal`: files in a
   failed review group are counted as neither reviewed nor excluded.
+- `usage` is always present and **additive**. Its counters are
+  **provider-reported** values aggregated from the harness's JSON event stream:
+  `inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheWriteTokens`/`totalTokens`
+  are summed only from completed assistant `message_end` events (never from
+  cumulative `message_update` snapshots), `assistantMessages` counts those
+  completed messages, `toolCallsStarted` counts `tool_execution_start` events,
+  and `processes` tallies the harness subprocesses (`started`/`succeeded`/
+  `failed`). Malformed events, malformed usage shapes, and non-finite or
+  negative counters are ignored or clamped to `0`, so a bad producer cannot
+  poison the totals.
+- `usage.status` is `partial` whenever any harness process failed **or** the
+  review itself is not `complete`; otherwise it is `complete`. A failed process
+  retains any usage and tool starts it emitted before exiting.
+- `usage.durationMs` is the wall-clock span from the earliest started harness
+  process to the latest process exit — not the sum of concurrent process
+  durations — and is `0` when no process started.
+- These counters are **not a billing ledger**. An in-flight provider request
+  that is killed may never emit a final usage event, so an interrupted run can
+  under-report; custom OpenAI-compatible providers may report zero or no
+  counters at all. No USD estimate is derived from them.
+- Content is limited to the validated/capped review result plus numeric usage:
+  no prompts, raw model traces, stdout/stderr, tokens, credentials, or full PR
+  source.
 - Every string value is pattern-redacted (`redactSecrets`) on a serialized
   copy; the engine result is not mutated. Redaction is pattern-based and is not
   a general secret detector.
