@@ -75,6 +75,113 @@ jobs:
 | Output | Description |
 |--------|-------------|
 | `review-summary` | Summary of the code review |
+| `review-report` | Machine-readable JSON report of the review (see below) |
+
+### `review-report`
+
+An additive, versioned JSON object emitted after a normal PR review produces a
+review result. Consumers can gate downstream jobs on it instead of parsing the
+human-readable summary. The output is **empty** whenever no review result
+exists — the action was skipped, runs in security mode, or errored during or
+before the review — so check that first. An empty output is not JSON, and
+parsing it will fail; consumers must test for it before parsing:
+
+```yaml
+- uses: niko0xdev/action-code-review/pr-review@main
+  id: review
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+
+# The report is untrusted data (it contains PR-derived strings). Never
+# interpolate it into `run:` shell source with ${{ }} — pass it through the
+# environment and treat it as a value, so its bytes can never be re-parsed as
+# shell. Persist it with printf and a quoted variable.
+- name: Persist review report
+  if: always()
+  env:
+    REVIEW_REPORT: ${{ steps.review.outputs.review-report }}
+  run: |
+    if [ -n "$REVIEW_REPORT" ]; then
+      printf '%s' "$REVIEW_REPORT" > review-report.json
+    fi
+
+# Fail closed unless a well-formed report with status "complete" exists.
+# `if: always()` is required: the review step must be able to fail without
+# skipping this gate. The check runs in a static `node -e` script that reads
+# the JSON from the environment and does the parsing itself — no report bytes
+# are spliced into the script source.
+- name: Fail closed when there is no report, or it is not complete
+  if: always()
+  env:
+    REVIEW_REPORT: ${{ steps.review.outputs.review-report }}
+  run: |
+    node -e '
+      const raw = process.env.REVIEW_REPORT ?? "";
+      if (raw.trim() === "") {
+        console.error("No review report — do not treat this PR as clean");
+        process.exit(1);
+      }
+      let report;
+      try {
+        report = JSON.parse(raw);
+      } catch {
+        console.error("Malformed review report — do not treat this PR as clean");
+        process.exit(1);
+      }
+      if (!report || report.status !== "complete") {
+        console.error(
+          "Review report status is not complete: " + (report && report.status)
+        );
+        process.exit(1);
+      }
+      console.log("Review report complete");
+    '
+```
+
+The fail-closed step deliberately treats an absent report exactly like an
+incomplete one, so a skipped or failed action can never be mistaken for a clean
+review. It runs under `if: always()` so a failing review step cannot skip the
+gate, reads the report through `env` rather than `${{ }}`, and parses it inside
+a fixed `node -e` program — a missing, malformed, or non-`complete` report
+exits non-zero.
+
+Shape (`schemaVersion: 1`):
+
+| Field | Meaning |
+|-------|---------|
+| `schemaVersion` | Always `1` for this shape. A breaking change bumps it. |
+| `status` | `complete` \| `incomplete` \| `failed` \| `stale`. Derived conservatively from the review result — a failed review group can never be reported as `complete`. `failed` is **reserved**: it is accepted and treated as not-complete, but the current pipeline never emits it (failed groups become `incomplete`). |
+| `risk` | Overall risk derived from the severity distribution. |
+| `counts` | Validated finding counts per severity (`critical`/`high`/`medium`/`low`). |
+| `coverage` | `filesReviewed`, `filesTotal`, `filesExcluded`, `filesTruncated`. `filesTotal` is the number of files returned by the PR file listing before any filtering; when the listing safety cap is hit, `filesTruncated` is `true` and `filesTotal` may be below the actual PR file count. `filesExcluded` is `filesTotal` minus the files that survived filtering, so it bundles every reason a file was not reviewed: exclude patterns, a missing patch, and the `max-files` cap. On an incomplete review, `filesReviewed + filesExcluded` can be less than `filesTotal`, because files in a failed review group are counted as neither reviewed nor excluded. |
+| `findings` | Validated, capped findings (same data as the inline comments, including `ruleId` and `replacement` when present). |
+| `diagnostics` | Present when the pipeline recorded them (failed groups, prelint tools, verify pass, truncation of the trivial-PR fast path, …). |
+| `ruleCoverage` | Present when rule coverage could be derived deterministically. |
+
+**Redaction.** Every string value in the report is passed through the engine's
+pattern-based secret redaction (`src/security/redaction/redactor.ts`) before
+JSON encoding. This is a defence-in-depth backstop over a known set of token
+patterns (GitHub/OpenAI/AWS/Slack/JWT tokens, private keys, password
+assignments) — it is **not** a general secret detector and must not be relied
+on as the only control against secrets appearing in review output.
+
+**When it is empty.** The output is only written on the normal PR-review path
+once a review result exists. It is empty whenever there is no review result:
+the action was skipped (draft PR, disallowed actor, unsupported event, no files
+after filtering), it runs in `mode: security`, or it errors before a review
+result exists — including an error during the review itself. Treat an empty
+value as "no report available", not as "no findings".
+
+**Publishing failure.** Report emission is *attempted* even if publication to
+GitHub fails — the report status describes the analysis result, which exists
+either way. This is best effort, not a guarantee: emission runs after the
+publish step settles, so if building or writing the report also fails, the
+publish error stays primary and no report is emitted. The action itself still
+fails as before.
+
+The report never contains prompts, raw model traces, tokens, credentials, or
+full PR source: it is limited to the already-validated and capped review result.
 
 ## Severity levels
 

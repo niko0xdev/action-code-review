@@ -14,7 +14,7 @@ interface ActionYml {
 		string,
 		{ description: string; required?: boolean; default?: string }
 	>;
-	outputs?: Record<string, { description: string }>;
+	outputs?: Record<string, { description: string; value?: string }>;
 	runs: { using: string; main: string };
 }
 
@@ -154,6 +154,69 @@ describe('V1 contract: pr-review/action.yml', () => {
 		]) {
 			expect(outs, `missing security output ${key}`).toContain(key);
 		}
+	});
+
+	it('maps the additive machine-readable review-report output', () => {
+		const report = action.outputs?.['review-report'] as
+			| { description?: string; value?: string }
+			| undefined;
+		expect(report, 'missing review-report output').toBeDefined();
+		expect(report?.value).toBe('${{ steps.run-review.outputs.review-report }}');
+	});
+});
+
+describe('V1 contract: review-report README guidance', () => {
+	const readme = () =>
+		readFileSync(resolve(repoRoot, 'pr-review/README.md'), 'utf8');
+
+	/**
+	 * Pull the body of every fenced ```yaml block out of a Markdown document.
+	 * The README examples are where consumers copy workflows from, so those
+	 * blocks are the real attack surface.
+	 */
+	function yamlFences(markdown: string): string[] {
+		return [...markdown.matchAll(/```ya?ml\n([\s\S]*?)```/g)].map((m) => m[1]);
+	}
+
+	/** Collect every `run:` script body, including multiline block scalars. */
+	function runBodies(node: unknown, out: string[] = []): string[] {
+		if (Array.isArray(node)) {
+			for (const item of node) runBodies(item, out);
+		} else if (node && typeof node === 'object') {
+			for (const [key, value] of Object.entries(node)) {
+				if (key === 'run' && typeof value === 'string') out.push(value);
+				else runBodies(value, out);
+			}
+		}
+		return out;
+	}
+
+	it('never interpolates review-report into shell source', () => {
+		const doc = readme();
+		const fences = yamlFences(doc);
+		expect(fences.length).toBeGreaterThan(0);
+
+		// Parse each fenced YAML example and inspect the actual run scripts, so
+		// a multiline `run: |` block that interpolates the output is caught even
+		// though it never shares a line with `run:`.
+		const bodies = fences.flatMap((fence) =>
+			runBodies(parseDocument(fence).toJS())
+		);
+		expect(bodies.length).toBeGreaterThan(0);
+		for (const body of bodies) {
+			expect(body).not.toContain('steps.review.outputs.review-report');
+		}
+		// The output must travel through env: and be consumed as data, so report
+		// content can never be re-parsed as shell source.
+		expect(doc).toContain(
+			'REVIEW_REPORT: ${{ steps.review.outputs.review-report }}'
+		);
+	});
+
+	it('keeps the fail-closed example running after a failed review step', () => {
+		const doc = readme();
+		expect(doc).toContain('if: always()');
+		expect(doc).toContain('JSON.parse');
 	});
 });
 
