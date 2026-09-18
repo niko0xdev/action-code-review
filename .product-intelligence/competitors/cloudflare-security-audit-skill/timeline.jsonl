@@ -1,0 +1,2 @@
+{"date":"2026-09-10","revision":"158eb44","event":"Reworked the audit workflow, finding contract, and validators end to end.","source":"https://github.com/cloudflare/security-audit-skill/commit/158eb44"}
+{"date":"2026-09-14","revision":"c1c8a8c","event":"Clarified guidance versus full-audit modes and refined hunting instructions; verified as main HEAD on 2026-09-18.","source":"https://github.com/cloudflare/security-audit-skill/commit/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8"}

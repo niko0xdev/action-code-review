@@ -148,7 +148,47 @@ jobs:
           security-fail-on: critical
 ```
 
-## 7. Scanner Completion Contract (Semgrep)
+## 7. Audit Report Evidence Context
+
+The full Markdown audit report (`security_report_path`) renders existing
+normalized finding fields as additional verification context. All of the
+following are conditional and appear only when the engine supplied a
+non-empty value:
+
+- **Source** and **Sink** on the finding, shown under `#### Evidence Context`.
+- **Attack path**, when `attackPath` has at least one non-empty step. Steps
+  render as an ordered list in their existing order under
+  `#### Attack Path`. No trace is invented when the array is absent or empty.
+- **Evidence location**, prefixed to each evidence item as `[type] file:line`
+  when a file is supplied, with `:line` appended only for a positive finite
+  integer line. Without a location, the item keeps the plain
+  `[type] description` form.
+
+Missing or empty optional fields produce no labels, no headings, and no
+placeholder text; the report is unchanged for findings that carry none of
+these fields.
+
+These values are LLM-derived and treated as untrusted. Code-like values
+(source, sink, attack-path steps, and evidence locations) render as inline
+code spans with a fence longer than any backtick run they contain. Freeform
+finding prose (titles, classifications, remediation, and evidence
+descriptions) renders as single-line Markdown-escaped text: newlines collapse
+to spaces and Markdown punctuation, angle brackets, colons, domain dots, and
+at-signs, plus leading list markers, are escaped, so a value cannot open a
+heading, list, table row, link, bare-URL or bare-domain (`www.`) autolink,
+email autolink, or raw HTML block while ordinary text stays readable. The
+backslash an autolink guard introduces renders invisibly, so `www.example.com`
+and `attacker@example.com` still read normally in the rendered report.
+Freeform prose is passed through the secret redaction of §5 *before* this
+escaping, because escaping rewrites the underscores and dots that redaction
+patterns rely on; the redaction marker is then escaped alongside the rest,
+which only adds invisible backslashes, so it still renders as `[REDACTED_…]`.
+The complete assembled report still passes through the same report-wide
+redaction again as defense in depth.
+
+---
+
+## 8. Scanner Completion Contract (Semgrep)
 
 A Semgrep execution reports `success` only when the CLI exits with code `0`,
 no termination signal, an empty `errors` array, and a `results` array in the

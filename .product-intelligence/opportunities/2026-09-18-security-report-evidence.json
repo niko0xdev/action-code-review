@@ -1,0 +1,48 @@
+{
+  "id": "opp-20260918-security-report-evidence-context",
+  "title": "Expose source, sink, and evidence locations in security audit reports",
+  "insight_ids": ["ins-20260918-security-report-evidence"],
+  "problem": "The full security audit Markdown report gives evidence descriptions without the evidence locations and omits the normalized source and sink fields, leaving readers with less context than the engine already has.",
+  "hypothesis": "If the full audit report renders source, sink, attack-path steps, and file:line values when present, maintainers can verify security findings more quickly without changing finding decisions or action permissions.",
+  "alternative_solutions": [
+    "Change security confirmation or verdict semantics; deferred because those policies are explicitly unresolved.",
+    "Add a new machine-readable security report output; deferred because the action already exposes security conclusion metadata and that would expand the public contract.",
+    "Import Cloudflare's multi-agent coverage ledger and prior-run workflow; rejected for this slice because it adds persistent state and orchestration beyond a PR action's scope."
+  ],
+  "scores": {
+    "weights": {"strategic_fit": 0.25, "user_pain": 0.2, "market_evidence": 0.15, "differentiation": 0.15, "business_value": 0.1, "feasibility": 0.1, "timing": 0.05},
+    "dimensions": {"strategic_fit": 9, "user_pain": 6, "market_evidence": 3, "differentiation": 4, "business_value": 5, "feasibility": 10, "timing": 8},
+    "raw": 64,
+    "units": "out of 100",
+    "formula": "raw = sum(score * weight) * 10 = 6.40 * 10 = 64",
+    "confidence": 0.82,
+    "adjusted": 52.48,
+    "adjusted_formula": "adjusted = raw * confidence = 64 * 0.82 = 52.48"
+  },
+  "confidence": 0.82,
+  "confidence_rationale": "The report/model gap and the reference schema are observed directly. User demand and the expected improvement in verification speed are unvalidated.",
+  "effort": "S",
+  "recommendation": "PROTOTYPE",
+  "score_band": "PROTOTYPE by raw score (55-74); confidence-adjusted score is 52.48 and demand remains unknown.",
+  "state": "ACCEPTED",
+  "authorization": "The user explicitly asked to research, identify, and implement a feature if one fits. This authorizes this bounded local prototype only; it does not authorize a broader roadmap commitment, push, release, merge, or permission change.",
+  "why_build": "A focused renderer change can surface existing model fields and code locations, is feasible without a new dependency, and supports the documented priorities of correctness and actionable security reports.",
+  "why_not_build": "No direct consumer request exists. Inline comments and SARIF already expose some location context, and Cloudflare's full audit trace contract is more extensive than the data this action currently guarantees.",
+  "counterevidence": [
+    "This is one competitor repository, not evidence of market-wide demand or superior detection.",
+    "Fields such as attackPath and per-evidence locations are optional and may be absent from current model responses.",
+    "The existing report already shows the finding's primary file and line; the improvement is to supporting evidence and data-flow context."
+  ],
+  "risk": "low",
+  "acceptance_criteria": [
+    "Full Markdown reports include source and sink when present.",
+    "Evidence file and line are included when supplied, alongside evidence type and description.",
+    "Optional attackPath items are shown in their existing order.",
+    "Missing optional fields produce no empty labels or fabricated trace.",
+    "Secret redaction still runs over the complete report.",
+    "No finding validation, severity, confirmation, public JSON schema, permissions, or dependencies change.",
+    "Tests and security documentation cover the new report behavior."
+  ],
+  "human_decision": "Explicitly authorized by the user's request for ideation and implementation of a suitable feature.",
+  "what_would_change_conclusion": "Evidence that the newly displayed fields are routinely absent or inaccurate, or user feedback that richer evidence belongs in a different artifact."
+}

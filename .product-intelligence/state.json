@@ -20,9 +20,19 @@
         ".product-intelligence/competitors/alibaba-open-code-review/profile.md",
         "docs/research/alibaba-open-code-review-2026-09-18.md"
       ]
+    },
+    {
+      "name": "cloudflare-security-audit-skill",
+      "repository": "https://github.com/cloudflare/security-audit-skill",
+      "observed_at": "2026-09-18",
+      "revision": "c1c8a8c1471069fb0e188eeaff69b8e8db6564a8",
+      "artifacts": [
+        ".product-intelligence/competitors/cloudflare-security-audit-skill/profile.md",
+        "docs/research/cloudflare-security-audit-skill-2026-09-18.md"
+      ]
     }
   ],
   "tracked_topics": ["GitHub Action consumer contracts", "Pi runtime provenance", "honest review state", "release and rollback readiness"],
   "unknowns": ["production adoption", "competitive quality", "canary consumers", "tested rollback", "security confirmation semantics", "alibaba-open-code-review pricing, adoption and UX"],
-  "previous_research": ["docs/research/code-review-deep-research.md", "docs/research/improvement-roadmap.md", "docs/research/alibaba-open-code-review-2026-09-18.md"]
+  "previous_research": ["docs/research/code-review-deep-research.md", "docs/research/improvement-roadmap.md", "docs/research/alibaba-open-code-review-2026-09-18.md", "docs/research/cloudflare-security-audit-skill-2026-09-18.md"]
 }
