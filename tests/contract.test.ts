@@ -218,6 +218,50 @@ describe('V1 contract: review-report README guidance', () => {
 		expect(doc).toContain('if: always()');
 		expect(doc).toContain('JSON.parse');
 	});
+
+	it('documents the provider-reported usage object and its caveat', () => {
+		const doc = readme();
+		// The additive usage fields consumers can read.
+		for (const field of [
+			'status',
+			'inputTokens',
+			'outputTokens',
+			'cacheReadTokens',
+			'cacheWriteTokens',
+			'totalTokens',
+			'assistantMessages',
+			'toolCallsStarted',
+			'durationMs',
+			'processes',
+		]) {
+			expect(doc, `README must document usage.${field}`).toContain(field);
+		}
+		// Counters are provider-reported and may under-report an interrupted call.
+		expect(doc).toMatch(/provider-reported/i);
+		expect(doc).toMatch(/interrupt/i);
+	});
+
+	it('documents the usage object in the frozen contract doc', () => {
+		const doc = readFileSync(
+			resolve(repoRoot, 'docs/v1-interface-contract.md'),
+			'utf8'
+		);
+		expect(doc).toContain('"usage"');
+		for (const field of [
+			'inputTokens',
+			'outputTokens',
+			'cacheReadTokens',
+			'cacheWriteTokens',
+			'totalTokens',
+			'assistantMessages',
+			'toolCallsStarted',
+			'durationMs',
+			'processes',
+		]) {
+			expect(doc, `contract doc must document usage.${field}`).toContain(field);
+		}
+		expect(doc).toMatch(/provider-reported/i);
+	});
 });
 
 describe('V1 contract: environment variable names', () => {
