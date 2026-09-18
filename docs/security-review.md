@@ -173,9 +173,12 @@ These values are LLM-derived and treated as untrusted. Code-like values
 code spans with a fence longer than any backtick run they contain. Freeform
 finding prose (titles, classifications, remediation, and evidence
 descriptions) renders as single-line Markdown-escaped text: newlines collapse
-to spaces and Markdown punctuation, angle brackets, colons, and leading list
-markers are escaped, so a value cannot open a heading, list, table row, link,
-bare-URL autolink, or raw HTML block while ordinary text stays readable.
+to spaces and Markdown punctuation, angle brackets, colons, domain dots, and
+at-signs, plus leading list markers, are escaped, so a value cannot open a
+heading, list, table row, link, bare-URL or bare-domain (`www.`) autolink,
+email autolink, or raw HTML block while ordinary text stays readable. The
+backslash an autolink guard introduces renders invisibly, so `www.example.com`
+and `attacker@example.com` still read normally in the rendered report.
 Either way, the complete assembled report still passes through the
 report-wide secret redaction described in §5.
 

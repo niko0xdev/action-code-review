@@ -39829,11 +39829,16 @@ function normalizeInline(value) {
  * remaining punctuation is backslash-escaped, which renders as the literal
  * character. A leading unordered or ordered list marker is escaped too, so a
  * value cannot become a list item. The colon is escaped so a bare URL
- * (`https://…`) cannot autolink even without explicit link syntax.
+ * (`https://…`) cannot autolink even without explicit link syntax, and a
+ * domain dot or email at-sign is escaped so GFM's bare `www.` and email
+ * autolink extensions cannot trigger either. The backslash renders invisibly
+ * in a Markdown renderer, so the value still reads as `www.example.com` and
+ * `attacker@example.com`.
  */
+const PROSE_ESCAPE_PATTERN = /[\\`*_[\]()|#:@]|\.(?=\.?\w)/g;
 function proseEscape(value) {
     const escaped = normalizeInline(value)
-        .replace(/[\\`*_[\]()|#:]/g, '\\$&')
+        .replace(PROSE_ESCAPE_PATTERN, '\\$&')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
     return escaped.replace(/^(\s*)([-+]|\d+\.)(?=\s|$)/, (_match, lead, marker) => marker.endsWith('.')

@@ -416,7 +416,7 @@ describe('SecurityReporters', () => {
 				/^#{1,6} .*(Evidence Heading|Location Heading)/m
 			);
 			expect(report).not.toContain('[click](https://evil.example)');
-			expect(report).toContain('\\[click\\]\\(https\\://evil.example\\)');
+			expect(report).toContain('\\[click\\]\\(https\\://evil\\.example\\)');
 			expect(report).not.toContain('| col | col |');
 			expect(report).toContain('\\| col \\| col \\|');
 			expect(report).not.toContain('<img src=x');
@@ -442,10 +442,46 @@ describe('SecurityReporters', () => {
 			);
 
 			// The colon is escaped, so no `scheme://` sequence survives to
-			// trigger GFM autolinking in either prose field.
+			// trigger GFM autolinking in either prose field; the domain dot is
+			// escaped too, so no bare-domain autolink can trigger either.
 			expect(report).not.toContain('https://');
-			expect(report).toContain('https\\://evil.example');
-			expect(report).toContain('https\\://evil.example\\:8080/steal.');
+			expect(report).toContain('https\\://evil\\.example');
+			expect(report).toContain('https\\://evil\\.example\\:8080/steal.');
+		});
+
+		it('neutralizes bare www and email autolinks across prose fields', () => {
+			const report = buildFullAuditReport(
+				auditOptions([
+					{
+						...sampleFinding,
+						title: 'Visit www.example.com/path for details',
+						cwe: 'CWE-79 reachable via www.example.com/path',
+						remediation: 'Email attacker@example.com immediately.',
+						evidence: [
+							{
+								type: 'code',
+								description:
+									'Contact attacker@example.com or browse www.example.com/path.',
+							},
+						],
+					},
+				])
+			);
+
+			// GFM's bare-URL extension requires an unescaped first domain dot,
+			// so `www.` followed by a letter can no longer appear.
+			expect(report).not.toMatch(/www\.[a-zA-Z]/);
+			expect(report).not.toContain('www.example.com/path');
+			// The email extension needs a literal `@`; the escaped at-sign and
+			// domain dots leave no address-shaped run behind.
+			expect(report).not.toContain('attacker@example.com');
+			expect(report).not.toMatch(
+				/[A-Za-z0-9._%+-]@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/
+			);
+
+			// Escapes are invisible in rendered Markdown, so the text stays readable.
+			expect(report).toContain('www\\.example\\.com/path');
+			expect(report).toContain('attacker\\@example\\.com');
 		});
 
 		it('still redacts secrets found in evidence-context fields', () => {
