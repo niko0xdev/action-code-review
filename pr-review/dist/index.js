@@ -39834,10 +39834,16 @@ function normalizeInline(value) {
  * autolink extensions cannot trigger either. The backslash renders invisibly
  * in a Markdown renderer, so the value still reads as `www.example.com` and
  * `attacker@example.com`.
+ *
+ * Secrets are redacted before escaping: escaping rewrites the `_` in a
+ * GitHub token and the `.` in a JWT, which would stop the report-wide
+ * redaction patterns from matching. Redacting first replaces the whole
+ * token, and the escaping applied to the resulting marker only adds
+ * invisible backslashes, so it still renders as `[REDACTED_…]`.
  */
 const PROSE_ESCAPE_PATTERN = /[\\`*_[\]()|#:@]|\.(?=\.?\w)/g;
 function proseEscape(value) {
-    const escaped = normalizeInline(value)
+    const escaped = (0,redactor/* redactSecrets */.f)(normalizeInline(value))
         .replace(PROSE_ESCAPE_PATTERN, '\\$&')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');

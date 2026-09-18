@@ -179,8 +179,12 @@ heading, list, table row, link, bare-URL or bare-domain (`www.`) autolink,
 email autolink, or raw HTML block while ordinary text stays readable. The
 backslash an autolink guard introduces renders invisibly, so `www.example.com`
 and `attacker@example.com` still read normally in the rendered report.
-Either way, the complete assembled report still passes through the
-report-wide secret redaction described in §5.
+Freeform prose is passed through the secret redaction of §5 *before* this
+escaping, because escaping rewrites the underscores and dots that redaction
+patterns rely on; the redaction marker is then escaped alongside the rest,
+which only adds invisible backslashes, so it still renders as `[REDACTED_…]`.
+The complete assembled report still passes through the same report-wide
+redaction again as defense in depth.
 
 ---
 

@@ -499,5 +499,41 @@ describe('SecurityReporters', () => {
 			expect(report).not.toContain('ghp_1234567890abcdef1234567890abcdef');
 			expect(report).toContain('[REDACTED_GITHUB_TOKEN]');
 		});
+
+		it('redacts secrets in prose before Markdown escaping hides them', () => {
+			const token = 'ghp_1234567890abcdef1234567890abcdef';
+			const jwt =
+				'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+			const report = buildFullAuditReport(
+				auditOptions([
+					{
+						...sampleFinding,
+						remediation: `Rotate the exposed token ${token} now.`,
+						evidence: [
+							{
+								type: 'code',
+								description: `Hardcoded credential ${token} and session ${jwt} committed.`,
+							},
+						],
+					},
+				])
+			);
+
+			// Escaping once broke the `_` in the token, so the report-wide
+			// redactor could no longer match it. Prose is redacted first now.
+			expect(report).not.toContain(token);
+
+			// The dot-separated JWT is the escaped-dot case: escaping its `.`
+			// separators prevented the redactor from matching it too.
+			expect(report).not.toContain(jwt);
+			expect(report.replace(/\\/g, '')).toContain('[REDACTED_JWT_TOKEN]');
+
+			// The marker is escaped for Markdown (brackets/underscores), so the
+			// literal form is absent while the escaped form renders as the marker.
+			const marker = '[REDACTED_GITHUB_TOKEN]';
+			expect(report).not.toContain(marker);
+			expect(report).toContain('\\[REDACTED\\_GITHUB\\_TOKEN\\]');
+			expect(report.replace(/\\/g, '')).toContain(marker);
+		});
 	});
 });
