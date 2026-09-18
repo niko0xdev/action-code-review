@@ -37748,6 +37748,7 @@ function coerceFinding(item) {
 
 
 
+
 const PI_READONLY_TOOLS = ['read', 'grep', 'find', 'ls'];
 const MAX_OUTPUT_BYTES = 50 * 1024 * 1024;
 const PI_ARGS_ALLOWLIST = new Set([
@@ -37894,6 +37895,138 @@ function extractAssistantText(stdout) {
     }
     return messages.at(-1) ?? '';
 }
+/** A counter the provider may report as nonsense; unknown => 0. */
+function counter(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+        return 0;
+    // Bound to a safe integer so a bogus huge value cannot poison totals.
+    return Math.min(Math.floor(value), Number.MAX_SAFE_INTEGER);
+}
+function addCounter(current, value) {
+    const next = current + counter(value);
+    return next > Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER : next;
+}
+function readUsage(messageUsage) {
+    if (!messageUsage || typeof messageUsage !== 'object')
+        return null;
+    const usage = messageUsage;
+    const inputTokens = counter(usage.input);
+    const outputTokens = counter(usage.output);
+    const cacheReadTokens = counter(usage.cacheRead);
+    const cacheWriteTokens = counter(usage.cacheWrite);
+    // Prefer the provider's own total; fall back to the component sum when the
+    // provider omits it, so a partial shape still yields a usable number.
+    const reported = usage.totalTokens;
+    const totalTokens = typeof reported === 'number' && Number.isFinite(reported) && reported >= 0
+        ? Math.min(Math.floor(reported), Number.MAX_SAFE_INTEGER)
+        : inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens;
+    return {
+        inputTokens,
+        outputTokens,
+        cacheReadTokens,
+        cacheWriteTokens,
+        totalTokens,
+    };
+}
+/**
+ * Sum provider-reported usage from a single Pi JSONL stdout stream.
+ *
+ * Only top-level JSON lines are considered. Usage is taken from **completed
+ * assistant `message_end` events** only — `message_update` carries cumulative
+ * snapshots and summing them would double-count — while
+ * `tool_execution_start` events are counted. Malformed lines, malformed usage
+ * shapes, and non-finite/negative counters are ignored rather than throwing.
+ */
+function parsePiUsage(stdout) {
+    const totals = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 0,
+        assistantMessages: 0,
+        toolCallsStarted: 0,
+    };
+    for (const line of stdout.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('{'))
+            continue;
+        let event;
+        try {
+            event = JSON.parse(trimmed);
+        }
+        catch {
+            continue; /* ignore malformed/unrelated lines */
+        }
+        if (!event || typeof event !== 'object')
+            continue;
+        if (event.type === 'tool_execution_start') {
+            totals.toolCallsStarted = addCounter(totals.toolCallsStarted, 1);
+            continue;
+        }
+        if (event.type !== 'message_end')
+            continue;
+        if (event.message?.role !== 'assistant')
+            continue;
+        // Every completed assistant message counts, even when the provider
+        // omitted a usage block; only the token sums need a valid shape.
+        totals.assistantMessages = addCounter(totals.assistantMessages, 1);
+        const usage = readUsage(event.message.usage);
+        if (!usage)
+            continue;
+        totals.inputTokens = addCounter(totals.inputTokens, usage.inputTokens);
+        totals.outputTokens = addCounter(totals.outputTokens, usage.outputTokens);
+        totals.cacheReadTokens = addCounter(totals.cacheReadTokens, usage.cacheReadTokens);
+        totals.cacheWriteTokens = addCounter(totals.cacheWriteTokens, usage.cacheWriteTokens);
+        totals.totalTokens = addCounter(totals.totalTokens, usage.totalTokens);
+    }
+    return totals;
+}
+/**
+ * Aggregate per-process logs into report usage. `durationMs` is the wall-clock
+ * span from the earliest started process to the latest exit — not the sum of
+ * concurrent process durations — and is 0 when no process ran.
+ */
+function aggregatePiUsage(runs) {
+    const metrics = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 0,
+        assistantMessages: 0,
+        toolCallsStarted: 0,
+        durationMs: 0,
+        processes: { started: runs.length, succeeded: 0, failed: 0 },
+    };
+    let earliestStart = Number.POSITIVE_INFINITY;
+    let latestEnd = Number.NEGATIVE_INFINITY;
+    for (const run of runs) {
+        if (run.failed)
+            metrics.processes.failed += 1;
+        else
+            metrics.processes.succeeded += 1;
+        if (typeof run.startedAt === 'number')
+            earliestStart = Math.min(earliestStart, run.startedAt);
+        if (typeof run.endedAt === 'number')
+            latestEnd = Math.max(latestEnd, run.endedAt);
+        const usage = run.usage;
+        if (!usage)
+            continue;
+        metrics.inputTokens = addCounter(metrics.inputTokens, usage.inputTokens);
+        metrics.outputTokens = addCounter(metrics.outputTokens, usage.outputTokens);
+        metrics.cacheReadTokens = addCounter(metrics.cacheReadTokens, usage.cacheReadTokens);
+        metrics.cacheWriteTokens = addCounter(metrics.cacheWriteTokens, usage.cacheWriteTokens);
+        metrics.totalTokens = addCounter(metrics.totalTokens, usage.totalTokens);
+        metrics.assistantMessages = addCounter(metrics.assistantMessages, usage.assistantMessages);
+        metrics.toolCallsStarted = addCounter(metrics.toolCallsStarted, usage.toolCallsStarted);
+    }
+    if (Number.isFinite(earliestStart) &&
+        Number.isFinite(latestEnd) &&
+        latestEnd >= earliestStart)
+        metrics.durationMs = Math.floor(latestEnd - earliestStart);
+    return metrics;
+}
 const AGENT_DEBUG_MAX_CHARS = 60 * 1024;
 function buildAgentDebugSection(runs) {
     if (runs.length === 0)
@@ -37931,6 +38064,13 @@ class PiHarness {
     }
     get lastRun() {
         return this._runs.length ? this._runs[this._runs.length - 1] : null;
+    }
+    /**
+     * Provider-reported usage aggregated over every recorded process, including
+     * failed groups that emitted usage before exiting.
+     */
+    get usage() {
+        return aggregatePiUsage(this._runs);
     }
     async review(context) {
         let run;
@@ -37986,6 +38126,10 @@ function runPi(params) {
         let settled = false;
         let timedOut = false;
         let killTimer;
+        // Monotonic span endpoints: the aggregate reports the wall-clock span
+        // from the earliest start to the latest exit, not summed durations.
+        const startedAt = external_node_perf_hooks_namespaceObject.performance.now();
+        let endedAt = 0;
         const finish = (error) => {
             if (settled)
                 return;
@@ -37993,15 +38137,24 @@ function runPi(params) {
             clearTimeout(timer);
             if (killTimer)
                 clearTimeout(killTimer);
+            endedAt = external_node_perf_hooks_namespaceObject.performance.now();
+            // Usage is parsed from whatever completed events arrived, even when
+            // the process fails: a group that emitted assistant usage and tool
+            // starts before dying still contributed work worth reporting.
+            const log = {
+                stdout,
+                stderr,
+                startedAt,
+                endedAt,
+                failed: Boolean(error),
+                usage: parsePiUsage(stdout),
+            };
             if (error) {
-                error.piLog = {
-                    stdout,
-                    stderr,
-                };
+                error.piLog = log;
                 reject(error);
             }
             else
-                resolve({ stdout, stderr });
+                resolve(log);
         };
         const timer = setTimeout(() => {
             if (settled)
@@ -38610,6 +38763,42 @@ function copyFinding(finding) {
     return { ...finding };
 }
 /**
+ * Clamp a reported counter to a finite, non-negative, safe integer. Values the
+ * provider reported as NaN/Infinity/negative (or that are missing) become `0`,
+ * so a malformed producer cannot poison totals or emit `null` into JSON.
+ */
+function safeCount(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+        return 0;
+    return Math.min(Math.floor(value), Number.MAX_SAFE_INTEGER);
+}
+/**
+ * Build the additive usage object. Counters are copied and clamped; the status
+ * is `partial` whenever any recorded Pi process failed or the review analysis
+ * itself is not complete, so a degraded run can never read as a complete
+ * accounting of the work.
+ */
+function buildUsage(result) {
+    const usage = result.usage;
+    const processes = usage?.processes;
+    const started = safeCount(processes?.started);
+    const succeeded = safeCount(processes?.succeeded);
+    const failed = safeCount(processes?.failed);
+    const partial = failed > 0 || deriveStatus(result) !== 'complete';
+    return {
+        status: partial ? 'partial' : 'complete',
+        inputTokens: safeCount(usage?.inputTokens),
+        outputTokens: safeCount(usage?.outputTokens),
+        cacheReadTokens: safeCount(usage?.cacheReadTokens),
+        cacheWriteTokens: safeCount(usage?.cacheWriteTokens),
+        totalTokens: safeCount(usage?.totalTokens),
+        assistantMessages: safeCount(usage?.assistantMessages),
+        toolCallsStarted: safeCount(usage?.toolCallsStarted),
+        durationMs: safeCount(usage?.durationMs),
+        processes: { started, succeeded, failed },
+    };
+}
+/**
  * Build the report object. The returned value is a fresh copy: mutating it
  * cannot affect the engine result, and no redaction is applied here (only
  * {@link serializeReviewReport} redacts).
@@ -38628,6 +38817,7 @@ function buildReviewReport(input) {
             filesTruncated: Boolean(result.filesTruncated),
         },
         findings: result.findings.map(copyFinding),
+        usage: buildUsage(result),
     };
     if (result.diagnostics) {
         report.diagnostics = { ...result.diagnostics };
@@ -39249,6 +39439,9 @@ async function runReview(context, harness, options = {}) {
         ...(context.diff.filesTruncated ? { filesTruncated: true } : {}),
         ruleCoverage: deriveRuleCoverage(context, findings),
         reviewStatus: failedGroups > 0 ? 'incomplete' : 'complete',
+        // Read after every group settled so failed processes that still emitted
+        // usage before exiting are included in the aggregate.
+        ...(harness.usage ? { usage: harness.usage } : {}),
     };
     // Phase 3 diagnostics: bucket count + conflict drop count + trivial flag.
     // Preserve any toolFindings already set by cli.ts so reviewers don't

@@ -17,6 +17,7 @@ import type {
 	FindingCounts,
 	ReviewDiagnostics,
 	ReviewResult,
+	ReviewUsageStatus,
 	RiskLevel,
 	RuleCoverage,
 	Severity,
@@ -73,6 +74,37 @@ export interface ReviewReportCoverage {
 	filesTruncated: boolean;
 }
 
+/** Per-process tallies for the Pi review-group subprocesses. */
+export interface ReviewReportUsageProcesses {
+	started: number;
+	succeeded: number;
+	failed: number;
+}
+
+/**
+ * Provider-reported Pi usage. These are counters the runtime reported, not a
+ * billing ledger: an in-flight request that is killed may never emit a final
+ * usage event, so an interrupted run can under-report. No USD estimate is
+ * derived from them.
+ */
+export interface ReviewReportUsage {
+	/** `partial` when any Pi process failed or the review itself is not complete. */
+	status: ReviewUsageStatus;
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	totalTokens: number;
+	assistantMessages: number;
+	toolCallsStarted: number;
+	/**
+	 * Wall-clock span from the earliest started Pi process to the latest exit,
+	 * not the sum of concurrent process durations. `0` when none started.
+	 */
+	durationMs: number;
+	processes: ReviewReportUsageProcesses;
+}
+
 export interface ReviewReport {
 	schemaVersion: typeof REVIEW_REPORT_SCHEMA_VERSION;
 	status: ReviewReportStatus;
@@ -80,6 +112,7 @@ export interface ReviewReport {
 	counts: FindingCounts;
 	coverage: ReviewReportCoverage;
 	findings: ReviewReportFinding[];
+	usage: ReviewReportUsage;
 	diagnostics?: ReviewDiagnostics;
 	ruleCoverage?: RuleCoverage;
 }
@@ -119,6 +152,44 @@ function copyFinding(finding: Finding): ReviewReportFinding {
 }
 
 /**
+ * Clamp a reported counter to a finite, non-negative, safe integer. Values the
+ * provider reported as NaN/Infinity/negative (or that are missing) become `0`,
+ * so a malformed producer cannot poison totals or emit `null` into JSON.
+ */
+function safeCount(value: unknown): number {
+	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+		return 0;
+	return Math.min(Math.floor(value), Number.MAX_SAFE_INTEGER);
+}
+
+/**
+ * Build the additive usage object. Counters are copied and clamped; the status
+ * is `partial` whenever any recorded Pi process failed or the review analysis
+ * itself is not complete, so a degraded run can never read as a complete
+ * accounting of the work.
+ */
+function buildUsage(result: ReviewResult): ReviewReportUsage {
+	const usage = result.usage;
+	const processes = usage?.processes;
+	const started = safeCount(processes?.started);
+	const succeeded = safeCount(processes?.succeeded);
+	const failed = safeCount(processes?.failed);
+	const partial = failed > 0 || deriveStatus(result) !== 'complete';
+	return {
+		status: partial ? 'partial' : 'complete',
+		inputTokens: safeCount(usage?.inputTokens),
+		outputTokens: safeCount(usage?.outputTokens),
+		cacheReadTokens: safeCount(usage?.cacheReadTokens),
+		cacheWriteTokens: safeCount(usage?.cacheWriteTokens),
+		totalTokens: safeCount(usage?.totalTokens),
+		assistantMessages: safeCount(usage?.assistantMessages),
+		toolCallsStarted: safeCount(usage?.toolCallsStarted),
+		durationMs: safeCount(usage?.durationMs),
+		processes: { started, succeeded, failed },
+	};
+}
+
+/**
  * Build the report object. The returned value is a fresh copy: mutating it
  * cannot affect the engine result, and no redaction is applied here (only
  * {@link serializeReviewReport} redacts).
@@ -137,6 +208,7 @@ export function buildReviewReport(input: BuildReviewReportInput): ReviewReport {
 			filesTruncated: Boolean(result.filesTruncated),
 		},
 		findings: result.findings.map(copyFinding),
+		usage: buildUsage(result),
 	};
 	if (result.diagnostics) {
 		report.diagnostics = { ...result.diagnostics };

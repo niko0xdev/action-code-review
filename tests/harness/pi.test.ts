@@ -6,11 +6,14 @@ import {
 	AGENT_DEBUG_MAX_CHARS,
 	PI_READONLY_TOOLS,
 	PiHarness,
+	aggregatePiUsage,
 	buildAgentDebugSection,
 	buildPiArgs,
 	buildPiEnv,
 	extractAssistantText,
+	parsePiUsage,
 } from '../../src/harness/pi.js';
+import type { PiRunLog } from '../../src/harness/pi.js';
 import type { ReviewContext } from '../../src/types/context.js';
 
 const scratchRoot = join(tmpdir(), `acr-pi-test-${process.pid}`);
@@ -185,6 +188,215 @@ EOF
 		await expect(harness.review(makeContext())).rejects.toThrow(
 			/not found|ENOENT/i
 		);
+	});
+
+	it('records usage from a completed run and keeps it off a failed one', async () => {
+		const bin = writeFakePi(`#!/bin/sh
+cat <<'EOF'
+{"type":"message_end","message":{"role":"assistant","usage":{"input":10,"output":4,"cacheRead":2,"cacheWrite":1,"totalTokens":17},"content":[{"type":"text","text":"{\\"findings\\":[],\\"summary\\":\\"ok\\",\\"risk\\":\\"none\\"}"}]}}
+{"type":"tool_execution_start","toolName":"read"}
+EOF
+`);
+		const harness = new PiHarness({ binaryPath: bin });
+		await harness.review(makeContext());
+		expect(harness.usage).toEqual({
+			inputTokens: 10,
+			outputTokens: 4,
+			cacheReadTokens: 2,
+			cacheWriteTokens: 1,
+			totalTokens: 17,
+			assistantMessages: 1,
+			toolCallsStarted: 1,
+			durationMs: expect.any(Number),
+			processes: { started: 1, succeeded: 1, failed: 0 },
+		});
+	});
+
+	it('retains usage observed before a process fails', async () => {
+		const bin = writeFakePi(`#!/bin/sh
+cat <<'EOF'
+{"type":"message_end","message":{"role":"assistant","usage":{"input":7,"output":3,"totalTokens":10},"content":[{"type":"text","text":"partial"}]}}
+{"type":"tool_execution_start"}
+EOF
+echo "boom" >&2
+exit 4
+`);
+		const harness = new PiHarness({ binaryPath: bin });
+		await expect(harness.review(makeContext())).rejects.toThrow(/exit 4/);
+		const usage = harness.usage;
+		expect(usage.inputTokens).toBe(7);
+		expect(usage.outputTokens).toBe(3);
+		expect(usage.assistantMessages).toBe(1);
+		expect(usage.toolCallsStarted).toBe(1);
+		expect(usage.processes).toEqual({ started: 1, succeeded: 0, failed: 1 });
+	});
+
+	it('marks a timed-out process as failed but keeps its observed usage', async () => {
+		const bin = writeFakePi(`#!/bin/sh
+cat <<'EOF'
+{"type":"message_end","message":{"role":"assistant","usage":{"input":5,"output":1,"totalTokens":6},"content":[{"type":"text","text":"started"}]}}
+EOF
+sleep 30
+`);
+		const harness = new PiHarness({ binaryPath: bin, timeoutMs: 600 });
+		await expect(harness.review(makeContext())).rejects.toThrow(/timed out/);
+		expect(harness.usage.inputTokens).toBe(5);
+		expect(harness.usage.processes).toEqual({
+			started: 1,
+			succeeded: 0,
+			failed: 1,
+		});
+	});
+
+	it('marks a spawn failure as a failed process without poisoning totals', async () => {
+		const harness = new PiHarness({
+			binaryPath: join(scratchRoot, 'does-not-exist'),
+		});
+		await expect(harness.review(makeContext())).rejects.toThrow(
+			/not found|ENOENT/i
+		);
+		expect(harness.usage.processes).toEqual({
+			started: 1,
+			succeeded: 0,
+			failed: 1,
+		});
+		expect(harness.usage.inputTokens).toBe(0);
+		expect(harness.usage.totalTokens).toBe(0);
+	});
+});
+
+describe('parsePiUsage', () => {
+	it('sums completed assistant usage and counts tool starts', () => {
+		const stdout = [
+			'{"type":"message_update","message":{"role":"assistant","usage":{"input":999,"output":999,"totalTokens":1998}}}',
+			'{"type":"message_end","message":{"role":"assistant","usage":{"input":10,"output":4,"cacheRead":2,"cacheWrite":1,"totalTokens":17},"content":[]}}',
+			'{"type":"tool_execution_start","toolName":"read"}',
+			'{"type":"tool_execution_start","toolName":"grep"}',
+			'{"type":"message_end","message":{"role":"assistant","usage":{"input":3,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":5},"content":[]}}',
+		].join('\n');
+		expect(parsePiUsage(stdout)).toEqual({
+			inputTokens: 13,
+			outputTokens: 6,
+			cacheReadTokens: 2,
+			cacheWriteTokens: 1,
+			totalTokens: 22,
+			assistantMessages: 2,
+			toolCallsStarted: 2,
+		});
+	});
+
+	it('counts every completed assistant message even without usage', () => {
+		const stdout = [
+			'{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}',
+			'{"type":"message_end","message":{"role":"assistant","content":[]}}',
+		].join('\n');
+		const usage = parsePiUsage(stdout);
+		expect(usage.assistantMessages).toBe(2);
+		expect(usage.inputTokens).toBe(0);
+		expect(usage.totalTokens).toBe(0);
+	});
+
+	it('ignores malformed lines, non-assistant messages and bad counters', () => {
+		const stdout = [
+			'not json at all',
+			'{"type":"message_end","message":{"role":"user","usage":{"input":100,"output":100,"totalTokens":200}}}',
+			'{"type":"message_end","message":{"role":"assistant","usage":"nonsense","content":[]}}',
+			'{"type":"message_end","message":{"role":"assistant","usage":{"input":-5,"output":-1,"cacheRead":null,"cacheWrite":"x","totalTokens":-3},"content":[]}}',
+			'{"type":"message_end","message":{"role":"assistant","usage":{"input":1.5e999,"output":2,"totalTokens":4},"content":[]}}',
+		].join('\n');
+		const usage = parsePiUsage(stdout);
+		expect(usage).toEqual({
+			inputTokens: 0,
+			outputTokens: 2,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0,
+			totalTokens: 4,
+			assistantMessages: 3,
+			toolCallsStarted: 0,
+		});
+	});
+
+	it('derives the total from components when the provider omits it', () => {
+		const usage = parsePiUsage(
+			'{"type":"message_end","message":{"role":"assistant","usage":{"input":4,"output":6,"cacheRead":1,"cacheWrite":2},"content":[]}}'
+		);
+		expect(usage.totalTokens).toBe(13);
+	});
+
+	it('returns zeroed counters for empty or non-JSON output', () => {
+		const zero = {
+			inputTokens: 0,
+			outputTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0,
+			totalTokens: 0,
+			assistantMessages: 0,
+			toolCallsStarted: 0,
+		};
+		expect(parsePiUsage('')).toEqual(zero);
+		expect(parsePiUsage('<html>not events</html>')).toEqual(zero);
+	});
+});
+
+describe('aggregatePiUsage', () => {
+	function run(overrides: Partial<PiRunLog> = {}): PiRunLog {
+		return { stdout: '', stderr: '', startedAt: 0, endedAt: 0, ...overrides };
+	}
+
+	it('sums counters across processes and reports process counts', () => {
+		const usage = aggregatePiUsage([
+			run({
+				usage: {
+					inputTokens: 10,
+					outputTokens: 5,
+					cacheReadTokens: 1,
+					cacheWriteTokens: 0,
+					totalTokens: 16,
+					assistantMessages: 1,
+					toolCallsStarted: 2,
+				},
+			}),
+			run({
+				failed: true,
+				usage: {
+					inputTokens: 4,
+					outputTokens: 2,
+					cacheReadTokens: 0,
+					cacheWriteTokens: 0,
+					totalTokens: 6,
+					assistantMessages: 1,
+					toolCallsStarted: 1,
+				},
+			}),
+		]);
+		expect(usage.inputTokens).toBe(14);
+		expect(usage.totalTokens).toBe(22);
+		expect(usage.assistantMessages).toBe(2);
+		expect(usage.toolCallsStarted).toBe(3);
+		expect(usage.processes).toEqual({ started: 2, succeeded: 1, failed: 1 });
+	});
+
+	it('reports the wall-clock span of overlapping processes, not the sum', () => {
+		// Two groups overlap inside a 100ms window; summing durations would be 120.
+		const usage = aggregatePiUsage([
+			run({ startedAt: 0, endedAt: 80 }),
+			run({ startedAt: 20, endedAt: 100 }),
+		]);
+		expect(usage.durationMs).toBe(100);
+	});
+
+	it('reports zero duration and no processes when nothing ran', () => {
+		expect(aggregatePiUsage([])).toEqual({
+			inputTokens: 0,
+			outputTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0,
+			totalTokens: 0,
+			assistantMessages: 0,
+			toolCallsStarted: 0,
+			durationMs: 0,
+			processes: { started: 0, succeeded: 0, failed: 0 },
+		});
 	});
 });
 
