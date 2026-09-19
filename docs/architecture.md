@@ -210,15 +210,6 @@ Adopted from [anthropics/claude-code-action](https://github.com/anthropics/claud
 
 Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic already; defer) · **#11** `include_fix_links` (defer) · **#12** `trigger_phrase` for issue-comments (REJECT, review-only) · **#13** dup of #8 (REJECT) · **#14** Bedrock/Vertex/Foundry providers (REJECT, OpenAI-compatible) · **#15** `track_progress` for issues (REJECT, PR-only) · **#16** ephemeral GitHub App (REJECT, composite action). Deferred at audit time; tracked in git history, not in a live doc.
 
-## Live verification (2026-09-19)
-
-End-to-end check of the review pipeline on a clean, review-only change:
-
-- inline comments and a `REQUEST_CHANGES` review were published for a fixture
-  module with deliberate defects (PR #119);
-- a clean change reports `**Review execution:** complete`, submits an `APPROVE`
-  review, and renders `> ✨ **APPROVED**` only after GitHub accepted it.
-
 ## Known limitations / next steps
 
 1. **~~Pi binary provisioning~~ — DONE.** Both actions are now composite
