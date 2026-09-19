@@ -13,7 +13,12 @@ describe('listReviewThreads', () => {
 								{
 									isResolved: true,
 									comments: {
-										nodes: [{ author: { login: 'review-bot' } }],
+										nodes: [
+											{
+												author: { login: 'review-bot' },
+												body: 'finding\n\n<!-- ai-review-id:abc123abc123 -->',
+											},
+										],
 									},
 								},
 							],
@@ -30,7 +35,12 @@ describe('listReviewThreads', () => {
 								{
 									isResolved: false,
 									comments: {
-										nodes: [{ author: { login: 'human' } }],
+										nodes: [
+											{
+												author: { login: 'human' },
+												body: 'looks wrong to me',
+											},
+										],
 									},
 								},
 							],
@@ -55,8 +65,19 @@ describe('listReviewThreads', () => {
 		});
 		expect(graphql.mock.calls[1][1]).toMatchObject({ after: 'cursor-1' });
 		expect(threads).toEqual([
-			{ resolved: true, comments: [{ user: { login: 'review-bot' } }] },
-			{ resolved: false, comments: [{ user: { login: 'human' } }] },
+			{
+				resolved: true,
+				comments: [
+					{
+						user: { login: 'review-bot' },
+						body: 'finding\n\n<!-- ai-review-id:abc123abc123 -->',
+					},
+				],
+			},
+			{
+				resolved: false,
+				comments: [{ user: { login: 'human' }, body: 'looks wrong to me' }],
+			},
 		]);
 	});
 
