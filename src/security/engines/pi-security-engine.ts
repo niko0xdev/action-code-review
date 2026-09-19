@@ -173,12 +173,15 @@ export class PiSecurityEngine implements SecurityEngine {
 			return redactSecrets(res.content);
 		}
 
-		// Fallback: spawn Pi CLI if available
+		// Fallback: spawn Pi CLI if available.
+		// Text mode prints only the final assistant message; `--mode json`
+		// re-serializes every streamed delta and can emit tens of MiB for one
+		// answer. `parseFindings` scans the raw output for the JSON artifact.
 		const { spawn } = await import('node:child_process');
 		return new Promise((resolve, reject) => {
 			const proc = spawn(
 				ctx.options.piBinaryPath || 'pi',
-				['-p', '--mode', 'json', '--no-session'],
+				['-p', '--mode', 'text', '--no-session'],
 				{
 					cwd: ctx.repositoryPath,
 					env: { ...process.env },

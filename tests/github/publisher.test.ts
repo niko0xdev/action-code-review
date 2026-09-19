@@ -480,6 +480,167 @@ describe('publishReview', () => {
 	});
 });
 
+describe('approval outcome reporting', () => {
+	function cleanResult(): ReviewResult {
+		return {
+			findings: [],
+			summary: 'clean',
+			risk: 'none',
+			counts: { critical: 0, high: 0, medium: 0, low: 0 },
+			filesReviewed: ['src/a.ts'],
+		};
+	}
+
+	function octokitWithApproval(approve: () => Promise<unknown>) {
+		return {
+			rest: {
+				pulls: {
+					createReview: vi.fn(approve),
+					listThreads: vi.fn(async () => [
+						{ resolved: true, comments: [{ user: { login: 'bot' } }] },
+					]),
+				},
+				issues: {
+					createComment: vi.fn(async () => ({ data: {} })),
+					listComments: vi.fn(async () => ({ data: [] })),
+				},
+			},
+			users: {
+				getAuthenticated: vi.fn(async () => ({ data: { login: 'bot' } })),
+			},
+			paginate: vi.fn(async () => []),
+		};
+	}
+
+	it('records approved only after GitHub accepts the APPROVE review', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval).toEqual({ state: 'approved' });
+	});
+
+	it('records not-permitted when repository policy rejects the approval (HTTP 422)', async () => {
+		const octokit = octokitWithApproval(async () => {
+			throw Object.assign(
+				new Error('GitHub Actions is not permitted to approve pull requests.'),
+				{ status: 422 }
+			);
+		});
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval?.state).toBe('not-permitted');
+		expect(result.approval?.detail).toContain('not permitted');
+		// A refused approval is not a failed review: the analysis still stands.
+		expect(result.reviewStatus).toBeUndefined();
+	});
+
+	it('records failed for an unrelated approval error', async () => {
+		const octokit = octokitWithApproval(async () => {
+			throw Object.assign(new Error('Bad credentials'), { status: 401 });
+		});
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval?.state).toBe('failed');
+		expect(result.approval?.detail).toContain('Bad credentials');
+	});
+
+	it('records skipped-unresolved-threads without calling the API', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		octokit.rest.pulls.listThreads = vi.fn(async () => [
+			{ resolved: false, comments: [{ user: { login: 'bot' } }] },
+		]);
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval?.state).toBe('skipped-unresolved-threads');
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('records a write-permission skip when the actor cannot escalate', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} })) as Record<
+			string,
+			unknown
+		> & { rest: Record<string, unknown> };
+		octokit.rest.repos = {
+			getCollaboratorPermissionLevel: vi.fn(async () => ({
+				data: { permission: 'read' },
+			})),
+		};
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+			requireWritePermissions: true,
+			actor: 'outsider',
+		});
+		expect(result.approval?.state).toBe('skipped-no-write-permission');
+	});
+
+	it('records not-requested when the flag is off', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: false,
+		});
+		expect(result.approval?.state).toBe('not-requested');
+	});
+
+	it('records not-requested on an incomplete review instead of approving', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		const result: ReviewResult = {
+			...cleanResult(),
+			reviewStatus: 'incomplete',
+			diagnostics: { failedGroups: 1, filesNotAnalyzed: 3 },
+		};
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval?.state).toBe('not-requested');
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+});
+
 describe('buildJobSummary (spec §39)', () => {
 	it('exposes duration, files and findings without visible Model line', () => {
 		const text = buildJobSummary({

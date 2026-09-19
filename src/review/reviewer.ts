@@ -45,6 +45,7 @@ export async function runReview(
 	const summaries: string[] = [];
 	const filesReviewed: string[] = [];
 	let failedGroups = 0;
+	let filesNotAnalyzed = 0;
 
 	for (let start = 0; start < groups.length; start += 3) {
 		const outcomes = await Promise.allSettled(
@@ -72,6 +73,9 @@ export async function runReview(
 					summaries.push(outcome.value.result.summary);
 			} else {
 				failedGroups += 1;
+				// Files in a failed group were never analyzed. Reporting the
+				// count keeps a partial pass from reading as full coverage.
+				filesNotAnalyzed += group.files.length;
 				console.warn(
 					`Review group failed: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`
 				);
@@ -138,7 +142,7 @@ export async function runReview(
 			bucketedUnknownCategories: normalized.bucketedCount,
 			crossFindingConflictsResolved: crossChecked.droppedCount,
 			trivialPrFastPath: fastPathed.trivialPr,
-			...(failedGroups > 0 ? { failedGroups } : {}),
+			...(failedGroups > 0 ? { failedGroups, filesNotAnalyzed } : {}),
 		};
 	}
 	return result;

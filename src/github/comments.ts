@@ -1,6 +1,7 @@
 import { commentIdentityBody, normalizeCommentId } from '../review/dedupe.js';
 import { redactSecrets } from '../security/redaction/redactor.js';
 import type {
+	ApprovalOutcome,
 	Finding,
 	ReviewDiagnostics,
 	RiskLevel,
@@ -87,10 +88,13 @@ type SummaryResult = {
 	durationMs?: number;
 	filesTotal?: number;
 	filesExcluded?: number;
+	/** Files the review accepted for analysis (post-filter scope). */
+	filesSelected?: number;
 	toolFindings?: ToolFinding[];
 	diagnostics?: ReviewDiagnostics;
 	ruleCoverage?: RuleCoverage;
 	reviewStatus?: 'complete' | 'incomplete' | 'failed' | 'stale';
+	approval?: ApprovalOutcome;
 };
 
 function hasBlockingFindings(
@@ -102,11 +106,102 @@ function hasBlockingFindings(
 		: counts.critical + counts.high + counts.medium > 0;
 }
 
+/** Files inside failed review groups: reviewed + excluded + these = total. */
+function filesNotAnalyzed(result: SummaryResult): number {
+	const explicit = result.diagnostics?.filesNotAnalyzed;
+	if (typeof explicit === 'number' && explicit > 0) return explicit;
+	const reviewed = result.filesReviewed.length;
+	const selected = result.filesSelected ?? reviewed;
+	return Math.max(selected - reviewed, 0);
+}
+
+/**
+ * One line that answers "did this review actually run, and over what?".
+ *
+ * `filesSelected` is the scope the review accepted (after exclude patterns and
+ * the `max-files` cap); excluded files are not missing coverage. A group failure
+ * or a shortfall against that scope is reported as incomplete even when the
+ * engine declared the run complete, so a partial pass can never read as full
+ * coverage.
+ */
+export function describeReviewExecution(result: SummaryResult): string {
+	const reviewed = result.filesReviewed.length;
+	const selected =
+		result.filesSelected ?? reviewed + (result.filesExcluded ?? 0);
+	const notAnalyzed = filesNotAnalyzed(result);
+	const failedGroups = result.diagnostics?.failedGroups ?? 0;
+	const declared = result.reviewStatus ?? 'complete';
+	const incomplete =
+		declared !== 'complete' || failedGroups > 0 || notAnalyzed > 0;
+	const reasons = [
+		`${reviewed}/${selected} selected files analyzed`,
+		failedGroups > 0
+			? `${failedGroups} review group${failedGroups === 1 ? '' : 's'} failed`
+			: '',
+		notAnalyzed > 0
+			? `${notAnalyzed} file${notAnalyzed === 1 ? '' : 's'} not analyzed`
+			: '',
+		declared !== 'complete' ? `status: ${declared}` : '',
+	].filter(Boolean);
+	return `**Review execution:** ${incomplete ? 'incomplete' : 'complete'} — ${reasons.join('; ')}`;
+}
+
+/**
+ * Approval line derived from the publisher's recorded outcome. The reader
+ * should never have to infer an approval from "0 findings": every state is
+ * spelled out, including the repository setting that can block it.
+ */
+export function describeApproval(outcome: ApprovalOutcome | undefined): string {
+	switch (outcome?.state) {
+		case 'approved':
+			return '**Approval:** submitted — GitHub approved this PR.';
+		case 'not-permitted':
+			return [
+				'**Approval:** blocked by repository settings.',
+				'Enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**',
+				'so the bot can submit the approval.',
+				outcome.detail ? `GitHub said: ${mdSafe(outcome.detail)}.` : '',
+			]
+				.filter(Boolean)
+				.join(' ');
+		case 'failed':
+			return `**Approval:** attempt failed${outcome.detail ? ` — ${mdSafe(outcome.detail)}` : ''}.`;
+		case 'skipped-unresolved-threads':
+			return '**Approval:** skipped — AI review threads are not all resolved yet.';
+		case 'skipped-no-write-permission':
+			return '**Approval:** skipped — the PR actor has no write permission.';
+		default:
+			return '**Approval:** not requested.';
+	}
+}
+
+/**
+ * Decision line for a clean review. It mirrors the recorded approval outcome
+ * instead of asserting that an approval happened.
+ */
+function describeApprovalDecision(result: SummaryResult): string {
+	switch (result.approval?.state) {
+		case 'approved':
+			return '✅ **All clear** — no blocking findings, and GitHub accepted the approval review.';
+		case 'not-permitted':
+			return '✅ **All clear** — no blocking findings. The approval review was rejected by repository settings (see Approval above).';
+		case 'failed':
+			return '✅ **All clear** — no blocking findings. The approval attempt failed (see Approval above).';
+		case 'skipped-unresolved-threads':
+			return '✅ **All clear** — no blocking findings. Approval is withheld until existing AI threads are resolved.';
+		case 'skipped-no-write-permission':
+			return '✅ **All clear** — no blocking findings. Approval is skipped because the PR actor lacks write permission.';
+		default:
+			return '✅ **All clear** — no blocking findings. No approval review was submitted.';
+	}
+}
+
 export function formatDecisionBanner(
 	risk: RiskLevel,
 	findings: Finding[] = [],
 	counts: SummaryResult['counts'] = { critical: 0, high: 0, medium: 0, low: 0 },
-	reviewStatus: SummaryResult['reviewStatus'] = 'complete'
+	reviewStatus: SummaryResult['reviewStatus'] = 'complete',
+	approval?: ApprovalOutcome
 ): string {
 	if (reviewStatus !== 'complete')
 		return '> ⚠️ **REVIEW INCOMPLETE — NO APPROVAL**';
@@ -115,9 +210,17 @@ export function formatDecisionBanner(
 		findings.some((finding) => finding.severity === 'critical')
 	)
 		return '> 🚨 **CRITICAL — merge blocked**';
-	return hasBlockingFindings(findings, counts)
-		? '> ⚠️ **CHANGES REQUESTED**'
-		: '> ✨ **APPROVED**';
+	if (hasBlockingFindings(findings, counts)) return '> ⚠️ **CHANGES REQUESTED**';
+	switch (approval?.state) {
+		case 'approved':
+			return '> ✨ **APPROVED**';
+		case 'not-permitted':
+			return '> 🚫 **APPROVAL NOT PERMITTED** — clean review, but repository settings block GitHub Actions from approving';
+		case 'failed':
+			return '> ⚠️ **APPROVAL FAILED** — clean review, but the approval call did not succeed';
+		default:
+			return '> ✅ **NO BLOCKING FINDINGS**';
+	}
 }
 
 export function buildChecksTable(
@@ -217,19 +320,27 @@ export function buildSummaryBody(result: SummaryResult): string {
 					findings.some((finding) => finding.severity === 'critical')
 					? '❌ **Changes requested** — critical findings block merge.'
 					: `❌ **Changes requested** — ${findings.filter((finding) => finding.severity !== 'low').length || result.counts.critical + result.counts.high + result.counts.medium} blocking finding(s). Please address before merge.`
-				: '✅ **All clear** — no blocking findings. Approving.';
+				: describeApprovalDecision(result);
 	const footer = footerComment(
 		result.model ?? process.env.OPENAI_API_MODEL ?? 'unknown'
 	);
 	const lines = [
 		'# ✨ AI Code Review',
 		'',
-		formatDecisionBanner(result.risk, findings, result.counts, reviewStatus),
+		formatDecisionBanner(
+			result.risk,
+			findings,
+			result.counts,
+			reviewStatus,
+			result.approval
+		),
 		'',
 		`**Risk:** ${RISK_LABEL[result.risk]}`,
 		`**Duration:** ${formatDuration(result.durationMs)}`,
 		truncationNotice,
 		filesLine,
+		describeReviewExecution({ ...result, reviewStatus }),
+		describeApproval(result.approval),
 		`**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,
 	];
 	if (result.summary) lines.push('', result.summary);

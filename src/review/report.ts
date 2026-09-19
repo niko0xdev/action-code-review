@@ -12,6 +12,7 @@
 
 import { redactSecrets } from '../security/redaction/redactor.js';
 import type {
+	ApprovalOutcome,
 	Finding,
 	FindingCategory,
 	FindingCounts,
@@ -115,6 +116,12 @@ export interface ReviewReport {
 	usage: ReviewReportUsage;
 	diagnostics?: ReviewDiagnostics;
 	ruleCoverage?: RuleCoverage;
+	/**
+	 * What happened to the automatic approval review, when one was considered.
+	 * `approved` means GitHub accepted it; `not-permitted` means repository
+	 * settings refused it. Omitted when the publisher never decided.
+	 */
+	approval?: ApprovalOutcome;
 }
 
 export interface BuildReviewReportInput {
@@ -225,6 +232,7 @@ export function buildReviewReport(input: BuildReviewReportInput): ReviewReport {
 			failedRules: [...result.ruleCoverage.failedRules],
 		};
 	}
+	if (result.approval) report.approval = { ...result.approval };
 	return report;
 }
 

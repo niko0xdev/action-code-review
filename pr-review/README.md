@@ -295,6 +295,45 @@ Enable automatic approval after all AI-generated review threads have been marked
 
 The action checks review threads authored by the authenticated token and submits an approval review when none of those threads remain unresolved.
 
+> **Repository setting required.** GitHub refuses `APPROVE` reviews from
+> `GITHUB_TOKEN` until you enable
+> **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**.
+> Without it the review still runs and the summary still posts, but it reports
+> `🚫 APPROVAL NOT PERMITTED` instead of claiming an approval that never
+> happened. The `**Approval:**` line in the summary comment always states what
+> really happened.
+
+### Troubleshooting a run
+
+Every summary comment and step summary reports two lines that answer "did this
+actually run?":
+
+- `**Review execution:** complete|incomplete — N/M files analyzed; …`
+- `**Approval:** submitted | not requested | blocked by repository settings | …`
+
+When a review is incomplete (a harness group crashed, the model returned no JSON
+artifact, the output budget was exceeded), the step **fails**, so the run is
+visible in the Actions list instead of showing a green check with zero findings.
+Set `AI_REVIEW_FAIL_ON_INCOMPLETE=false` in the step `env:` to downgrade that to
+a warning.
+
+To see exactly what the model returned, set `AI_REVIEW_DEBUG_HARNESS=true`; the
+raw harness output is appended to the step summary, redacted and truncated.
+A harness failure now reports the provider's own error (for example
+`401 Invalid or expired API key`) instead of an empty parse error, so a bad
+`OPENAI_API_KEY`, an expired gateway key, or an unreachable base URL is visible
+in the log line itself.
+
+Related harness budgets, all optional:
+
+| Env var | Default | Meaning |
+|---------|---------|---------|
+| `AI_REVIEW_PI_MAX_OUTPUT_BYTES` | `67108864` | last-resort stdout+stderr ceiling (`0` disables); the harness runs Pi in text mode, so this only fires on a stuck process |
+| `AI_REVIEW_PI_MAX_TOOL_CALLS` | `60` | tool-execution ceiling before the process is stopped (`0` disables) |
+| `AI_REVIEW_PI_MAX_ASSISTANT_BYTES` | `524288` | ceiling on streamed assistant text; a looping/echoing provider is stopped with an attributable error (`0` disables) |
+| `AI_REVIEW_PI_REPAIR_ATTEMPTS` | `1` | extra harness calls allowed to convert an unparseable answer into JSON |
+| `AI_REVIEW_PROFILE` | detected | `all` loads every stack's rules; a comma list pins stacks |
+
 ### Blocking PR merge on issues
 
 By default, the action will block PR merge when issues at or above the `min-severity` threshold are found. It uses GitHub's `REQUEST_CHANGES` review event, which prevents the PR from being merged until the issues are addressed.

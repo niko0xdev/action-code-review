@@ -152,34 +152,93 @@ export async function safeErrorDetail(response: Response): Promise<string> {
 	return scrubSecrets(text).slice(0, 500);
 }
 
-/**
- * Pull the first JSON object out of an LLM response. Handles bare JSON,
- * markdown-fenced JSON, and JSON embedded in prose.
- */
-export function extractJsonBlock(text: string): Record<string, unknown> | null {
-	const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-	const candidates: string[] = [];
-	if (fenced?.[1]) {
-		candidates.push(fenced[1].trim());
-	}
-	const start = text.indexOf('{');
-	const end = text.lastIndexOf('}');
-	if (start !== -1 && end > start) {
-		candidates.push(text.slice(start, end + 1));
-	}
-	if (!fenced && start === -1) {
-		return null;
-	}
+/** Upper bound on parsed candidates, so hostile text cannot force unbounded JSON.parse work. */
+const MAX_JSON_CANDIDATES = 24;
 
-	for (const candidate of candidates) {
-		try {
-			const parsed = JSON.parse(candidate);
-			if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-				return parsed as Record<string, unknown>;
+/**
+ * Collect every balanced `{...}` region in `text`, ignoring braces that appear
+ * inside JSON strings. A prose answer can contain brace-like noise, so a single
+ * first-brace/last-brace slice is not enough.
+ */
+function balancedObjectCandidates(text: string): string[] {
+	const candidates: string[] = [];
+	let depth = 0;
+	let start = -1;
+	let inString = false;
+	let escaped = false;
+	for (let index = 0; index < text.length; index += 1) {
+		const char = text[index];
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (char === '\\') escaped = true;
+			else if (char === '"') inString = false;
+			continue;
+		}
+		if (char === '"') {
+			// Only meaningful once a candidate opened; outside one it is prose.
+			if (depth > 0) inString = true;
+			continue;
+		}
+		if (char === '{') {
+			if (depth === 0) start = index;
+			depth += 1;
+			continue;
+		}
+		if (char === '}') {
+			if (depth === 0) continue;
+			depth -= 1;
+			if (depth === 0 && start !== -1) {
+				candidates.push(text.slice(start, index + 1));
+				if (candidates.length >= MAX_JSON_CANDIDATES) return candidates;
+				start = -1;
 			}
-		} catch {
-			// try next candidate
 		}
 	}
-	return null;
+	return candidates;
+}
+
+/**
+ * Pull a JSON object out of an LLM response. Handles bare JSON, markdown-fenced
+ * JSON, and JSON embedded in prose where earlier prose (or scratch objects)
+ * would otherwise corrupt a naive first-brace/last-brace slice.
+ *
+ * @param text Raw model output.
+ * @param preferKeys When provided, the first parsed candidate containing any of
+ *   these keys wins; otherwise the first parseable object wins.
+ */
+export function extractJsonBlock(
+	text: string,
+	preferKeys?: readonly string[]
+): Record<string, unknown> | null {
+	const candidates: string[] = [];
+	const collect = (raw: string): void => {
+		const trimmed = raw.trim();
+		if (!trimmed) return;
+		if (trimmed.startsWith('{') && trimmed.endsWith('}'))
+			candidates.push(trimmed);
+		for (const balanced of balancedObjectCandidates(trimmed)) {
+			if (balanced !== trimmed) candidates.push(balanced);
+		}
+	};
+	const fencedPattern = /```(?:json)?\s*([\s\S]*?)```/gi;
+	for (const match of text.matchAll(fencedPattern)) {
+		if (match[1]) collect(match[1]);
+	}
+	for (const balanced of balancedObjectCandidates(text)) collect(balanced);
+
+	const parsed: Record<string, unknown>[] = [];
+	for (const candidate of candidates.slice(0, MAX_JSON_CANDIDATES * 2)) {
+		try {
+			const value = JSON.parse(candidate) as unknown;
+			if (value && typeof value === 'object' && !Array.isArray(value)) {
+				const record = value as Record<string, unknown>;
+				if (!preferKeys || preferKeys.some((key) => key in record))
+					return record;
+				parsed.push(record);
+			}
+		} catch {
+			// Not JSON — keep scanning.
+		}
+	}
+	return parsed[0] ?? null;
 }
