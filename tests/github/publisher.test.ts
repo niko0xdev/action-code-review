@@ -162,7 +162,15 @@ describe('publishReview', () => {
 
 	function makeApprovalOctokit(
 		threads: unknown[] = [
-			{ resolved: true, comments: [{ user: { login: 'bot' } }] },
+			{
+				resolved: true,
+				comments: [
+					{
+						user: { login: 'bot' },
+						body: '<!-- ai-review-id:aaaaaaaaaaaa -->',
+					},
+				],
+			},
 		]
 	) {
 		return {
@@ -347,7 +355,15 @@ describe('publishReview', () => {
 				pulls: {
 					...makeOctokit().rest.pulls,
 					listThreads: vi.fn(async () => [
-						{ resolved: false, comments: [{ user: { login: 'bot' } }] },
+						{
+							resolved: false,
+							comments: [
+								{
+									user: { login: 'bot' },
+									body: '<!-- ai-review-id:aaaaaaaaaaaa -->',
+								},
+							],
+						},
 					]),
 				},
 			},
@@ -447,7 +463,15 @@ describe('publishReview', () => {
 						throw new Error('GitHub API down');
 					}),
 					listThreads: vi.fn(async () => [
-						{ resolved: true, comments: [{ user: { login: 'bot' } }] },
+						{
+							resolved: true,
+							comments: [
+								{
+									user: { login: 'bot' },
+									body: '<!-- ai-review-id:aaaaaaaaaaaa -->',
+								},
+							],
+						},
 					]),
 				},
 				issues: {
@@ -497,7 +521,15 @@ describe('approval outcome reporting', () => {
 				pulls: {
 					createReview: vi.fn(approve),
 					listThreads: vi.fn(async () => [
-						{ resolved: true, comments: [{ user: { login: 'bot' } }] },
+						{
+							resolved: true,
+							comments: [
+								{
+									user: { login: 'bot' },
+									body: '<!-- ai-review-id:aaaaaaaaaaaa -->',
+								},
+							],
+						},
 					]),
 				},
 				issues: {
@@ -568,7 +600,15 @@ describe('approval outcome reporting', () => {
 	it('records skipped-unresolved-threads without calling the API', async () => {
 		const octokit = octokitWithApproval(async () => ({ data: {} }));
 		octokit.rest.pulls.listThreads = vi.fn(async () => [
-			{ resolved: false, comments: [{ user: { login: 'bot' } }] },
+			{
+				resolved: false,
+				comments: [
+					{
+						user: { login: 'bot' },
+						body: '<!-- ai-review-id:aaaaaaaaaaaa -->',
+					},
+				],
+			},
 		]);
 		const result = cleanResult();
 		await publishReview(octokit as never, {
@@ -607,6 +647,172 @@ describe('approval outcome reporting', () => {
 		expect(result.approval?.state).toBe('skipped-no-write-permission');
 	});
 
+	it('approves a clean review even though GET /user is forbidden for GITHUB_TOKEN', async () => {
+		// Actions tokens cannot call `GET /user` (403 Resource not accessible by
+		// integration), so identity-based self-detection used to fail closed and
+		// block every approval. Threads are now attributed by the action's own
+		// marker instead.
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		octokit.users.getAuthenticated = vi.fn(async () => {
+			throw Object.assign(new Error('Resource not accessible by integration'), {
+				status: 403,
+			});
+		});
+		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval).toEqual({ state: 'approved' });
+	});
+
+	it('still withholds approval while an AI-marked thread is unresolved', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		octokit.rest.pulls.listThreads = vi.fn(async () => [
+			{
+				resolved: false,
+				comments: [
+					{
+						user: { login: 'bot' },
+						body: '<!-- ai-review-id:aaaaaaaaaaaa -->',
+					},
+				],
+			},
+		]);
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval?.state).toBe('skipped-unresolved-threads');
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('does not trust a marker pasted by another author when the login is known', async () => {
+		// With a resolvable identity the author is verified too, so a marker in
+		// someone else's unresolved thread cannot masquerade as this action's.
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		octokit.rest.pulls.listThreads = vi.fn(async () => [
+			{
+				resolved: false,
+				comments: [
+					{
+						user: { login: 'outsider' },
+						body: '<!-- ai-review-id:aaaaaaaaaaaa -->',
+					},
+				],
+			},
+		]);
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval).toEqual({ state: 'approved' });
+	});
+
+	it('resolves the approval before the summary is rendered', async () => {
+		// Order-sensitive regression: the summary used to be rendered before the
+		// approval was resolved, so it always reported "not requested" even when
+		// an approval had just been submitted or refused.
+		const order: string[] = [];
+		const octokit = octokitWithApproval(async () => {
+			order.push('createReview:APPROVE');
+			return { data: {} };
+		});
+		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		octokit.rest.issues.createComment = vi.fn(async () => {
+			order.push('createComment:summary');
+			return { data: {} };
+		});
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result: cleanResult(),
+			autoApproveWhenResolved: true,
+		});
+		expect(order).toEqual(['createReview:APPROVE', 'createComment:summary']);
+	});
+
+	it('reports a submitted approval in the posted summary', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result: cleanResult(),
+			autoApproveWhenResolved: true,
+		});
+		const body = (
+			octokit.rest.issues.createComment as ReturnType<typeof vi.fn>
+		).mock.calls.at(-1)?.[0].body as string;
+		expect(body).toContain('**Approval:** submitted');
+		expect(body).toContain('> ✨ **APPROVED**');
+		expect(body).not.toContain('not requested');
+	});
+
+	it('reports a refused approval in the posted summary', async () => {
+		const octokit = octokitWithApproval(async () => {
+			throw Object.assign(
+				new Error('GitHub Actions is not permitted to approve pull requests.'),
+				{ status: 422 }
+			);
+		});
+		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result: cleanResult(),
+			autoApproveWhenResolved: true,
+		});
+		const body = (
+			octokit.rest.issues.createComment as ReturnType<typeof vi.fn>
+		).mock.calls.at(-1)?.[0].body as string;
+		expect(body).toContain('APPROVAL NOT PERMITTED');
+		expect(body).toContain(
+			'Allow GitHub Actions to create and approve pull requests'
+		);
+	});
+
+	it('ignores human threads when deciding AI thread resolution', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		octokit.rest.pulls.listThreads = vi.fn(async () => [
+			{
+				resolved: false,
+				comments: [{ user: { login: 'human' }, body: 'nit' }],
+			},
+		]);
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval).toEqual({ state: 'approved' });
+	});
+
 	it('records not-requested when the flag is off', async () => {
 		const octokit = octokitWithApproval(async () => ({ data: {} }));
 		const result = cleanResult();
@@ -638,6 +844,105 @@ describe('approval outcome reporting', () => {
 		});
 		expect(result.approval?.state).toBe('not-requested');
 		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+});
+
+describe('sticky summary ownership', () => {
+	const MARKER = '<!-- ai-review-summary:acme/widget#7 -->';
+
+	function octokitWithComments(comments: unknown[]) {
+		return {
+			rest: {
+				pulls: {
+					createReview: vi.fn(async () => ({ data: {} })),
+					listThreads: vi.fn(async () => []),
+				},
+				issues: {
+					createComment: vi.fn(async () => ({ data: {} })),
+					updateComment: vi.fn(async () => ({ data: {} })),
+					listComments: vi.fn(async () => ({ data: comments })),
+				},
+			},
+			users: {
+				getAuthenticated: vi.fn(async () => ({ data: { login: 'bot' } })),
+			},
+			paginate: vi.fn(async () => []),
+		};
+	}
+
+	function result(): ReviewResult {
+		return {
+			findings: [],
+			summary: 'clean',
+			risk: 'none',
+			counts: { critical: 0, high: 0, medium: 0, low: 0 },
+			filesReviewed: ['a.ts'],
+		};
+	}
+
+	it('updates its own summary comment in place', async () => {
+		const octokit = octokitWithComments([
+			{ id: 11, body: `old\n\n${MARKER}`, user: { login: 'bot' } },
+		]);
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha',
+			result: result(),
+			stickySummary: true,
+		});
+		expect(octokit.rest.issues.updateComment).toHaveBeenCalledWith(
+			expect.objectContaining({ comment_id: 11 })
+		);
+		expect(octokit.rest.issues.createComment).not.toHaveBeenCalled();
+	});
+
+	it('still finds its own summary when GET /user is refused for GITHUB_TOKEN', async () => {
+		// The bot cannot resolve its own login, so the marker is trusted on
+		// bot-authored comments; a human login can never carry the [bot] suffix.
+		const octokit = octokitWithComments([
+			{
+				id: 13,
+				body: `old\n\n${MARKER}`,
+				user: { login: 'github-actions[bot]' },
+			},
+		]);
+		octokit.users.getAuthenticated = vi.fn(async () => {
+			throw Object.assign(new Error('Resource not accessible by integration'), {
+				status: 403,
+			});
+		});
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha',
+			result: result(),
+			stickySummary: true,
+		});
+		expect(octokit.rest.issues.updateComment).toHaveBeenCalledWith(
+			expect.objectContaining({ comment_id: 13 })
+		);
+		expect(octokit.rest.issues.createComment).not.toHaveBeenCalled();
+	});
+
+	it('ignores a marker written by another author', async () => {
+		// Adopting a foreign comment would both fail the update and let any
+		// commenter redirect the summary location.
+		const octokit = octokitWithComments([
+			{ id: 12, body: `spoofed\n\n${MARKER}`, user: { login: 'outsider' } },
+		]);
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha',
+			result: result(),
+			stickySummary: true,
+		});
+		expect(octokit.rest.issues.updateComment).not.toHaveBeenCalled();
+		expect(octokit.rest.issues.createComment).toHaveBeenCalledOnce();
 	});
 });
 

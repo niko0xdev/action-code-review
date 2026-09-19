@@ -37420,6 +37420,13 @@ async function publishReview(octokit, params) {
             }
         }
     }
+    // Resolve the approval before rendering anything: the summary must report
+    // the outcome that actually happened, not "not requested" because the
+    // decision had not been made yet.
+    result.approval = await resolveApproval(octokit, params, {
+        hasWrite,
+        hasBlockingFinding,
+    });
     const marker = stickySummaryMarker(owner, repo, prNumber);
     const summaryBody = `${buildSummaryBody({
         risk: result.risk,
@@ -37437,6 +37444,7 @@ async function publishReview(octokit, params) {
         diagnostics: result.diagnostics,
         ruleCoverage: result.ruleCoverage,
         reviewStatus: result.reviewStatus,
+        approval: result.approval,
     })}\n\n${marker}`;
     if (params.stickySummary) {
         const existing = await findStickyComment(octokit, owner, repo, prNumber, marker);
@@ -37465,14 +37473,6 @@ async function publishReview(octokit, params) {
             body: summaryBody,
         });
     }
-    // Approval defaults on via the action input (explicit false opts out).
-    // Never approve a review whose groups partially failed — an LLM/Pi
-    // outage must not look "clean". The real outcome is recorded on the
-    // result so the summary can never imply an approval GitHub refused.
-    result.approval = await resolveApproval(octokit, params, {
-        hasWrite,
-        hasBlockingFinding,
-    });
 }
 /**
  * True when GitHub rejected the review because repository policy forbids
@@ -37538,21 +37538,27 @@ function reviewFailed(result) {
  * uses the structural PublisherOctokit so tests stay transport-agnostic.
  * Fails closed: unknown/errored state is never "resolved".
  */
-async function areAiThreadsResolved(octokit, owner, repo, prNumber) {
+async function areAiThreadsResolved(octokit, _owner, _repo, prNumber) {
     const listThreads = octokit.rest.pulls.listThreads;
     if (!listThreads)
         return false;
     try {
-        const auth = octokit.users
-            ? await octokit.users.getAuthenticated().catch(() => null)
-            : null;
-        const selfLogin = auth?.data?.login;
+        const threads = await listThreads({
+            owner: _owner,
+            repo: _repo,
+            pull_number: prNumber,
+        });
+        // Attribution is marker-first because a workflow GITHUB_TOKEN cannot
+        // call `GET /user`: identity lookups return 403, and failing closed on
+        // that blocked every approval. When a login *is* resolvable (a PAT
+        // caller) the author is checked too, so a marker pasted by another
+        // author cannot masquerade as this action's thread. No AI-authored
+        // thread means nothing is left to resolve.
+        const selfLogin = await resolveSelfLogin(octokit);
         if (!selfLogin)
-            return false;
-        const threads = await listThreads({ owner, repo, pull_number: prNumber });
-        const aiThreads = (threads ?? []).filter((thread) => (thread.comments ?? []).some((comment) => comment.user?.login === selfLogin));
-        if (aiThreads.length === 0)
-            return false;
+            lib_core.info('[review] cannot resolve own login (GET /user refused for GITHUB_TOKEN); attributing AI threads by marker on bot-authored comments only.');
+        const aiThreads = (threads ?? []).filter((thread) => (thread.comments ?? []).some((comment) => isOwnCommentBody(comment.body) &&
+            isTrustedAuthor(comment.user?.login, selfLogin)));
         return aiThreads.every((thread) => thread.resolved === true);
     }
     catch (error) {
@@ -37560,22 +37566,67 @@ async function areAiThreadsResolved(octokit, owner, repo, prNumber) {
         return false;
     }
 }
+/**
+ * Best-effort authenticated login. A workflow `GITHUB_TOKEN` is refused on
+ * `GET /user` (403 Resource not accessible by integration), in which case this
+ * returns null and marker-based attribution is used on its own.
+ */
+async function resolveSelfLogin(octokit) {
+    const getAuthenticated = octokit.users?.getAuthenticated ?? octokit.rest.users?.getAuthenticated;
+    if (!getAuthenticated)
+        return null;
+    try {
+        const { data } = await getAuthenticated();
+        return data?.login ?? null;
+    }
+    catch {
+        return null;
+    }
+}
+/**
+ * True when a comment body carries one of this action's hidden markers.
+ * `ai-review-id:` marks an inline finding; `ai-review-summary:` marks the
+ * sticky summary. Both are written only by this action.
+ */
+/**
+ * True when a comment author can be this action. GitHub reserves the `[bot]`
+ * login suffix, so when the token cannot resolve its own login (a workflow
+ * GITHUB_TOKEN is refused on `GET /user`) an exact match is impossible but a
+ * bot-authored comment still cannot be forged by a human account.
+ */
+function isTrustedAuthor(login, selfLogin) {
+    if (!login)
+        return false;
+    if (selfLogin)
+        return login === selfLogin;
+    return login.endsWith('[bot]');
+}
+function isOwnCommentBody(body) {
+    if (!body)
+        return false;
+    return (body.includes('<!-- ai-review-id:') ||
+        body.includes('<!-- ai-review-summary:'));
+}
 async function findStickyComment(octokit, owner, repo, prNumber, marker) {
     const listComments = octokit.rest.issues.listComments;
     if (!listComments)
         return null;
     try {
-        const auth = octokit.users
-            ? await octokit.users.getAuthenticated().catch(() => null)
-            : null;
-        const selfLogin = auth?.data?.login;
         const comments = await listAll(listComments, { owner, repo, issue_number: prNumber });
-        for (const c of comments) {
-            if (selfLogin &&
-                c.user?.login !== selfLogin)
+        // A marker match is only trusted when the comment is authored by this
+        // token. A workflow GITHUB_TOKEN cannot resolve its own login
+        // (`GET /user` is refused), so an unverifiable candidate is ignored
+        // rather than adopted: updating another author's comment fails, and
+        // treating it as ours would let any commenter redirect the summary.
+        // Posting a fresh summary is the safe outcome in that case.
+        const selfLogin = await resolveSelfLogin(octokit);
+        if (!selfLogin)
+            lib_core.info('[review] cannot resolve own login (GET /user refused for GITHUB_TOKEN); trusting the marker on bot-authored comments only.');
+        for (const comment of comments) {
+            if (typeof comment.body !== 'string' || !comment.body.includes(marker))
                 continue;
-            if (typeof c.body === 'string' && c.body.includes(marker))
-                return c.id;
+            if (isTrustedAuthor(comment.user?.login, selfLogin))
+                return comment.id;
         }
     }
     catch { }
@@ -37595,20 +37646,16 @@ async function listAll(method, args) {
 }
 async function fetchExistingCommentIds(octokit, owner, repo, prNumber) {
     const ids = new Set();
-    if (!octokit.users?.getAuthenticated ||
-        !octokit.rest.pulls.listReviews ||
+    if (!octokit.rest.pulls.listReviews ||
         !octokit.rest.pulls.listCommentsForReview)
         return ids;
     try {
-        const { data: auth } = await octokit.users.getAuthenticated();
         const reviews = await listAll(octokit.rest.pulls.listReviews, {
             owner,
             repo,
             pull_number: prNumber,
         });
         for (const review of reviews) {
-            if (review.user?.login !== auth.login)
-                continue;
             const comments = await listAll(octokit.rest.pulls.listCommentsForReview, {
                 owner,
                 repo,
@@ -37785,6 +37832,7 @@ query ReviewThreads($owner: String!, $repo: String!, $number: Int!, $after: Stri
               author {
                 login
               }
+              body
             }
           }
         }
@@ -37815,13 +37863,14 @@ async function listReviewThreads(graphql, args) {
             if (!node || typeof node.isResolved !== 'boolean') {
                 throw new Error('GitHub GraphQL review thread is incomplete');
             }
-            const author = node.comments?.nodes?.[0]?.author?.login ?? undefined;
+            const root = node.comments?.nodes?.[0];
+            const author = root?.author?.login ?? undefined;
             if (!author) {
                 throw new Error('GitHub GraphQL review thread is incomplete');
             }
             threads.push({
                 resolved: node.isResolved,
-                comments: [{ user: { login: author } }],
+                comments: [{ user: { login: author }, body: root?.body ?? null }],
             });
         }
         if (connection.pageInfo.hasNextPage !== true)

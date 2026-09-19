@@ -1,6 +1,6 @@
 export interface ReviewThreadRecord {
 	resolved: boolean;
-	comments: Array<{ user?: { login?: string } | null }>;
+	comments: Array<{ user?: { login?: string } | null; body?: string | null }>;
 }
 
 interface ReviewThreadsResponse {
@@ -12,6 +12,7 @@ interface ReviewThreadsResponse {
 					comments?: {
 						nodes?: Array<{
 							author?: { login?: string | null } | null;
+							body?: string | null;
 						} | null> | null;
 					} | null;
 				} | null> | null;
@@ -41,6 +42,7 @@ query ReviewThreads($owner: String!, $repo: String!, $number: Int!, $after: Stri
               author {
                 login
               }
+              body
             }
           }
         }
@@ -77,13 +79,14 @@ export async function listReviewThreads(
 			if (!node || typeof node.isResolved !== 'boolean') {
 				throw new Error('GitHub GraphQL review thread is incomplete');
 			}
-			const author = node.comments?.nodes?.[0]?.author?.login ?? undefined;
+			const root = node.comments?.nodes?.[0];
+			const author = root?.author?.login ?? undefined;
 			if (!author) {
 				throw new Error('GitHub GraphQL review thread is incomplete');
 			}
 			threads.push({
 				resolved: node.isResolved,
-				comments: [{ user: { login: author } }],
+				comments: [{ user: { login: author }, body: root?.body ?? null }],
 			});
 		}
 
