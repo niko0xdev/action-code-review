@@ -29,7 +29,7 @@ export function labelForStatus(status: ReviewStatus): string {
 	return `${first.toUpperCase()}${rest.join('')}`;
 }
 
-/** True when the status should be surfaced as a warning in summaries. */
+/** Statuses other than `complete` deserve a warning in rendered summaries. */
 export function needsAttention(status: ReviewStatus): boolean {
 	return !isCleanStatus(status);
 }

@@ -357,6 +357,9 @@ async function resolveApproval(
 	params: PublishParams,
 	state: { hasWrite: boolean; hasBlockingFinding: boolean }
 ): Promise<ApprovalOutcome> {
+	core.info(
+		`[review][diag] approval gate: autoApprove=${String(params.autoApproveWhenResolved)} requireWrite=${String(params.requireWritePermissions)} hasWrite=${String(state.hasWrite)} blocking=${String(state.hasBlockingFinding)} status=${String(params.result.reviewStatus)} failedGroups=${String(params.result.diagnostics?.failedGroups)}`
+	);
 	if (params.autoApproveWhenResolved !== true)
 		return { state: 'not-requested' };
 	if (params.requireWritePermissions && !state.hasWrite)

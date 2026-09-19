@@ -37493,6 +37493,7 @@ function redactDetail(error) {
         .slice(0, 300);
 }
 async function resolveApproval(octokit, params, state) {
+    lib_core.info(`[review][diag] approval gate: autoApprove=${String(params.autoApproveWhenResolved)} requireWrite=${String(params.requireWritePermissions)} hasWrite=${String(state.hasWrite)} blocking=${String(state.hasBlockingFinding)} status=${String(params.result.reviewStatus)} failedGroups=${String(params.result.diagnostics?.failedGroups)}`);
     if (params.autoApproveWhenResolved !== true)
         return { state: 'not-requested' };
     if (params.requireWritePermissions && !state.hasWrite)
