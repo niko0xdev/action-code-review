@@ -372,6 +372,7 @@ async function resolveApproval(
 		params.repo,
 		params.prNumber
 	);
+	core.info(`[review][diag] threads resolved=${String(resolved)}`);
 	if (!resolved) return { state: 'skipped-unresolved-threads' };
 	try {
 		await octokit.rest.pulls.createReview({

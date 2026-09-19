@@ -37501,6 +37501,7 @@ async function resolveApproval(octokit, params, state) {
     if (state.hasBlockingFinding || reviewFailed(params.result))
         return { state: 'not-requested' };
     const resolved = await areAiThreadsResolved(octokit, params.owner, params.repo, params.prNumber);
+    lib_core.info(`[review][diag] threads resolved=${String(resolved)}`);
     if (!resolved)
         return { state: 'skipped-unresolved-threads' };
     try {
