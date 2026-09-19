@@ -110,6 +110,11 @@ export interface ReviewResult {
 	reviewStatus?: 'complete' | 'incomplete' | 'failed' | 'stale';
 	/** Provider-reported Pi usage aggregated across review-group processes. */
 	usage?: ReviewUsageMetrics;
+	/**
+	 * Real outcome of the auto-approval attempt, recorded by the publisher.
+	 * Absent means the publisher never got far enough to decide.
+	 */
+	approval?: ApprovalOutcome;
 }
 
 export interface RuleCoverage {
@@ -166,6 +171,11 @@ export interface ReviewDiagnostics {
 	prelintRan?: string[];
 	/** Number of review groups that failed (outage/parse failure). Non-zero blocks auto-approval. */
 	failedGroups?: number;
+	/**
+	 * Files that belonged to failed review groups, so a summary can state what
+	 * was never analyzed instead of implying full coverage.
+	 */
+	filesNotAnalyzed?: number;
 	/** Verify pass: high/critical findings that survived the second LLM challenge. */
 	verifyVerified?: number;
 	/** Verify pass: high/critical findings dropped as hallucinations. */
@@ -175,6 +185,31 @@ export interface ReviewDiagnostics {
 	/** Verify pass: estimated cost in USD. */
 	verifyCostUsd?: number;
 	verifyStatus?: 'complete' | 'error' | 'incomplete' | 'skipped';
+}
+
+/**
+ * What actually happened to the automatic approval. The PR summary must never
+ * claim an approval that GitHub did not accept, so the publisher records the
+ * real outcome instead of letting the renderer guess from finding counts.
+ */
+export type ApprovalState =
+	/** GitHub accepted `APPROVE`; a review object with state APPROVED exists. */
+	| 'approved'
+	/** Approval was not requested (flag off, blocking findings, or incomplete review). */
+	| 'not-requested'
+	/** Approval was requested but GitHub's repo policy refused it (HTTP 422). */
+	| 'not-permitted'
+	/** Approval was requested and the API call failed for another reason. */
+	| 'failed'
+	/** AI-authored threads are still unresolved, so approval was withheld. */
+	| 'skipped-unresolved-threads'
+	/** The PR actor has no write permission, so escalation was withheld. */
+	| 'skipped-no-write-permission';
+
+export interface ApprovalOutcome {
+	state: ApprovalState;
+	/** Short, redacted reason from the API or the skip condition. */
+	detail?: string;
 }
 
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low' | 'none';

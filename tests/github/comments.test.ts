@@ -29,9 +29,9 @@ describe('buildSummaryBody', () => {
 		model: 'test-model',
 	};
 
-	it('renders approved rich summary with all-zero findings', () => {
+	it('renders a clean rich summary with all-zero findings', () => {
 		const body = buildSummaryBody(empty);
-		expect(body).toContain('> ✨ **APPROVED**');
+		expect(body).toContain('> ✅ **NO BLOCKING FINDINGS**');
 		expect(body).toContain('| 🚨 Critical | 0 | ✅ |');
 		expect(body).toContain('✅ **All clear**');
 	});
@@ -64,13 +64,13 @@ describe('buildSummaryBody', () => {
 		expect(body).toContain('src/a.ts:4');
 	});
 
-	it('approves all-low findings', () => {
+	it('treats all-low findings as non-blocking', () => {
 		const body = buildSummaryBody({
 			...empty,
 			findings: [finding({ severity: 'low' })],
 			counts: { critical: 0, high: 0, medium: 0, low: 1 },
 		});
-		expect(body).toContain('> ✨ **APPROVED**');
+		expect(body).toContain('> ✅ **NO BLOCKING FINDINGS**');
 	});
 
 	it('includes optional summary, metadata, footer link, and no empty paragraph', () => {
@@ -93,6 +93,127 @@ describe('buildSummaryBody', () => {
 
 	it('formats critical banner', () => {
 		expect(formatDecisionBanner('critical')).toContain('CRITICAL');
+	});
+});
+
+describe('decision banner truthfulness', () => {
+	const clean = {
+		risk: 'none' as const,
+		counts: { critical: 0, high: 0, medium: 0, low: 0 },
+		filesReviewed: ['a.ts'],
+	};
+
+	it('does not claim APPROVED before an approval review exists', () => {
+		const body = buildSummaryBody(clean);
+		expect(body).not.toContain('APPROVED');
+		expect(body).not.toContain('Approving.');
+		expect(body).toContain('**Approval:** not requested');
+	});
+
+	it('claims APPROVED only after GitHub accepted the approval', () => {
+		const body = buildSummaryBody({
+			...clean,
+			approval: { state: 'approved' },
+		});
+		expect(body).toContain('> ✨ **APPROVED**');
+	});
+
+	it('reports the blocking repo setting when GitHub refuses the approval', () => {
+		const body = buildSummaryBody({
+			...clean,
+			approval: {
+				state: 'not-permitted',
+				detail: 'GitHub Actions is not permitted to approve pull requests.',
+			},
+		});
+		expect(body).toContain('APPROVAL NOT PERMITTED');
+		expect(body).toContain(
+			'Allow GitHub Actions to create and approve pull requests'
+		);
+		expect(body).not.toContain('APPROVED');
+	});
+
+	it('reports a failed approval attempt without blaming the PR', () => {
+		const body = buildSummaryBody({
+			...clean,
+			approval: { state: 'failed', detail: 'Bad credentials' },
+		});
+		expect(body).toContain('APPROVAL FAILED');
+		expect(body).toContain('Bad credentials');
+	});
+
+	it('explains an unresolved-thread skip', () => {
+		const body = buildSummaryBody({
+			...clean,
+			approval: { state: 'skipped-unresolved-threads' },
+		});
+		expect(body).toContain('**Approval:** skipped');
+		expect(body).toContain('resolved');
+	});
+
+	it('explains a write-permission skip', () => {
+		const body = buildSummaryBody({
+			...clean,
+			approval: { state: 'skipped-no-write-permission' },
+		});
+		expect(body).toContain('**Approval:** skipped');
+		expect(body).toContain('write permission');
+	});
+
+	it('never claims a clean approval on an incomplete review', () => {
+		const body = buildSummaryBody({ ...clean, reviewStatus: 'stale' });
+		expect(body).toContain('REVIEW INCOMPLETE — NO APPROVAL');
+		expect(body).not.toContain('> ✨ **APPROVED**');
+		expect(body).not.toContain('**Approval:** submitted');
+	});
+});
+
+describe('review execution line', () => {
+	const clean = {
+		risk: 'none' as const,
+		counts: { critical: 0, high: 0, medium: 0, low: 0 },
+		filesReviewed: ['a.ts', 'b.ts'],
+	};
+
+	it('states that a complete review analyzed its scope', () => {
+		const body = buildSummaryBody({
+			...clean,
+			filesTotal: 2,
+			filesExcluded: 0,
+			filesSelected: 2,
+			reviewStatus: 'complete',
+		});
+		expect(body).toContain(
+			'**Review execution:** complete — 2/2 selected files analyzed'
+		);
+	});
+
+	it('flags files a failed group never analyzed', () => {
+		const body = buildSummaryBody({
+			...clean,
+			filesTotal: 10,
+			filesExcluded: 3,
+			filesSelected: 10,
+			reviewStatus: 'incomplete',
+			diagnostics: { failedGroups: 1, filesNotAnalyzed: 7 },
+		});
+		expect(body).toContain('**Review execution:** incomplete');
+		expect(body).toContain('1 review group failed');
+		expect(body).toContain('7 files not analyzed');
+	});
+
+	it('reports omitted-file counts instead of calling a partial run complete', () => {
+		const body = buildSummaryBody({
+			...clean,
+			filesReviewed: ['a.ts'],
+			filesTotal: 5,
+			filesExcluded: 1,
+			filesSelected: 4,
+			reviewStatus: 'complete',
+		});
+		expect(body).toContain('**Review execution:** incomplete');
+		expect(body).toContain('3 files not analyzed');
+		expect(body).toContain('1/4 selected files analyzed');
 	});
 });
 

@@ -3,6 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import * as core from '@actions/core';
 import { redactSecrets } from '../security/redaction/redactor.js';
 import type { ReviewContext } from '../types/context.js';
 import type {
@@ -18,7 +19,22 @@ import {
 } from './harness.js';
 
 export const PI_READONLY_TOOLS = ['read', 'grep', 'find', 'ls'] as const;
-const MAX_OUTPUT_BYTES = 50 * 1024 * 1024;
+/**
+ * Hard ceiling on one harness process' merged stdout+stderr, as a last-resort
+ * memory guard.
+ *
+ * Measured on a real review run: 59 tool calls returned only ~286 KiB of
+ * results, while the process emitted 8 MiB of stdout — Pi's JSON event mode
+ * writes one JSON line per streamed delta, so even a normal answer is amplified
+ * by roughly an order of magnitude. A tight cap therefore kills healthy reviews.
+ * The guards that catch an actually broken run are the tool-call ceiling
+ * (a loop), the assistant-output ceiling (a provider that rambles), and the
+ * process timeout.
+ */
+export const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+/** Tool-execution ceiling per harness process; a runaway loop is cut short. */
+export const DEFAULT_MAX_TOOL_CALLS = 60;
+const MAX_OUTPUT_BYTES = DEFAULT_MAX_OUTPUT_BYTES;
 export interface PiHarnessOptions {
 	binaryPath?: string;
 	timeoutMs?: number;
@@ -29,6 +45,22 @@ export interface PiHarnessOptions {
 	includeFullContent?: boolean;
 	maxContextChars?: number;
 	piArgs?: string;
+	/** Overrides {@link DEFAULT_MAX_OUTPUT_BYTES}; `0` disables the cap. */
+	maxOutputBytes?: number;
+	/** Overrides {@link DEFAULT_MAX_TOOL_CALLS}; `0` disables the ceiling. */
+	maxToolCalls?: number;
+	/** Overrides {@link DEFAULT_MAX_ASSISTANT_BYTES}; `0` disables the ceiling. */
+	maxAssistantBytes?: number;
+	/**
+	 * Extra harness processes allowed when an answer is unparseable. Each repair
+	 * attempt re-asks with a bounded "convert your own answer to JSON" prompt
+	 * instead of reviewing the diff again.
+	 */
+	repairAttempts?: number;
+	/** Test seam: replaces the real `pi` subprocess spawner. */
+	runPi?: typeof runPi;
+	/** Test seam: skips runtime config directory discovery. */
+	configDir?: string;
 	/**
 	 * Static-analyzer findings to inject as evidence in the LLM prompt.
 	 * Sourced from `context/prelint.ts`. Optional - when omitted, the
@@ -82,9 +114,15 @@ export function buildPiArgs(
 	skillPaths: string[] = []
 ): string[] {
 	const args = [
+		// Text mode prints only the final assistant message. `--mode json`
+		// re-serializes every streamed delta (and the whole accumulated message
+		// with it), which measured out at ~64 MiB of stdout for a 47-tool-call
+		// review even though the tool results were ~230 KiB. That amplification
+		// killed healthy groups on the process output cap, so the runtime uses
+		// text mode and reads provider failures from stderr + non-zero exit.
 		'-p',
 		'--mode',
-		'json',
+		'text',
 		'--no-session',
 		// Never load project-local TypeScript extensions. Built-in skills are
 		// written to the isolated config directory by preparePiRuntimeConfig.
@@ -150,21 +188,42 @@ interface AgentEndEvent {
 		role?: string;
 		content?: Array<{ type?: string; text?: string }>;
 		usage?: unknown;
+		stopReason?: string;
+		errorMessage?: string;
 	};
 }
+
+/**
+ * Pi reports upstream/API failures inside the assistant `message_end` event as
+ * `stopReason: "error"` plus `errorMessage`, with an empty `content` array.
+ * Only looking at `content` turned a 401/timeout into "output started with: "
+ * and hid the real cause of a failed review, so the error is extracted too.
+ */
 export function extractAssistantText(stdout: string): string {
+	return extractAssistantResult(stdout).text;
+}
+
+export interface AssistantResult {
+	text: string;
+	error?: string;
+}
+
+export function extractAssistantResult(stdout: string): AssistantResult {
 	const messages: string[] = [];
+	let lastError: string | undefined;
 	let currentMessage: string[] = [];
 	for (const line of stdout.split('\n')) {
 		const trimmed = line.trim();
 		if (!trimmed.startsWith('{')) continue;
 		try {
 			const event = JSON.parse(trimmed) as AgentEndEvent;
-			if (
-				event.type === 'message_end' &&
-				event.message?.role === 'assistant' &&
-				Array.isArray(event.message.content)
-			) {
+			if (event.type === 'message_end' && event.message?.role === 'assistant') {
+				const failure = describeAssistantFailure(event.message);
+				if (failure) {
+					lastError = failure;
+					continue;
+				}
+				if (!Array.isArray(event.message.content)) continue;
 				currentMessage = [];
 				for (const block of event.message.content)
 					if (block?.type === 'text' && typeof block.text === 'string')
@@ -184,12 +243,165 @@ export function extractAssistantText(stdout: string): string {
 		try {
 			const parsed = JSON.parse(candidate) as unknown;
 			if (parsed && typeof parsed === 'object' && 'findings' in parsed)
-				return candidate;
+				return lastError
+					? { text: candidate, error: lastError }
+					: { text: candidate };
 		} catch {
 			/* Try the next assistant message. */
 		}
 	}
-	return messages.at(-1) ?? '';
+	if (messages.length === 0 && lastError) return { text: '', error: lastError };
+	// Text mode prints the final assistant message verbatim, so stdout is the
+	// artifact rather than an event stream. Fall back to the raw output; the
+	// JSON scanner tolerates any surrounding prose.
+	const text = (messages.at(-1) ?? stdout).trim();
+	return lastError ? { text, error: lastError } : { text };
+}
+
+/** Human-readable Pi failure, or undefined when the message is not a failure. */
+export function describeAssistantFailure(message: {
+	stopReason?: string;
+	errorMessage?: string;
+	content?: unknown[];
+}): string | undefined {
+	const detail = message.errorMessage?.trim();
+	if (detail) return detail;
+	if (message.stopReason && message.stopReason !== 'stop') {
+		if (message.stopReason === 'length')
+			return 'the model response was cut off by the output-token limit';
+		if (message.stopReason === 'aborted')
+			return 'the model request was aborted';
+		if (message.stopReason === 'error') return 'the model request failed';
+	}
+	return undefined;
+}
+
+/**
+ * Compact per-tool summary of one harness stream: how many calls each tool
+ * made and how many bytes of result came back. A runaway loop is usually
+ * "read called 40 times on huge files", and this makes that visible in the
+ * action log without dumping megabytes of raw output.
+ */
+export function summarizeToolCalls(stdout: string): string {
+	const calls = new Map<string, { count: number; bytes: number }>();
+	for (const line of stdout.split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith('{')) continue;
+		try {
+			const event = JSON.parse(trimmed) as {
+				type?: string;
+				toolName?: string;
+				result?: unknown;
+			};
+			if (event.type !== 'tool_execution_end' || !event.toolName) continue;
+			const entry = calls.get(event.toolName) ?? { count: 0, bytes: 0 };
+			entry.count += 1;
+			entry.bytes += JSON.stringify(event.result ?? '').length;
+			calls.set(event.toolName, entry);
+		} catch {
+			/* ignore non-JSON event lines */
+		}
+	}
+	if (calls.size === 0) return 'no tool calls';
+	return [...calls.entries()]
+		.sort((a, b) => b[1].count - a[1].count)
+		.map(
+			([name, entry]) =>
+				`${name}\u00d7${entry.count} (~${Math.round(entry.bytes / 1024)} KiB of results)`
+		)
+		.join(', ');
+}
+
+/**
+ * Cap on assistant-authored text (sum of `text_delta` payloads) before the run
+ * is stopped. Tool results are bounded by their own budget, but a provider that
+ * streams a runaway answer can push tens of megabytes of deltas through
+ * `message_update` events; this attributes that to the model instead of to the
+ * process output cap.
+ */
+export const DEFAULT_MAX_ASSISTANT_BYTES = 512 * 1024;
+
+/** Assistant text bytes streamed so far, counted incrementally per chunk. */
+export function countAssistantBytes(stdout: string): number {
+	let bytes = 0;
+	for (const line of stdout.split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith('{')) continue;
+		try {
+			const event = JSON.parse(trimmed) as {
+				type?: string;
+				assistantMessageEvent?: { type?: string; delta?: string };
+			};
+			if (event.type !== 'message_update') continue;
+			if (event.assistantMessageEvent?.type !== 'text_delta') continue;
+			const delta = event.assistantMessageEvent.delta;
+			if (typeof delta === 'string') bytes += Buffer.byteLength(delta, 'utf8');
+		} catch {
+			/* ignore non-JSON event lines */
+		}
+	}
+	return bytes;
+}
+
+/** Count `tool_execution_start` events in a Pi JSON event stream. */
+export function countToolCalls(stdout: string): number {
+	let calls = 0;
+	for (const line of stdout.split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith('{')) continue;
+		try {
+			const event = JSON.parse(trimmed) as { type?: string };
+			if (event.type === 'tool_execution_start') calls += 1;
+		} catch {
+			/* ignore non-JSON event lines */
+		}
+	}
+	return calls;
+}
+
+/**
+ * Emit the per-tool histogram for a failed harness process. Bounded output, so
+ * it is always logged: it is the difference between "0 findings" and "the model
+ * read the same file 40 times".
+ */
+function logToolSummary(run: PiRunLog): void {
+	core.info(`[harness] tool usage: ${summarizeToolCalls(run.stdout)}`);
+}
+
+/** Cap on the rejected answer embedded in a repair prompt, in characters. */
+export const MAX_REPAIR_ECHO_CHARS = 4000;
+
+/**
+ * Fail with the model/transport error instead of letting an empty answer fall
+ * through to the JSON parser, which reported "output started with: " and hid
+ * the actual cause (401, timeout, aborted request).
+ */
+function assertAssistantUsable(assistant: AssistantResult): void {
+	if (assistant.error && !assistant.text.trim())
+		throw new Error(
+			`Pi harness reported an error instead of a review result: ${assistant.error}`
+		);
+}
+
+/**
+ * Build the follow-up prompt used when a harness answer cannot be parsed.
+ * The model is asked to convert its own previous answer, not to review again:
+ * re-reviewing doubles cost and can produce a different, unverifiable result.
+ */
+export function buildRepairPrompt(previousOutput: string): string {
+	const echo = previousOutput.trim().slice(0, MAX_REPAIR_ECHO_CHARS);
+	return [
+		'Your previous answer could not be parsed as the required JSON review result.',
+		'Do not review the code again and do not call tools. Convert the answer below into exactly one JSON object.',
+		'Respond with ONLY the JSON object, no prose, no markdown fence.',
+		'Shape: {"findings": [{"severity": "critical|high|medium|low", "confidence": 0.0-1.0, "category": "correctness|security|regression|error-handling|data-integrity|concurrency|performance|maintainability|testing|compatibility", "path": "file/path", "line": <1-based line in the new version>, "rule_id": "stable rule id or null", "title": "...", "description": "...", "impact": "...", "suggestion": "...", "replacement": "exact replacement code or null"}], "summary": "concise overall review summary", "risk": "critical|high|medium|low|none"}',
+		'If you found nothing, return {"findings": [], "summary": "No issues found.", "risk": "none"}.',
+		'',
+		'Previous answer:',
+		'<<<',
+		echo,
+		'>>>',
+	].join('\n');
 }
 
 /** Per-process token/tool counters parsed from one Pi JSONL run. */
@@ -403,6 +615,7 @@ export function buildAgentDebugSection(
 export class PiHarness implements ReviewHarness {
 	readonly name = 'pi';
 	private _runs: PiRunLog[] = [];
+	private resolvedConfigDir: string | null = null;
 	constructor(private readonly options: PiHarnessOptions = {}) {}
 	get runs(): readonly PiRunLog[] {
 		return this._runs;
@@ -417,18 +630,19 @@ export class PiHarness implements ReviewHarness {
 	get usage(): ReviewUsageMetrics {
 		return aggregatePiUsage(this._runs);
 	}
-	async review(context: ReviewContext): Promise<ReviewResult> {
-		let run: PiRunLog;
-		const configDir = await resolveRuntimeConfigDir();
+	private async configDir(): Promise<string> {
+		if (this.options.configDir) return this.options.configDir;
+		this.resolvedConfigDir ??= await resolveRuntimeConfigDir();
+		return this.resolvedConfigDir;
+	}
+	private async run(prompt: string, context: ReviewContext): Promise<PiRunLog> {
+		const configDir = await this.configDir();
 		const skillPaths = context.profiles.map((profile) =>
 			join(configDir, 'skills', profile.id, 'SKILL.md')
 		);
-		const extraRules = [this.options.extraRules, context.reviewRules]
-			.filter((value): value is string => Boolean(value?.trim()))
-			.filter((value, index, values) => values.indexOf(value) === index)
-			.join('\n\n');
+		const runner = this.options.runPi ?? runPi;
 		try {
-			run = await runPi({
+			return await runner({
 				binaryPath: this.options.binaryPath ?? 'pi',
 				args: buildPiArgs(
 					context.repositoryPath,
@@ -440,23 +654,68 @@ export class PiHarness implements ReviewHarness {
 				cwd: context.repositoryPath,
 				configDir,
 				apiKey: this.options.apiKey,
-				prompt: buildReviewPrompt(context, extraRules || undefined, {
-					includeFullContent: this.options.includeFullContent,
-					maxContextChars: this.options.maxContextChars,
-					toolFindings: this.options.toolFindings,
-				}),
+				prompt,
 				timeoutMs: this.options.timeoutMs ?? 15 * 60_000,
+				maxOutputBytes: this.options.maxOutputBytes,
+				maxToolCalls: this.options.maxToolCalls,
+				maxAssistantBytes: this.options.maxAssistantBytes,
 			});
 		} catch (error) {
 			const maybeLog = (error as unknown as Record<string, unknown>)?.piLog as
 				| PiRunLog
 				| undefined;
 			if (maybeLog) this._runs.push(maybeLog);
+			if (maybeLog) logToolSummary(maybeLog);
 			throw error;
 		}
+	}
+	async review(context: ReviewContext): Promise<ReviewResult> {
+		const extraRules = [this.options.extraRules, context.reviewRules]
+			.filter((value): value is string => Boolean(value?.trim()))
+			.filter((value, index, values) => values.indexOf(value) === index)
+			.join('\n\n');
+		const prompt = buildReviewPrompt(context, extraRules || undefined, {
+			includeFullContent: this.options.includeFullContent,
+			maxContextChars: this.options.maxContextChars,
+			toolFindings: this.options.toolFindings,
+		});
+		let run = await this.run(prompt, context);
 		this._runs.push(run);
+		let assistant = extractAssistantResult(run.stdout);
+		assertAssistantUsable(assistant);
+		let raw = assistant.text;
+		let output: ReturnType<typeof parseHarnessFindings> | undefined;
+		try {
+			output = parseHarnessFindings(raw);
+		} catch (error) {
+			// A malformed answer is a model-output problem, not a review result.
+			// Re-ask for a conversion of the same answer before giving up, so a
+			// single prose reply cannot silently turn the whole PR into
+			// "0 findings, all clear".
+			const attempts = Math.max(this.options.repairAttempts ?? 1, 0);
+			let lastError = error;
+			for (let attempt = 0; attempt < attempts; attempt += 1) {
+				run = await this.run(buildRepairPrompt(raw), context);
+				this._runs.push(run);
+				assistant = extractAssistantResult(run.stdout);
+				assertAssistantUsable(assistant);
+				raw = assistant.text;
+				try {
+					output = parseHarnessFindings(raw);
+					lastError = null;
+					break;
+				} catch (repairError) {
+					lastError = repairError;
+				}
+			}
+			if (lastError) throw lastError;
+		}
+		if (!output)
+			throw new Error(
+				'Harness produced no review result after repair attempts.'
+			);
 		return toReviewResult(
-			parseHarnessFindings(extractAssistantText(run.stdout)),
+			output,
 			context.diff.files.map((f) => f.filename)
 		);
 	}
@@ -474,6 +733,9 @@ interface RunPiParams {
 	apiKey?: string;
 	prompt: string;
 	timeoutMs: number;
+	maxOutputBytes?: number;
+	maxToolCalls?: number;
+	maxAssistantBytes?: number;
 }
 function runPi(params: RunPiParams): Promise<PiRunLog> {
 	return new Promise((resolve, reject) => {
@@ -489,7 +751,15 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 		let stderrBytes = 0;
 		let settled = false;
 		let timedOut = false;
+		let toolCalls = 0;
+		let assistantBytes = 0;
+		/** Bytes already scanned for tool-call events; counting is incremental. */
+		let scannedBytes = 0;
 		let killTimer: ReturnType<typeof setTimeout> | undefined;
+		const maxBytes = params.maxOutputBytes ?? MAX_OUTPUT_BYTES;
+		const maxToolCalls = params.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS;
+		const maxAssistantBytes =
+			params.maxAssistantBytes ?? DEFAULT_MAX_ASSISTANT_BYTES;
 		// Monotonic span endpoints: the aggregate reports the wall-clock span
 		// from the earliest start to the latest exit, not summed durations.
 		const startedAt = performance.now();
@@ -516,20 +786,26 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 				reject(error);
 			} else resolve(log);
 		};
+		const signalProcess = (signal: NodeJS.Signals) => {
+			if (process.platform !== 'win32' && child.pid) {
+				try {
+					process.kill(-child.pid, signal);
+					return;
+				} catch {
+					// Fall back to the direct child when the process group is gone.
+				}
+			}
+			child.kill(signal);
+		};
+		/** Kill the process group and reject with a diagnosable reason. */
+		const killAndFail = (message: string) => {
+			if (settled) return;
+			signalProcess('SIGKILL');
+			finish(new Error(message));
+		};
 		const timer = setTimeout(() => {
 			if (settled) return;
 			timedOut = true;
-			const signalProcess = (signal: NodeJS.Signals) => {
-				if (process.platform !== 'win32' && child.pid) {
-					try {
-						process.kill(-child.pid, signal);
-						return;
-					} catch {
-						// Fall back to the direct child when the process group is gone.
-					}
-				}
-				child.kill(signal);
-			};
 			signalProcess('SIGTERM');
 			killTimer = setTimeout(() => {
 				signalProcess('SIGKILL');
@@ -538,33 +814,39 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 				);
 			}, 250);
 		}, params.timeoutMs);
-		const killAndFail = (stream: 'stdout' | 'stderr') => {
-			if (settled) return;
-			if (process.platform !== 'win32' && child.pid) {
-				try {
-					process.kill(-child.pid, 'SIGKILL');
-				} catch {
-					child.kill('SIGKILL');
-				}
-			} else child.kill('SIGKILL');
-			finish(
-				new Error(`Pi ${stream} output exceeded ${MAX_OUTPUT_BYTES} byte cap`)
-			);
-		};
 		const append = (
 			current: string,
 			size: number,
 			chunk: Buffer,
 			stream: 'stdout' | 'stderr'
 		): [string, number] => {
-			if (size + chunk.length > MAX_OUTPUT_BYTES) {
-				killAndFail(stream);
+			if (maxBytes > 0 && size + chunk.length > maxBytes) {
+				killAndFail(
+					`Pi ${stream} output exceeded ${maxBytes} byte cap (tool calls: ${toolCalls})`
+				);
 				return [current, size];
 			}
 			return [current + chunk.toString('utf8'), size + chunk.length];
 		};
 		child.stdout.on('data', (chunk: Buffer) => {
 			[stdout, stdoutBytes] = append(stdout, stdoutBytes, chunk, 'stdout');
+			if (settled || maxToolCalls <= 0) return;
+			// Tool results dominate harness output; cut a runaway tool loop
+			// before it consumes the whole review budget. Only the newly
+			// appended bytes are scanned, so this stays cheap on big streams.
+			const appended = stdout.slice(scannedBytes);
+			scannedBytes = stdout.length;
+			toolCalls += countToolCalls(appended);
+			if (toolCalls > maxToolCalls)
+				killAndFail(
+					`Pi exceeded the tool-call ceiling (${toolCalls} > ${maxToolCalls}); the review stopped to avoid an unbounded tool loop`
+				);
+			if (maxAssistantBytes <= 0 || settled) return;
+			assistantBytes += countAssistantBytes(appended);
+			if (assistantBytes > maxAssistantBytes)
+				killAndFail(
+					`Pi streamed ${Math.round(assistantBytes / 1024)} KiB of assistant text, over the ${Math.round(maxAssistantBytes / 1024)} KiB model-output ceiling; the provider is looping or echoing instead of answering`
+				);
 		});
 		child.stderr.on('data', (chunk: Buffer) => {
 			[stderr, stderrBytes] = append(stderr, stderrBytes, chunk, 'stderr');
