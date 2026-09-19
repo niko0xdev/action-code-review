@@ -154,6 +154,11 @@ files were reviewed, their paths are available in a collapsed `Reviewed files`
 section. This distinguishes a completed clean review from a run that produced
 no report or failed before analysis.
 
+The harness does not retain bulky read-only tool-result payloads in the review
+artifact stream; it keeps the assistant and usage events needed to parse the
+final result. Malformed or unterminated output still fails closed at the output
+safety cap.
+
 Shape (`schemaVersion: 1`):
 
 | Field | Meaning |

@@ -252,6 +252,20 @@ EOF
 		);
 	});
 
+	it('ignores oversized tool-result output before the final assistant artifact', async () => {
+		const bin = writeFakePi(`#!/bin/sh
+printf '%s' '{"type":"tool_result","text":"'
+head -c 52428801 /dev/zero | tr '\\0' 'x'
+printf '%s\\n' '"}'
+printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"{\\"findings\\":[],\\"summary\\":\\"ok\\",\\"risk\\":\\"none\\"}"}]}}'
+`);
+		const harness = new PiHarness({ binaryPath: bin, timeoutMs: 10_000 });
+		const result = await harness.review(makeContext());
+		expect(result.findings).toEqual([]);
+		expect(harness.lastRun?.stdout).toContain('message_end');
+		expect(harness.lastRun?.stdout).not.toContain('tool_result');
+	});
+
 	it('kills a process when stderr exceeds the 50 MiB cap', async () => {
 		const bin = writeFakePi('#!/bin/sh\nhead -c 52428801 /dev/zero >&2\n');
 		const harness = new PiHarness({ binaryPath: bin, timeoutMs: 10_000 });

@@ -497,6 +497,9 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 		let stdout = '';
 		let stderr = '';
 		let stdoutBytes = 0;
+		let stdoutPending = '';
+		let stdoutPendingBytes = 0;
+		let discardingStdoutLine = false;
 		let stderrBytes = 0;
 		let settled = false;
 		let timedOut = false;
@@ -562,7 +565,7 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 				new Error(`Pi ${stream} output exceeded ${MAX_OUTPUT_BYTES} byte cap`)
 			);
 		};
-		const append = (
+		const appendStderr = (
 			current: string,
 			size: number,
 			chunk: Buffer,
@@ -574,11 +577,74 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 			}
 			return [current + chunk.toString('utf8'), size + chunk.length];
 		};
+		const appendRelevantStdoutLine = (line: string) => {
+			const trimmed = line.trim();
+			if (!trimmed.startsWith('{')) return;
+			let event: AgentEndEvent & { type?: string };
+			try {
+				event = JSON.parse(trimmed) as AgentEndEvent & { type?: string };
+			} catch {
+				return;
+			}
+			const relevant =
+				event.type === 'tool_execution_start' ||
+				(event.type === 'message_end' && event.message?.role === 'assistant');
+			if (!relevant) return;
+			const lineBytes = Buffer.byteLength(line, 'utf8');
+			if (stdoutBytes + lineBytes > MAX_OUTPUT_BYTES) {
+				killAndFail('stdout');
+				return;
+			}
+			stdout += line;
+			stdoutBytes += lineBytes;
+		};
+		const captureStdout = (chunk: Buffer) => {
+			let incoming = chunk.toString('utf8');
+			while (incoming && !settled) {
+				if (discardingStdoutLine) {
+					const newline = incoming.indexOf('\n');
+					if (newline === -1) return;
+					incoming = incoming.slice(newline + 1);
+					discardingStdoutLine = false;
+					continue;
+				}
+				const combined = stdoutPending + incoming;
+				const newline = combined.indexOf('\n');
+				if (newline === -1) {
+					stdoutPending = combined;
+					stdoutPendingBytes = Buffer.byteLength(stdoutPending, 'utf8');
+					const type = stdoutPending.match(
+						/^\s*\{\s*"type"\s*:\s*"([^"]+)"/
+					)?.[1];
+					if (
+						type &&
+						type !== 'message_end' &&
+						type !== 'tool_execution_start'
+					) {
+						stdoutPending = '';
+						stdoutPendingBytes = 0;
+						discardingStdoutLine = true;
+					}
+					if (stdoutPendingBytes > MAX_OUTPUT_BYTES) killAndFail('stdout');
+					return;
+				}
+				const line = combined.slice(0, newline + 1);
+				incoming = combined.slice(newline + 1);
+				stdoutPending = '';
+				stdoutPendingBytes = 0;
+				appendRelevantStdoutLine(line);
+			}
+		};
 		child.stdout.on('data', (chunk: Buffer) => {
-			[stdout, stdoutBytes] = append(stdout, stdoutBytes, chunk, 'stdout');
+			captureStdout(chunk);
 		});
 		child.stderr.on('data', (chunk: Buffer) => {
-			[stderr, stderrBytes] = append(stderr, stderrBytes, chunk, 'stderr');
+			[stderr, stderrBytes] = appendStderr(
+				stderr,
+				stderrBytes,
+				chunk,
+				'stderr'
+			);
 		});
 		child.stdin.on('error', (error) =>
 			finish(new Error(`Failed to write harness prompt: ${error.message}`))
@@ -588,6 +654,8 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 			finish(new Error(`Failed to start harness: ${error.message}`));
 		});
 		child.on('close', (code) => {
+			if (settled) return;
+			if (stdoutPending) appendRelevantStdoutLine(stdoutPending);
 			if (settled) return;
 			if (timedOut) {
 				finish(
