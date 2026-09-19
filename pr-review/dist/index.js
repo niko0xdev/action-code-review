@@ -37817,7 +37817,7 @@ function parsePiArgs(raw) {
     }
     return out;
 }
-function buildPiArgs(repositoryPath, model, provider = 'openai', extraArgs = [], skillPaths = []) {
+function buildPiArgs(_repositoryPath, model, provider = 'openai', extraArgs = [], skillPaths = []) {
     const args = [
         '-p',
         '--mode',
@@ -37866,7 +37866,9 @@ function buildPiArgs(repositoryPath, model, provider = 'openai', extraArgs = [],
         }
     }
     args.push('--append-system-prompt', STRUCTURED_OUTPUT_SYSTEM_PROMPT);
-    args.push(`Review this pull request in ${repositoryPath}. See instructions.`);
+    // The complete review prompt is written to stdin by runPi. Do not append a
+    // second positional prompt: Pi concatenates it to stdin, which can put
+    // instructions after the JSON contract and weaken the final-output cue.
     return args;
 }
 function buildPiEnv(configDir, apiKey) {

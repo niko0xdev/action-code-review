@@ -78,7 +78,7 @@ export function parsePiArgs(raw: string): string[] {
 }
 
 export function buildPiArgs(
-	repositoryPath: string,
+	_repositoryPath: string,
 	model?: string,
 	provider = 'openai',
 	extraArgs: string[] = [],
@@ -126,7 +126,9 @@ export function buildPiArgs(
 		}
 	}
 	args.push('--append-system-prompt', STRUCTURED_OUTPUT_SYSTEM_PROMPT);
-	args.push(`Review this pull request in ${repositoryPath}. See instructions.`);
+	// The complete review prompt is written to stdin by runPi. Do not append a
+	// second positional prompt: Pi concatenates it to stdin, which can put
+	// instructions after the JSON contract and weaken the final-output cue.
 	return args;
 }
 export function buildPiEnv(
