@@ -160,6 +160,27 @@ describe('extractAssistantText', () => {
 		);
 	});
 
+	it('accepts the final assistant message from an agent_end event', () => {
+		const agentEnd = JSON.stringify({
+			type: 'agent_end',
+			messages: [
+				{
+					role: 'assistant',
+					content: [
+						{
+							type: 'text',
+							text: '{"findings":[],"summary":"done","risk":"none"}',
+						},
+					],
+				},
+			],
+		});
+
+		expect(extractAssistantText(agentEnd)).toBe(
+			'{"findings":[],"summary":"done","risk":"none"}'
+		);
+	});
+
 	it('surfaces provider errors from empty assistant messages', () => {
 		const errorEvent = JSON.stringify({
 			type: 'message_end',

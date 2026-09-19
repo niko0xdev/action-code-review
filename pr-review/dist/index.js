@@ -37895,21 +37895,26 @@ function extractAssistantText(stdout) {
             continue;
         try {
             const event = JSON.parse(trimmed);
-            if (event.type === 'message_end' &&
-                event.message?.role === 'assistant' &&
-                Array.isArray(event.message.content)) {
-                if (event.message.stopReason === 'error' ||
-                    event.message.errorMessage) {
-                    const message = event.message.errorMessage?.trim();
-                    errors.push(message || 'provider returned an assistant error');
-                    continue;
+            const assistantMessages = event.type === 'agent_end' && Array.isArray(event.messages)
+                ? event.messages
+                : event.message
+                    ? [event.message]
+                    : [];
+            for (const message of assistantMessages) {
+                if ((message.role === 'assistant' || event.type === 'agent_end') &&
+                    Array.isArray(message.content)) {
+                    if (message.stopReason === 'error' || message.errorMessage) {
+                        const errorMessage = message.errorMessage?.trim();
+                        errors.push(errorMessage || 'provider returned an assistant error');
+                        continue;
+                    }
+                    currentMessage = [];
+                    for (const block of message.content)
+                        if (block?.type === 'text' && typeof block.text === 'string')
+                            currentMessage.push(block.text);
+                    if (currentMessage.length > 0)
+                        messages.push(currentMessage.join(''));
                 }
-                currentMessage = [];
-                for (const block of event.message.content)
-                    if (block?.type === 'text' && typeof block.text === 'string')
-                        currentMessage.push(block.text);
-                if (currentMessage.length > 0)
-                    messages.push(currentMessage.join(''));
             }
         }
         catch {
@@ -38250,15 +38255,19 @@ function runPi(params) {
                 return;
             }
             const relevant = event.type === 'tool_execution_start' ||
-                (event.type === 'message_end' && event.message?.role === 'assistant');
+                (event.type === 'message_end' && event.message?.role === 'assistant') ||
+                event.type === 'agent_end';
             if (!relevant)
                 return;
-            const lineBytes = Buffer.byteLength(line, 'utf8');
+            const capturedLine = event.type === 'agent_end' && Array.isArray(event.messages)
+                ? `${JSON.stringify({ type: 'agent_end', messages: event.messages.filter((message) => message.role === 'assistant').slice(-1) })}\n`
+                : line;
+            const lineBytes = Buffer.byteLength(capturedLine, 'utf8');
             if (stdoutBytes + lineBytes > MAX_OUTPUT_BYTES) {
                 killAndFail('stdout');
                 return;
             }
-            stdout += line;
+            stdout += capturedLine;
             stdoutBytes += lineBytes;
         };
         const captureStdout = (chunk) => {
