@@ -22,6 +22,9 @@ import { buildJobSummary, publishReview } from './github/review.js';
 import type { PublisherOctokit } from './github/review.js';
 import { listReviewThreads } from './github/threads.js';
 import {
+	DEFAULT_MAX_ASSISTANT_BYTES,
+	DEFAULT_MAX_OUTPUT_BYTES,
+	DEFAULT_MAX_TOOL_CALLS,
 	PiHarness,
 	type PiRunLog,
 	buildAgentDebugSection,
@@ -40,6 +43,11 @@ import {
 } from './modes/detector.js';
 import { resolveProfiles, rulesForProfiles } from './profiles/index.js';
 import {
+	buildRawHarnessSection,
+	incompleteReviewFailure,
+	rawHarnessDumpEnabled,
+} from './review/execution.js';
+import {
 	buildReviewReport,
 	serializeReviewReport,
 	withReviewReportOutput,
@@ -57,6 +65,17 @@ import { profilesWithSkills } from './skills/registry.js';
 function positiveTimeout(value: string | undefined, fallback: number): number {
 	const parsed = Number(value);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * Like {@link positiveTimeout} but explicit `0` is honored (it disables the
+ * corresponding cap), so an operator can opt out of a budget instead of
+ * silently getting the default.
+ */
+function budgetOrFallback(value: string | undefined, fallback: number): number {
+	if (value === undefined || value.trim() === '') return fallback;
+	const parsed = Number(value);
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function recordArgs(args: unknown): Record<string, unknown> {
@@ -615,15 +634,25 @@ export async function main(argv: string[]): Promise<void> {
 			reviewContext.repositoryPath,
 			process.env.AI_REVIEW_PROFILE
 		);
-		// ponytail: default=all — trade ~9k system-prompt chars for full coverage; revert to `detected` to save cost.
-		const profiles =
-			process.env.AI_REVIEW_PROFILE == null
-				? profilesWithSkills().map((id) => ({ id, evidence: ['default:all'] }))
-				: detected;
+		// Detected profiles by default: loading every stack's rules for a repo
+		// that uses one stack buries the relevant rules in ~6k chars of noise and
+		// measurably degrades review quality. `AI_REVIEW_PROFILE=all` keeps the
+		// old load-everything behavior; an explicit comma list still pins stacks.
+		const loadAllProfiles = process.env.AI_REVIEW_PROFILE === 'all';
+		const profiles = loadAllProfiles
+			? profilesWithSkills().map((id) => ({
+					id,
+					evidence: ['AI_REVIEW_PROFILE=all'],
+				}))
+			: detected;
 		reviewContext.profiles = profiles;
-		trackPhase('profiles', profiles.map((p) => p.id).join(', ') || 'auto', {
-			enabled: trackEnabled,
-		});
+		trackPhase(
+			'profiles',
+			profiles.length > 0
+				? profiles.map((p) => p.id).join(', ')
+				: 'none detected',
+			{ enabled: trackEnabled }
+		);
 		const previousConfigDir = process.env.PI_CODING_AGENT_DIR;
 		let harness: PiHarness | undefined;
 		const runtimeConfig = await preparePiRuntimeConfig(llmConfig, {
@@ -684,6 +713,22 @@ export async function main(argv: string[]): Promise<void> {
 				timeoutMs: positiveTimeout(
 					process.env.AI_REVIEW_PI_TIMEOUT_MS,
 					15 * 60_000
+				),
+				maxOutputBytes: budgetOrFallback(
+					process.env.AI_REVIEW_PI_MAX_OUTPUT_BYTES,
+					DEFAULT_MAX_OUTPUT_BYTES
+				),
+				maxToolCalls: budgetOrFallback(
+					process.env.AI_REVIEW_PI_MAX_TOOL_CALLS,
+					DEFAULT_MAX_TOOL_CALLS
+				),
+				maxAssistantBytes: budgetOrFallback(
+					process.env.AI_REVIEW_PI_MAX_ASSISTANT_BYTES,
+					DEFAULT_MAX_ASSISTANT_BYTES
+				),
+				repairAttempts: budgetOrFallback(
+					process.env.AI_REVIEW_PI_REPAIR_ATTEMPTS,
+					1
 				),
 				model: llmConfig.model,
 				apiKey: llmConfig.apiKey,
@@ -769,6 +814,7 @@ export async function main(argv: string[]): Promise<void> {
 						model: llmConfig.model,
 						filesTotal,
 						filesExcluded,
+						filesSelected,
 						blockOnIssues: legacyOptions.blockOnIssues,
 						minSeverity: legacyOptions.minSeverity,
 						requireWritePermissions:
@@ -803,16 +849,34 @@ export async function main(argv: string[]): Promise<void> {
 						filesReviewed: result.filesReviewed,
 						filesTotal,
 						filesExcluded,
+						filesSelected,
 						result,
 						toolFindings: result.toolFindings,
 						diagnostics: result.diagnostics,
 					})
 				)
 				.write();
+			// Opt-in raw harness dump: the only way to see what the model
+			// actually returned when a group fails.
+			const dumpBudget = rawHarnessDumpEnabled();
+			if (dumpBudget && harness) {
+				const section = buildRawHarnessSection(harness.runs, dumpBudget);
+				if (section) await core.summary.addRaw(section).write();
+			}
 			core.setOutput(
 				'review-summary',
 				`${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`
 			);
+			// A crashed group or an unanalyzed file used to leave the step green
+			// while the summary looked like a clean review. Fail the step so the
+			// run is visible; set AI_REVIEW_FAIL_ON_INCOMPLETE=false to keep the
+			// old lenient behavior.
+			const failure = incompleteReviewFailure({ result, filesSelected });
+			if (failure && process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false') {
+				core.setFailed(failure);
+			} else if (failure) {
+				core.warning(failure);
+			}
 		} finally {
 			// Ensure agent debug log attached even if review/publish failed
 			try {

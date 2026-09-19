@@ -122,9 +122,18 @@ breaking shape change.
     "processes": { "started": 2, "succeeded": 2, "failed": 0 }
   },
   "diagnostics": { /* pipeline diagnostics, when present */ },
-  "ruleCoverage": { /* rule-level coverage, when present */ }
+  "ruleCoverage": { /* rule-level coverage, when present */ },
+  "approval": { "state": "approved", "detail": "..." }  // when considered
 }
 ```
+
+- `approval.state` records what really happened to the automatic approval
+  review: `approved` only when GitHub accepted it, `not-permitted` when
+  repository settings refused it, `failed` for any other API error,
+  `skipped-unresolved-threads`, `skipped-no-write-permission`, or
+  `not-requested`. `detail` is a redacted, single-line reason. The PR summary
+  comment renders the same state, so a clean review is never presented as an
+  approval GitHub rejected.
 
 - `status` is derived conservatively: `failedGroups > 0` forces `incomplete`,
   and an unknown status is reported as `incomplete` rather than assumed clean.
@@ -245,17 +254,27 @@ matching ids are skipped.
   If every AI-authored thread is resolved, submits an `APPROVE` review with body
   `All AI-generated review comments have been resolved. Auto-approving PR.`
   Missing or malformed thread data fails closed and never triggers approval.
+  GitHub refuses `APPROVE` from `GITHUB_TOKEN` unless the repository enables
+  "Allow GitHub Actions to create and approve pull requests"; that refusal is
+  reported as `approval.state = not-permitted` in the summary and the report
+  instead of being silently swallowed. `REQUEST_CHANGES` reviews are unaffected
+  by that setting. The summary claims `APPROVED` only from an accepted approval.
 
 ### Failure modes
 
 - Any thrown error → `core.setFailed('Action failed: <error>')` (non-zero exit).
 - LLM/API errors while reviewing one file are swallowed per-file
   (logged, no comments from that file); the action continues.
+- A review that did not cover its whole scope (a harness group crashed, a file
+  was never analyzed, or the status is stale/incomplete) fails the step with
+  `Review incomplete (…)` so a crashed harness can no longer look like a clean
+  green run. `AI_REVIEW_FAIL_ON_INCOMPLETE=false` downgrades it to a warning.
 
 ### Exit codes
 
 GitHub Actions convention: `0` success (including "no findings"),
-`1` failure via `core.setFailed`.
+`1` failure via `core.setFailed` — including an incomplete review, unless
+`AI_REVIEW_FAIL_ON_INCOMPLETE=false`.
 
 ---
 
@@ -267,7 +286,11 @@ permissions:
   pull-requests: write
 ```
 
-The actions must not require more than this.
+The actions must not require more than this. Submitting an `APPROVE` review
+additionally requires the repository setting "Allow GitHub Actions to create and
+approve pull requests" (`can_approve_pull_request_reviews`); without it GitHub
+answers HTTP 422 and the action reports it as `approval.state = not-permitted`.
+`REQUEST_CHANGES` works with the permissions block alone.
 
 ---
 

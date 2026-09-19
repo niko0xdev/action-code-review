@@ -2,6 +2,19 @@
 
 Start here. Each doc states what it covers and who should read it.
 
+Operational quick reference for a run that looks wrong:
+
+- `**Review execution:**` in the PR summary and step summary states how many
+  files were analyzed, how many groups failed, and whether the run is complete.
+  An incomplete run fails the step (`AI_REVIEW_FAIL_ON_INCOMPLETE=false` to warn
+  only) — see [architecture.md](architecture.md) for the env table.
+- `**Approval:**` states what really happened to the auto-approval. `APPROVED`
+  is printed only after GitHub accepted the approval review; `blocked by
+  repository settings` means the repository must enable "Allow GitHub Actions to
+  create and approve pull requests".
+- `AI_REVIEW_DEBUG_HARNESS=true` dumps the raw, redacted harness output into the
+  step summary when the model answer itself is the problem.
+
 | Doc | Covers | Read when |
 |-----|--------|-----------|
 | [architecture.md](architecture.md) | What was built: pipeline, layout, Pi provisioning, env vars | Running, extending, or debugging the engine |

@@ -1,12 +1,19 @@
 import * as core from '@actions/core';
 import type { OctokitLike } from '../context/pr.js';
 import { normalizeCommentId } from '../review/dedupe.js';
-import type { Finding, ReviewResult } from '../types/finding.js';
+import { redactSecrets } from '../security/redaction/redactor.js';
+import type {
+	ApprovalOutcome,
+	Finding,
+	ReviewResult,
+} from '../types/finding.js';
 import type { ReplyParams, ReplyResult } from '../types/reply.js';
 import { appendToBuffer, classifyFindings } from './buffer.js';
 import {
 	buildFindingBody,
 	buildSummaryBody,
+	describeApproval,
+	describeReviewExecution,
 	stickySummaryMarker,
 } from './comments.js';
 import { hasWritePermission } from './permissions.js';
@@ -114,6 +121,8 @@ export interface PublishParams {
 	durationMs?: number;
 	filesTotal?: number;
 	filesExcluded?: number;
+	/** Files the review accepted for analysis (post-filter scope). */
+	filesSelected?: number;
 	requireWritePermissions?: boolean;
 	actor?: string;
 	bufferInlineComments?: boolean;
@@ -273,6 +282,7 @@ export async function publishReview(
 		durationMs: params.durationMs,
 		filesTotal: params.filesTotal,
 		filesExcluded: params.filesExcluded,
+		filesSelected: params.filesSelected,
 		filesTruncated: result.filesTruncated,
 		toolFindings: result.toolFindings,
 		diagnostics: result.diagnostics,
@@ -312,30 +322,74 @@ export async function publishReview(
 	}
 	// Approval defaults on via the action input (explicit false opts out).
 	// Never approve a review whose groups partially failed — an LLM/Pi
-	// outage must not look "clean".
-	if (
-		params.autoApproveWhenResolved === true &&
-		hasWrite &&
-		!hasBlockingFinding &&
-		!reviewFailed(params.result)
-	) {
-		const resolved = await areAiThreadsResolved(octokit, owner, repo, prNumber);
-		if (resolved) {
-			try {
-				await octokit.rest.pulls.createReview({
-					owner,
-					repo,
-					pull_number: prNumber,
-					commit_id: headSha,
-					event: 'APPROVE',
-					body: 'All AI-generated review comments have been resolved. Auto-approving PR.',
-				});
-			} catch (error) {
-				core.warning(
-					`Approve review failed: ${error instanceof Error ? error.message : String(error)}`
-				);
-			}
+	// outage must not look "clean". The real outcome is recorded on the
+	// result so the summary can never imply an approval GitHub refused.
+	result.approval = await resolveApproval(octokit, params, {
+		hasWrite,
+		hasBlockingFinding,
+	});
+}
+
+/**
+ * True when GitHub rejected the review because repository policy forbids
+ * GitHub Actions from approving pull requests. This is a repository setting
+ * (`can_approve_pull_request_reviews`), not a defect in the review, and it
+ * needs a message that tells the operator exactly what to enable.
+ */
+export function isApprovalNotPermitted(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	const status = (error as { status?: number } | undefined)?.status;
+	return (
+		/GitHub Actions is not permitted to approve/i.test(message) ||
+		(status === 422 && /not permitted to approve/i.test(message)) ||
+		(status === 403 && /not permitted to approve/i.test(message))
+	);
+}
+
+function redactDetail(error: unknown): string {
+	return redactSecrets(error instanceof Error ? error.message : String(error))
+		.replaceAll(/[\r\n]+/g, ' ')
+		.slice(0, 300);
+}
+
+async function resolveApproval(
+	octokit: PublisherOctokit,
+	params: PublishParams,
+	state: { hasWrite: boolean; hasBlockingFinding: boolean }
+): Promise<ApprovalOutcome> {
+	if (params.autoApproveWhenResolved !== true)
+		return { state: 'not-requested' };
+	if (params.requireWritePermissions && !state.hasWrite)
+		return { state: 'skipped-no-write-permission' };
+	if (state.hasBlockingFinding || reviewFailed(params.result))
+		return { state: 'not-requested' };
+	const resolved = await areAiThreadsResolved(
+		octokit,
+		params.owner,
+		params.repo,
+		params.prNumber
+	);
+	if (!resolved) return { state: 'skipped-unresolved-threads' };
+	try {
+		await octokit.rest.pulls.createReview({
+			owner: params.owner,
+			repo: params.repo,
+			pull_number: params.prNumber,
+			commit_id: params.headSha,
+			event: 'APPROVE',
+			body: 'All AI-generated review comments have been resolved. Auto-approving PR.',
+		});
+		return { state: 'approved' };
+	} catch (error) {
+		const detail = redactDetail(error);
+		if (isApprovalNotPermitted(error)) {
+			core.warning(
+				`[review] GitHub refused the approval review: ${detail} — enable "Allow GitHub Actions to create and approve pull requests" in repository Actions settings to allow it.`
+			);
+			return { state: 'not-permitted', detail };
 		}
+		core.warning(`Approve review failed: ${detail}`);
+		return { state: 'failed', detail };
 	}
 }
 
@@ -553,7 +607,13 @@ export function buildJobSummary(input: {
 	filesReviewed: string[];
 	filesTotal?: number;
 	filesExcluded?: number;
-	result: Pick<ReviewResult, 'counts' | 'risk'> & { findings: unknown[] };
+	/** Files the review accepted for analysis (post-filter scope). */
+	filesSelected?: number;
+	result: Pick<ReviewResult, 'counts' | 'risk'> & {
+		findings: unknown[];
+		reviewStatus?: ReviewResult['reviewStatus'];
+		approval?: ReviewResult['approval'];
+	};
 	toolFindings?: ReviewResult['toolFindings'];
 	diagnostics?: ReviewResult['diagnostics'];
 }): string {
@@ -576,6 +636,17 @@ export function buildJobSummary(input: {
 		'- **Detected stack:** see review comment',
 		`- **Review duration:** ${seconds}`,
 		`- ${filesLine}`,
+		`- ${describeReviewExecution({
+			risk: input.result.risk,
+			counts: input.result.counts,
+			filesReviewed: input.filesReviewed,
+			filesTotal: input.filesTotal,
+			filesExcluded: input.filesExcluded,
+			filesSelected: input.filesSelected,
+			diagnostics: input.diagnostics,
+			reviewStatus: input.result.reviewStatus,
+		})}`,
+		`- ${describeApproval(input.result.approval)}`,
 		`- **Findings:** Critical ${input.result.counts.critical} · High ${input.result.counts.high} · Medium ${input.result.counts.medium} · Low ${input.result.counts.low}`,
 	];
 	// Q3 decision: surface tool findings + diagnostics in a collapsible

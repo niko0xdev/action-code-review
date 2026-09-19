@@ -176,13 +176,19 @@ pnpm build         # ncc → pr-*/dist/index.js
 |----------|---------|---------|
 | `AI_REVIEW_MAX_FILES` | `100` | hard ceiling above the input `max-files` |
 | `AI_REVIEW_MIN_CONFIDENCE` | `0.80` | validation confidence floor |
-| `AI_REVIEW_PROFILE` | unset (all profiles) | comma-separated profile override; `auto` = detect |
+| `AI_REVIEW_PROFILE` | detected | comma-separated profile override; `auto` = detect, `all` = load every stack's rules |
 | `AI_REVIEW_ENABLE_PRELINT` | `false` | run biome/ruff/swiftlint/ktlint/sqlfluff first (`'true'` to enable) |
 | `AI_REVIEW_SKIP_DRAFTS` | `false` | skip draft PRs (`'true'` to enable); `ready_for_review` still triggers a full review |
 | `AI_REVIEW_PI_TIMEOUT_MS` | `900000` | Pi process timeout |
+| `AI_REVIEW_PI_MAX_OUTPUT_BYTES` | `67108864` | last-resort merged stdout+stderr ceiling per harness process (`0` disables). Pi runs in text mode (final message only), so this only fires on a truly stuck process |
+| `AI_REVIEW_PI_MAX_TOOL_CALLS` | `60` | tool-execution ceiling; a runaway tool loop is stopped with an attributable error (`0` disables) |
+| `AI_REVIEW_PI_MAX_ASSISTANT_BYTES` | `524288` | streamed assistant-text ceiling; a provider that loops instead of answering is stopped with an attributable error (`0` disables) |
+| `AI_REVIEW_PI_REPAIR_ATTEMPTS` | `1` | extra harness calls that ask the model to convert its own unparseable answer into the required JSON |
 | `AI_REVIEW_LLM_TIMEOUT_MS` | `600000` | OpenAI-compatible request timeout |
 | `AI_REVIEW_VERIFY_PASS` | `false` | second LLM pass over high/critical findings (`'true'` to enable; drops hallucinations, records stats in diagnostics) |
 | `AI_REVIEW_VERIFY_BUDGET_USD` | `0.50` | cost ceiling for the verify pass |
+| `AI_REVIEW_DEBUG_HARNESS` | unset | `true`/`1` or a byte budget: append redacted, truncated raw harness output to the step summary |
+| `AI_REVIEW_FAIL_ON_INCOMPLETE` | `true` | fail the step when the review is incomplete (crashed group, unanalyzed files); `false` downgrades to a warning |
 
 All optional; consumers providing none still work unchanged.
 
@@ -218,3 +224,10 @@ Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic alrea
 4. **~~Verify pass wiring~~ — DONE.** `src/review/verify.ts` runs in the
    pipeline behind `AI_REVIEW_VERIFY_PASS=true` (default off); kept/dropped
    counts surface in the diagnostics block.
+5. **Harness reliability** — a malformed harness answer is retried once with a
+   conversion prompt (`AI_REVIEW_PI_REPAIR_ATTEMPTS`), a runaway tool loop is
+   stopped by `AI_REVIEW_PI_MAX_TOOL_CALLS`, and the output budget is now 8 MiB
+   instead of 50 MiB so a group fails in seconds with an attributable message.
+   A group that still fails marks the run incomplete and fails the step, and
+   `AI_REVIEW_DEBUG_HARNESS=true` dumps the raw harness output to the step
+   summary for diagnosis.

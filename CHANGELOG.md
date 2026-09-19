@@ -11,6 +11,64 @@ The full research artifact that motivated V3 lives in
 `docs/v3-prompt-research.md`. The decision record (resolving 5 Open
 Questions) lives in `docs/v3-decisions.md`.
 
+## [Unreleased]
+
+### Fixed
+
+- **Pi's own error is no longer swallowed.** When the provider call fails, Pi
+  emits `message_end` with `stopReason: "error"`, an `errorMessage` and an empty
+  `content` array. That became `Unable to parse harness output as JSON. Output
+  started with: ` — the real cause (for example `401 Invalid or expired API
+  key`) was invisible. Harness failures now report the upstream error.
+- **Approval claims are now truthful.** The PR summary no longer prints
+  `APPROVED` from a zero-finding count: it renders the publisher's recorded
+  outcome (`approved`, `not-permitted`, `failed`, `skipped-*`, `not-requested`).
+  GitHub refuses `APPROVE` from `GITHUB_TOKEN` unless the repository enables
+  "Allow GitHub Actions to create and approve pull requests"; that refusal
+  (HTTP 422) is now reported as `APPROVAL NOT PERMITTED` with the exact setting
+  to enable, and appears as `approval.state` in the `review-report` output.
+- **Malformed harness output is retried instead of read as "0 findings".** A
+  prose answer from Pi is re-asked once with a conversion prompt, and JSON
+  extraction now scans every balanced object instead of one first-brace/
+  last-brace slice, so prose or scratch objects before the artifact no longer
+  destroy the review.
+- **The harness runs Pi in text mode.** `--mode json` re-serializes every
+  streamed delta — measured at 64 MiB of stdout for a review whose tool results
+  were 230 KiB — which killed healthy groups on the process output cap. Text
+  mode prints only the final assistant message; the security engine fallback
+  uses it too.
+- **A broken harness run is attributable instead of silent.** Pi's stderr/stdout
+  budget is a last-resort memory guard (64 MiB), a tool-call ceiling stops
+  unbounded tool loops, and an assistant-output ceiling stops a provider that
+  streams a runaway answer. Each failure names which budget was exceeded, and a
+  per-process tool histogram is logged. Measured caveat: JSON event mode amplifies
+  a healthy run's stdout far beyond its payload, which is why the process budget
+  is not the primary guard.
+- **Incomplete reviews fail the step.** A crashed group or unanalyzed file used
+  to leave the workflow green; it now calls `core.setFailed` with the scope that
+  was missed (`AI_REVIEW_FAIL_ON_INCOMPLETE=false` restores the old behavior).
+
+### Changed
+
+- **Stack rules are detected, not dumped.** `AI_REVIEW_PROFILE` unset now loads
+  only the profiles detected in the repository (measured 1.1k chars vs 6.1k
+  chars of rules on a single-stack repo). `AI_REVIEW_PROFILE=all` restores the
+  previous load-every-stack behavior.
+- Summary comments and the step summary always state review execution
+  (`N/M files analyzed`, failed groups, unanalyzed files) and the approval
+  outcome.
+
+### Added
+
+- `AI_REVIEW_DEBUG_HARNESS` (`true`/`1`/byte budget) appends redacted, truncated
+  raw harness output to the step summary.
+- `AI_REVIEW_PI_MAX_OUTPUT_BYTES`, `AI_REVIEW_PI_MAX_TOOL_CALLS`,
+  `AI_REVIEW_PI_MAX_ASSISTANT_BYTES`, `AI_REVIEW_PI_REPAIR_ATTEMPTS` for harness
+  budgeting.
+- A per-process tool histogram (`[harness] tool usage: read×34 …`) is logged
+  whenever a harness process fails, so a runaway loop is diagnosable from the
+  action log alone.
+
 ## [3.0.0] — 2026-08-31
 
 ### Added

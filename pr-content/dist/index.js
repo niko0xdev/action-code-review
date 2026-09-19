@@ -32636,36 +32636,101 @@ async function safeErrorDetail(response) {
     const text = await response.text().catch(() => '');
     return scrubSecrets(text).slice(0, 500);
 }
+/** Upper bound on parsed candidates, so hostile text cannot force unbounded JSON.parse work. */
+const MAX_JSON_CANDIDATES = 24;
 /**
- * Pull the first JSON object out of an LLM response. Handles bare JSON,
- * markdown-fenced JSON, and JSON embedded in prose.
+ * Collect every balanced `{...}` region in `text`, ignoring braces that appear
+ * inside JSON strings. A prose answer can contain brace-like noise, so a single
+ * first-brace/last-brace slice is not enough.
  */
-function extractJsonBlock(text) {
-    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+function balancedObjectCandidates(text) {
     const candidates = [];
-    if (fenced?.[1]) {
-        candidates.push(fenced[1].trim());
+    let depth = 0;
+    let start = -1;
+    let inString = false;
+    let escaped = false;
+    for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        if (inString) {
+            if (escaped)
+                escaped = false;
+            else if (char === '\\')
+                escaped = true;
+            else if (char === '"')
+                inString = false;
+            continue;
+        }
+        if (char === '"') {
+            // Only meaningful once a candidate opened; outside one it is prose.
+            if (depth > 0)
+                inString = true;
+            continue;
+        }
+        if (char === '{') {
+            if (depth === 0)
+                start = index;
+            depth += 1;
+            continue;
+        }
+        if (char === '}') {
+            if (depth === 0)
+                continue;
+            depth -= 1;
+            if (depth === 0 && start !== -1) {
+                candidates.push(text.slice(start, index + 1));
+                if (candidates.length >= MAX_JSON_CANDIDATES)
+                    return candidates;
+                start = -1;
+            }
+        }
     }
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start !== -1 && end > start) {
-        candidates.push(text.slice(start, end + 1));
+    return candidates;
+}
+/**
+ * Pull a JSON object out of an LLM response. Handles bare JSON, markdown-fenced
+ * JSON, and JSON embedded in prose where earlier prose (or scratch objects)
+ * would otherwise corrupt a naive first-brace/last-brace slice.
+ *
+ * @param text Raw model output.
+ * @param preferKeys When provided, the first parsed candidate containing any of
+ *   these keys wins; otherwise the first parseable object wins.
+ */
+function extractJsonBlock(text, preferKeys) {
+    const candidates = [];
+    const collect = (raw) => {
+        const trimmed = raw.trim();
+        if (!trimmed)
+            return;
+        if (trimmed.startsWith('{') && trimmed.endsWith('}'))
+            candidates.push(trimmed);
+        for (const balanced of balancedObjectCandidates(trimmed)) {
+            if (balanced !== trimmed)
+                candidates.push(balanced);
+        }
+    };
+    const fencedPattern = /```(?:json)?\s*([\s\S]*?)```/gi;
+    for (const match of text.matchAll(fencedPattern)) {
+        if (match[1])
+            collect(match[1]);
     }
-    if (!fenced && start === -1) {
-        return null;
-    }
-    for (const candidate of candidates) {
+    for (const balanced of balancedObjectCandidates(text))
+        collect(balanced);
+    const parsed = [];
+    for (const candidate of candidates.slice(0, MAX_JSON_CANDIDATES * 2)) {
         try {
-            const parsed = JSON.parse(candidate);
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                return parsed;
+            const value = JSON.parse(candidate);
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                const record = value;
+                if (!preferKeys || preferKeys.some((key) => key in record))
+                    return record;
+                parsed.push(record);
             }
         }
         catch {
-            // try next candidate
+            // Not JSON — keep scanning.
         }
     }
-    return null;
+    return parsed[0] ?? null;
 }
 
 
@@ -32815,10 +32880,13 @@ class PiSecurityEngine {
             ]);
             return (0,_redaction_redactor_js__WEBPACK_IMPORTED_MODULE_2__/* .redactSecrets */ .f)(res.content);
         }
-        // Fallback: spawn Pi CLI if available
+        // Fallback: spawn Pi CLI if available.
+        // Text mode prints only the final assistant message; `--mode json`
+        // re-serializes every streamed delta and can emit tens of MiB for one
+        // answer. `parseFindings` scans the raw output for the JSON artifact.
         const { spawn } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 1421, 23));
         return new Promise((resolve, reject) => {
-            const proc = spawn(ctx.options.piBinaryPath || 'pi', ['-p', '--mode', 'json', '--no-session'], {
+            const proc = spawn(ctx.options.piBinaryPath || 'pi', ['-p', '--mode', 'text', '--no-session'], {
                 cwd: ctx.repositoryPath,
                 env: { ...process.env },
             });
@@ -36771,15 +36839,109 @@ function hasBlockingFindings(findings, counts) {
         ? findings.some((finding) => finding.severity !== 'low')
         : counts.critical + counts.high + counts.medium > 0;
 }
-function formatDecisionBanner(risk, findings = [], counts = { critical: 0, high: 0, medium: 0, low: 0 }, reviewStatus = 'complete') {
+/** Files inside failed review groups: reviewed + excluded + these = total. */
+function filesNotAnalyzed(result) {
+    const explicit = result.diagnostics?.filesNotAnalyzed;
+    if (typeof explicit === 'number' && explicit > 0)
+        return explicit;
+    const reviewed = result.filesReviewed.length;
+    const selected = result.filesSelected ?? reviewed;
+    return Math.max(selected - reviewed, 0);
+}
+/**
+ * One line that answers "did this review actually run, and over what?".
+ *
+ * `filesSelected` is the scope the review accepted (after exclude patterns and
+ * the `max-files` cap); excluded files are not missing coverage. A group failure
+ * or a shortfall against that scope is reported as incomplete even when the
+ * engine declared the run complete, so a partial pass can never read as full
+ * coverage.
+ */
+function describeReviewExecution(result) {
+    const reviewed = result.filesReviewed.length;
+    const selected = result.filesSelected ?? reviewed + (result.filesExcluded ?? 0);
+    const notAnalyzed = filesNotAnalyzed(result);
+    const failedGroups = result.diagnostics?.failedGroups ?? 0;
+    const declared = result.reviewStatus ?? 'complete';
+    const incomplete = declared !== 'complete' || failedGroups > 0 || notAnalyzed > 0;
+    const reasons = [
+        `${reviewed}/${selected} selected files analyzed`,
+        failedGroups > 0
+            ? `${failedGroups} review group${failedGroups === 1 ? '' : 's'} failed`
+            : '',
+        notAnalyzed > 0
+            ? `${notAnalyzed} file${notAnalyzed === 1 ? '' : 's'} not analyzed`
+            : '',
+        declared !== 'complete' ? `status: ${declared}` : '',
+    ].filter(Boolean);
+    return `**Review execution:** ${incomplete ? 'incomplete' : 'complete'} — ${reasons.join('; ')}`;
+}
+/**
+ * Approval line derived from the publisher's recorded outcome. The reader
+ * should never have to infer an approval from "0 findings": every state is
+ * spelled out, including the repository setting that can block it.
+ */
+function describeApproval(outcome) {
+    switch (outcome?.state) {
+        case 'approved':
+            return '**Approval:** submitted — GitHub approved this PR.';
+        case 'not-permitted':
+            return [
+                '**Approval:** blocked by repository settings.',
+                'Enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests**',
+                'so the bot can submit the approval.',
+                outcome.detail ? `GitHub said: ${mdSafe(outcome.detail)}.` : '',
+            ]
+                .filter(Boolean)
+                .join(' ');
+        case 'failed':
+            return `**Approval:** attempt failed${outcome.detail ? ` — ${mdSafe(outcome.detail)}` : ''}.`;
+        case 'skipped-unresolved-threads':
+            return '**Approval:** skipped — AI review threads are not all resolved yet.';
+        case 'skipped-no-write-permission':
+            return '**Approval:** skipped — the PR actor has no write permission.';
+        default:
+            return '**Approval:** not requested.';
+    }
+}
+/**
+ * Decision line for a clean review. It mirrors the recorded approval outcome
+ * instead of asserting that an approval happened.
+ */
+function describeApprovalDecision(result) {
+    switch (result.approval?.state) {
+        case 'approved':
+            return '✅ **All clear** — no blocking findings, and GitHub accepted the approval review.';
+        case 'not-permitted':
+            return '✅ **All clear** — no blocking findings. The approval review was rejected by repository settings (see Approval above).';
+        case 'failed':
+            return '✅ **All clear** — no blocking findings. The approval attempt failed (see Approval above).';
+        case 'skipped-unresolved-threads':
+            return '✅ **All clear** — no blocking findings. Approval is withheld until existing AI threads are resolved.';
+        case 'skipped-no-write-permission':
+            return '✅ **All clear** — no blocking findings. Approval is skipped because the PR actor lacks write permission.';
+        default:
+            return '✅ **All clear** — no blocking findings. No approval review was submitted.';
+    }
+}
+function formatDecisionBanner(risk, findings = [], counts = { critical: 0, high: 0, medium: 0, low: 0 }, reviewStatus = 'complete', approval) {
     if (reviewStatus !== 'complete')
         return '> ⚠️ **REVIEW INCOMPLETE — NO APPROVAL**';
     if (risk === 'critical' ||
         findings.some((finding) => finding.severity === 'critical'))
         return '> 🚨 **CRITICAL — merge blocked**';
-    return hasBlockingFindings(findings, counts)
-        ? '> ⚠️ **CHANGES REQUESTED**'
-        : '> ✨ **APPROVED**';
+    if (hasBlockingFindings(findings, counts))
+        return '> ⚠️ **CHANGES REQUESTED**';
+    switch (approval?.state) {
+        case 'approved':
+            return '> ✨ **APPROVED**';
+        case 'not-permitted':
+            return '> 🚫 **APPROVAL NOT PERMITTED** — clean review, but repository settings block GitHub Actions from approving';
+        case 'failed':
+            return '> ⚠️ **APPROVAL FAILED** — clean review, but the approval call did not succeed';
+        default:
+            return '> ✅ **NO BLOCKING FINDINGS**';
+    }
 }
 function buildChecksTable(findings, _counts, ruleCoverage) {
     const categoryCounts = new Map();
@@ -36859,17 +37021,19 @@ function buildSummaryBody(result) {
                 findings.some((finding) => finding.severity === 'critical')
                 ? '❌ **Changes requested** — critical findings block merge.'
                 : `❌ **Changes requested** — ${findings.filter((finding) => finding.severity !== 'low').length || result.counts.critical + result.counts.high + result.counts.medium} blocking finding(s). Please address before merge.`
-            : '✅ **All clear** — no blocking findings. Approving.';
+            : describeApprovalDecision(result);
     const footer = footerComment(result.model ?? process.env.OPENAI_API_MODEL ?? 'unknown');
     const lines = [
         '# ✨ AI Code Review',
         '',
-        formatDecisionBanner(result.risk, findings, result.counts, reviewStatus),
+        formatDecisionBanner(result.risk, findings, result.counts, reviewStatus, result.approval),
         '',
         `**Risk:** ${RISK_LABEL[result.risk]}`,
         `**Duration:** ${formatDuration(result.durationMs)}`,
         truncationNotice,
         filesLine,
+        describeReviewExecution({ ...result, reviewStatus }),
+        describeApproval(result.approval),
         `**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,
     ];
     if (result.summary)
@@ -37144,6 +37308,7 @@ async function hasWritePermission(octokit, owner, repo, actor) {
 
 
 
+
 function isPermissionError(error) {
     const err = error;
     if (err?.status === 403 || err?.response?.status === 403)
@@ -37266,6 +37431,7 @@ async function publishReview(octokit, params) {
         durationMs: params.durationMs,
         filesTotal: params.filesTotal,
         filesExcluded: params.filesExcluded,
+        filesSelected: params.filesSelected,
         filesTruncated: result.filesTruncated,
         toolFindings: result.toolFindings,
         diagnostics: result.diagnostics,
@@ -37301,27 +37467,60 @@ async function publishReview(octokit, params) {
     }
     // Approval defaults on via the action input (explicit false opts out).
     // Never approve a review whose groups partially failed — an LLM/Pi
-    // outage must not look "clean".
-    if (params.autoApproveWhenResolved === true &&
-        hasWrite &&
-        !hasBlockingFinding &&
-        !reviewFailed(params.result)) {
-        const resolved = await areAiThreadsResolved(octokit, owner, repo, prNumber);
-        if (resolved) {
-            try {
-                await octokit.rest.pulls.createReview({
-                    owner,
-                    repo,
-                    pull_number: prNumber,
-                    commit_id: headSha,
-                    event: 'APPROVE',
-                    body: 'All AI-generated review comments have been resolved. Auto-approving PR.',
-                });
-            }
-            catch (error) {
-                lib_core.warning(`Approve review failed: ${error instanceof Error ? error.message : String(error)}`);
-            }
+    // outage must not look "clean". The real outcome is recorded on the
+    // result so the summary can never imply an approval GitHub refused.
+    result.approval = await resolveApproval(octokit, params, {
+        hasWrite,
+        hasBlockingFinding,
+    });
+}
+/**
+ * True when GitHub rejected the review because repository policy forbids
+ * GitHub Actions from approving pull requests. This is a repository setting
+ * (`can_approve_pull_request_reviews`), not a defect in the review, and it
+ * needs a message that tells the operator exactly what to enable.
+ */
+function isApprovalNotPermitted(error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = error?.status;
+    return (/GitHub Actions is not permitted to approve/i.test(message) ||
+        (status === 422 && /not permitted to approve/i.test(message)) ||
+        (status === 403 && /not permitted to approve/i.test(message)));
+}
+function redactDetail(error) {
+    return (0,redactor/* redactSecrets */.f)(error instanceof Error ? error.message : String(error))
+        .replaceAll(/[\r\n]+/g, ' ')
+        .slice(0, 300);
+}
+async function resolveApproval(octokit, params, state) {
+    if (params.autoApproveWhenResolved !== true)
+        return { state: 'not-requested' };
+    if (params.requireWritePermissions && !state.hasWrite)
+        return { state: 'skipped-no-write-permission' };
+    if (state.hasBlockingFinding || reviewFailed(params.result))
+        return { state: 'not-requested' };
+    const resolved = await areAiThreadsResolved(octokit, params.owner, params.repo, params.prNumber);
+    if (!resolved)
+        return { state: 'skipped-unresolved-threads' };
+    try {
+        await octokit.rest.pulls.createReview({
+            owner: params.owner,
+            repo: params.repo,
+            pull_number: params.prNumber,
+            commit_id: params.headSha,
+            event: 'APPROVE',
+            body: 'All AI-generated review comments have been resolved. Auto-approving PR.',
+        });
+        return { state: 'approved' };
+    }
+    catch (error) {
+        const detail = redactDetail(error);
+        if (isApprovalNotPermitted(error)) {
+            lib_core.warning(`[review] GitHub refused the approval review: ${detail} — enable "Allow GitHub Actions to create and approve pull requests" in repository Actions settings to allow it.`);
+            return { state: 'not-permitted', detail };
         }
+        lib_core.warning(`Approve review failed: ${detail}`);
+        return { state: 'failed', detail };
     }
 }
 /**
@@ -37491,6 +37690,17 @@ function buildJobSummary(input) {
         '- **Detected stack:** see review comment',
         `- **Review duration:** ${seconds}`,
         `- ${filesLine}`,
+        `- ${describeReviewExecution({
+            risk: input.result.risk,
+            counts: input.result.counts,
+            filesReviewed: input.filesReviewed,
+            filesTotal: input.filesTotal,
+            filesExcluded: input.filesExcluded,
+            filesSelected: input.filesSelected,
+            diagnostics: input.diagnostics,
+            reviewStatus: input.result.reviewStatus,
+        })}`,
+        `- ${describeApproval(input.result.approval)}`,
         `- **Findings:** Critical ${input.result.counts.critical} · High ${input.result.counts.high} · Medium ${input.result.counts.medium} · Low ${input.result.counts.low}`,
     ];
     // Q3 decision: surface tool findings + diagnostics in a collapsible
@@ -37672,7 +37882,7 @@ function buildReviewPrompt(context, extraRules, options = {}) {
         .join('\n');
 }
 function parseHarnessFindings(raw) {
-    const json = (0,openai_compatible/* extractJsonBlock */.zR)(raw);
+    const json = (0,openai_compatible/* extractJsonBlock */.zR)(raw, ['findings', 'summary']);
     if (!json)
         throw new Error(`Unable to parse harness output as JSON. Output started with: ${raw.slice(0, 120)}`);
     if (!json.findings && !('summary' in json))
@@ -37749,8 +37959,24 @@ function coerceFinding(item) {
 
 
 
+
 const PI_READONLY_TOOLS = ['read', 'grep', 'find', 'ls'];
-const MAX_OUTPUT_BYTES = 50 * 1024 * 1024;
+/**
+ * Hard ceiling on one harness process' merged stdout+stderr, as a last-resort
+ * memory guard.
+ *
+ * Measured on a real review run: 59 tool calls returned only ~286 KiB of
+ * results, while the process emitted 8 MiB of stdout — Pi's JSON event mode
+ * writes one JSON line per streamed delta, so even a normal answer is amplified
+ * by roughly an order of magnitude. A tight cap therefore kills healthy reviews.
+ * The guards that catch an actually broken run are the tool-call ceiling
+ * (a loop), the assistant-output ceiling (a provider that rambles), and the
+ * process timeout.
+ */
+const DEFAULT_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+/** Tool-execution ceiling per harness process; a runaway loop is cut short. */
+const DEFAULT_MAX_TOOL_CALLS = 60;
+const MAX_OUTPUT_BYTES = DEFAULT_MAX_OUTPUT_BYTES;
 const PI_ARGS_ALLOWLIST = new Set([
     '--max-duration',
     '--model-override',
@@ -37789,9 +38015,15 @@ function parsePiArgs(raw) {
 }
 function buildPiArgs(repositoryPath, model, provider = 'openai', extraArgs = [], skillPaths = []) {
     const args = [
+        // Text mode prints only the final assistant message. `--mode json`
+        // re-serializes every streamed delta (and the whole accumulated message
+        // with it), which measured out at ~64 MiB of stdout for a 47-tool-call
+        // review even though the tool results were ~230 KiB. That amplification
+        // killed healthy groups on the process output cap, so the runtime uses
+        // text mode and reads provider failures from stderr + non-zero exit.
         '-p',
         '--mode',
-        'json',
+        'text',
         '--no-session',
         // Never load project-local TypeScript extensions. Built-in skills are
         // written to the isolated config directory by preparePiRuntimeConfig.
@@ -37854,8 +38086,18 @@ function buildPiEnv(configDir, apiKey) {
             : {}),
     };
 }
+/**
+ * Pi reports upstream/API failures inside the assistant `message_end` event as
+ * `stopReason: "error"` plus `errorMessage`, with an empty `content` array.
+ * Only looking at `content` turned a 401/timeout into "output started with: "
+ * and hid the real cause of a failed review, so the error is extracted too.
+ */
 function extractAssistantText(stdout) {
+    return extractAssistantResult(stdout).text;
+}
+function extractAssistantResult(stdout) {
     const messages = [];
+    let lastError;
     let currentMessage = [];
     for (const line of stdout.split('\n')) {
         const trimmed = line.trim();
@@ -37863,9 +38105,14 @@ function extractAssistantText(stdout) {
             continue;
         try {
             const event = JSON.parse(trimmed);
-            if (event.type === 'message_end' &&
-                event.message?.role === 'assistant' &&
-                Array.isArray(event.message.content)) {
+            if (event.type === 'message_end' && event.message?.role === 'assistant') {
+                const failure = describeAssistantFailure(event.message);
+                if (failure) {
+                    lastError = failure;
+                    continue;
+                }
+                if (!Array.isArray(event.message.content))
+                    continue;
                 currentMessage = [];
                 for (const block of event.message.content)
                     if (block?.type === 'text' && typeof block.text === 'string')
@@ -37887,13 +38134,156 @@ function extractAssistantText(stdout) {
         try {
             const parsed = JSON.parse(candidate);
             if (parsed && typeof parsed === 'object' && 'findings' in parsed)
-                return candidate;
+                return lastError
+                    ? { text: candidate, error: lastError }
+                    : { text: candidate };
         }
         catch {
             /* Try the next assistant message. */
         }
     }
-    return messages.at(-1) ?? '';
+    if (messages.length === 0 && lastError)
+        return { text: '', error: lastError };
+    // Text mode prints the final assistant message verbatim, so stdout is the
+    // artifact rather than an event stream. Fall back to the raw output; the
+    // JSON scanner tolerates any surrounding prose.
+    const text = (messages.at(-1) ?? stdout).trim();
+    return lastError ? { text, error: lastError } : { text };
+}
+/** Human-readable Pi failure, or undefined when the message is not a failure. */
+function describeAssistantFailure(message) {
+    const detail = message.errorMessage?.trim();
+    if (detail)
+        return detail;
+    if (message.stopReason && message.stopReason !== 'stop') {
+        if (message.stopReason === 'length')
+            return 'the model response was cut off by the output-token limit';
+        if (message.stopReason === 'aborted')
+            return 'the model request was aborted';
+        if (message.stopReason === 'error')
+            return 'the model request failed';
+    }
+    return undefined;
+}
+/**
+ * Compact per-tool summary of one harness stream: how many calls each tool
+ * made and how many bytes of result came back. A runaway loop is usually
+ * "read called 40 times on huge files", and this makes that visible in the
+ * action log without dumping megabytes of raw output.
+ */
+function summarizeToolCalls(stdout) {
+    const calls = new Map();
+    for (const line of stdout.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('{'))
+            continue;
+        try {
+            const event = JSON.parse(trimmed);
+            if (event.type !== 'tool_execution_end' || !event.toolName)
+                continue;
+            const entry = calls.get(event.toolName) ?? { count: 0, bytes: 0 };
+            entry.count += 1;
+            entry.bytes += JSON.stringify(event.result ?? '').length;
+            calls.set(event.toolName, entry);
+        }
+        catch {
+            /* ignore non-JSON event lines */
+        }
+    }
+    if (calls.size === 0)
+        return 'no tool calls';
+    return [...calls.entries()]
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([name, entry]) => `${name}\u00d7${entry.count} (~${Math.round(entry.bytes / 1024)} KiB of results)`)
+        .join(', ');
+}
+/**
+ * Cap on assistant-authored text (sum of `text_delta` payloads) before the run
+ * is stopped. Tool results are bounded by their own budget, but a provider that
+ * streams a runaway answer can push tens of megabytes of deltas through
+ * `message_update` events; this attributes that to the model instead of to the
+ * process output cap.
+ */
+const DEFAULT_MAX_ASSISTANT_BYTES = 512 * 1024;
+/** Assistant text bytes streamed so far, counted incrementally per chunk. */
+function countAssistantBytes(stdout) {
+    let bytes = 0;
+    for (const line of stdout.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('{'))
+            continue;
+        try {
+            const event = JSON.parse(trimmed);
+            if (event.type !== 'message_update')
+                continue;
+            if (event.assistantMessageEvent?.type !== 'text_delta')
+                continue;
+            const delta = event.assistantMessageEvent.delta;
+            if (typeof delta === 'string')
+                bytes += Buffer.byteLength(delta, 'utf8');
+        }
+        catch {
+            /* ignore non-JSON event lines */
+        }
+    }
+    return bytes;
+}
+/** Count `tool_execution_start` events in a Pi JSON event stream. */
+function countToolCalls(stdout) {
+    let calls = 0;
+    for (const line of stdout.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('{'))
+            continue;
+        try {
+            const event = JSON.parse(trimmed);
+            if (event.type === 'tool_execution_start')
+                calls += 1;
+        }
+        catch {
+            /* ignore non-JSON event lines */
+        }
+    }
+    return calls;
+}
+/**
+ * Emit the per-tool histogram for a failed harness process. Bounded output, so
+ * it is always logged: it is the difference between "0 findings" and "the model
+ * read the same file 40 times".
+ */
+function logToolSummary(run) {
+    lib_core.info(`[harness] tool usage: ${summarizeToolCalls(run.stdout)}`);
+}
+/** Cap on the rejected answer embedded in a repair prompt, in characters. */
+const MAX_REPAIR_ECHO_CHARS = 4000;
+/**
+ * Fail with the model/transport error instead of letting an empty answer fall
+ * through to the JSON parser, which reported "output started with: " and hid
+ * the actual cause (401, timeout, aborted request).
+ */
+function assertAssistantUsable(assistant) {
+    if (assistant.error && !assistant.text.trim())
+        throw new Error(`Pi harness reported an error instead of a review result: ${assistant.error}`);
+}
+/**
+ * Build the follow-up prompt used when a harness answer cannot be parsed.
+ * The model is asked to convert its own previous answer, not to review again:
+ * re-reviewing doubles cost and can produce a different, unverifiable result.
+ */
+function buildRepairPrompt(previousOutput) {
+    const echo = previousOutput.trim().slice(0, MAX_REPAIR_ECHO_CHARS);
+    return [
+        'Your previous answer could not be parsed as the required JSON review result.',
+        'Do not review the code again and do not call tools. Convert the answer below into exactly one JSON object.',
+        'Respond with ONLY the JSON object, no prose, no markdown fence.',
+        'Shape: {"findings": [{"severity": "critical|high|medium|low", "confidence": 0.0-1.0, "category": "correctness|security|regression|error-handling|data-integrity|concurrency|performance|maintainability|testing|compatibility", "path": "file/path", "line": <1-based line in the new version>, "rule_id": "stable rule id or null", "title": "...", "description": "...", "impact": "...", "suggestion": "...", "replacement": "exact replacement code or null"}], "summary": "concise overall review summary", "risk": "critical|high|medium|low|none"}',
+        'If you found nothing, return {"findings": [], "summary": "No issues found.", "risk": "none"}.',
+        '',
+        'Previous answer:',
+        '<<<',
+        echo,
+        '>>>',
+    ].join('\n');
 }
 /** A counter the provider may report as nonsense; unknown => 0. */
 function counter(value) {
@@ -38056,6 +38446,7 @@ class PiHarness {
     options;
     name = 'pi';
     _runs = [];
+    resolvedConfigDir = null;
     constructor(options = {}) {
         this.options = options;
     }
@@ -38072,37 +38463,86 @@ class PiHarness {
     get usage() {
         return aggregatePiUsage(this._runs);
     }
-    async review(context) {
-        let run;
-        const configDir = await resolveRuntimeConfigDir();
+    async configDir() {
+        if (this.options.configDir)
+            return this.options.configDir;
+        this.resolvedConfigDir ??= await resolveRuntimeConfigDir();
+        return this.resolvedConfigDir;
+    }
+    async run(prompt, context) {
+        const configDir = await this.configDir();
         const skillPaths = context.profiles.map((profile) => (0,external_node_path_.join)(configDir, 'skills', profile.id, 'SKILL.md'));
-        const extraRules = [this.options.extraRules, context.reviewRules]
-            .filter((value) => Boolean(value?.trim()))
-            .filter((value, index, values) => values.indexOf(value) === index)
-            .join('\n\n');
+        const runner = this.options.runPi ?? runPi;
         try {
-            run = await runPi({
+            return await runner({
                 binaryPath: this.options.binaryPath ?? 'pi',
                 args: buildPiArgs(context.repositoryPath, this.options.model ?? process.env.OPENAI_API_MODEL, this.options.provider ?? 'openai', parsePiArgs(this.options.piArgs ?? ''), skillPaths),
                 cwd: context.repositoryPath,
                 configDir,
                 apiKey: this.options.apiKey,
-                prompt: buildReviewPrompt(context, extraRules || undefined, {
-                    includeFullContent: this.options.includeFullContent,
-                    maxContextChars: this.options.maxContextChars,
-                    toolFindings: this.options.toolFindings,
-                }),
+                prompt,
                 timeoutMs: this.options.timeoutMs ?? 15 * 60_000,
+                maxOutputBytes: this.options.maxOutputBytes,
+                maxToolCalls: this.options.maxToolCalls,
+                maxAssistantBytes: this.options.maxAssistantBytes,
             });
         }
         catch (error) {
             const maybeLog = error?.piLog;
             if (maybeLog)
                 this._runs.push(maybeLog);
+            if (maybeLog)
+                logToolSummary(maybeLog);
             throw error;
         }
+    }
+    async review(context) {
+        const extraRules = [this.options.extraRules, context.reviewRules]
+            .filter((value) => Boolean(value?.trim()))
+            .filter((value, index, values) => values.indexOf(value) === index)
+            .join('\n\n');
+        const prompt = buildReviewPrompt(context, extraRules || undefined, {
+            includeFullContent: this.options.includeFullContent,
+            maxContextChars: this.options.maxContextChars,
+            toolFindings: this.options.toolFindings,
+        });
+        let run = await this.run(prompt, context);
         this._runs.push(run);
-        return toReviewResult(parseHarnessFindings(extractAssistantText(run.stdout)), context.diff.files.map((f) => f.filename));
+        let assistant = extractAssistantResult(run.stdout);
+        assertAssistantUsable(assistant);
+        let raw = assistant.text;
+        let output;
+        try {
+            output = parseHarnessFindings(raw);
+        }
+        catch (error) {
+            // A malformed answer is a model-output problem, not a review result.
+            // Re-ask for a conversion of the same answer before giving up, so a
+            // single prose reply cannot silently turn the whole PR into
+            // "0 findings, all clear".
+            const attempts = Math.max(this.options.repairAttempts ?? 1, 0);
+            let lastError = error;
+            for (let attempt = 0; attempt < attempts; attempt += 1) {
+                run = await this.run(buildRepairPrompt(raw), context);
+                this._runs.push(run);
+                assistant = extractAssistantResult(run.stdout);
+                assertAssistantUsable(assistant);
+                raw = assistant.text;
+                try {
+                    output = parseHarnessFindings(raw);
+                    lastError = null;
+                    break;
+                }
+                catch (repairError) {
+                    lastError = repairError;
+                }
+            }
+            if (lastError)
+                throw lastError;
+        }
+        if (!output)
+            throw new Error('Harness produced no review result after repair attempts.');
+        return toReviewResult(output, context.diff.files.map((f) => f.filename));
     }
 }
 async function resolveRuntimeConfigDir() {
@@ -38125,7 +38565,14 @@ function runPi(params) {
         let stderrBytes = 0;
         let settled = false;
         let timedOut = false;
+        let toolCalls = 0;
+        let assistantBytes = 0;
+        /** Bytes already scanned for tool-call events; counting is incremental. */
+        let scannedBytes = 0;
         let killTimer;
+        const maxBytes = params.maxOutputBytes ?? MAX_OUTPUT_BYTES;
+        const maxToolCalls = params.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS;
+        const maxAssistantBytes = params.maxAssistantBytes ?? DEFAULT_MAX_ASSISTANT_BYTES;
         // Monotonic span endpoints: the aggregate reports the wall-clock span
         // from the earliest start to the latest exit, not summed durations.
         const startedAt = external_node_perf_hooks_namespaceObject.performance.now();
@@ -38156,52 +38603,59 @@ function runPi(params) {
             else
                 resolve(log);
         };
+        const signalProcess = (signal) => {
+            if (process.platform !== 'win32' && child.pid) {
+                try {
+                    process.kill(-child.pid, signal);
+                    return;
+                }
+                catch {
+                    // Fall back to the direct child when the process group is gone.
+                }
+            }
+            child.kill(signal);
+        };
+        /** Kill the process group and reject with a diagnosable reason. */
+        const killAndFail = (message) => {
+            if (settled)
+                return;
+            signalProcess('SIGKILL');
+            finish(new Error(message));
+        };
         const timer = setTimeout(() => {
             if (settled)
                 return;
             timedOut = true;
-            const signalProcess = (signal) => {
-                if (process.platform !== 'win32' && child.pid) {
-                    try {
-                        process.kill(-child.pid, signal);
-                        return;
-                    }
-                    catch {
-                        // Fall back to the direct child when the process group is gone.
-                    }
-                }
-                child.kill(signal);
-            };
             signalProcess('SIGTERM');
             killTimer = setTimeout(() => {
                 signalProcess('SIGKILL');
                 finish(new Error(`Pi review process timed out after ${params.timeoutMs}ms`));
             }, 250);
         }, params.timeoutMs);
-        const killAndFail = (stream) => {
-            if (settled)
-                return;
-            if (process.platform !== 'win32' && child.pid) {
-                try {
-                    process.kill(-child.pid, 'SIGKILL');
-                }
-                catch {
-                    child.kill('SIGKILL');
-                }
-            }
-            else
-                child.kill('SIGKILL');
-            finish(new Error(`Pi ${stream} output exceeded ${MAX_OUTPUT_BYTES} byte cap`));
-        };
         const append = (current, size, chunk, stream) => {
-            if (size + chunk.length > MAX_OUTPUT_BYTES) {
-                killAndFail(stream);
+            if (maxBytes > 0 && size + chunk.length > maxBytes) {
+                killAndFail(`Pi ${stream} output exceeded ${maxBytes} byte cap (tool calls: ${toolCalls})`);
                 return [current, size];
             }
             return [current + chunk.toString('utf8'), size + chunk.length];
         };
         child.stdout.on('data', (chunk) => {
             [stdout, stdoutBytes] = append(stdout, stdoutBytes, chunk, 'stdout');
+            if (settled || maxToolCalls <= 0)
+                return;
+            // Tool results dominate harness output; cut a runaway tool loop
+            // before it consumes the whole review budget. Only the newly
+            // appended bytes are scanned, so this stays cheap on big streams.
+            const appended = stdout.slice(scannedBytes);
+            scannedBytes = stdout.length;
+            toolCalls += countToolCalls(appended);
+            if (toolCalls > maxToolCalls)
+                killAndFail(`Pi exceeded the tool-call ceiling (${toolCalls} > ${maxToolCalls}); the review stopped to avoid an unbounded tool loop`);
+            if (maxAssistantBytes <= 0 || settled)
+                return;
+            assistantBytes += countAssistantBytes(appended);
+            if (assistantBytes > maxAssistantBytes)
+                killAndFail(`Pi streamed ${Math.round(assistantBytes / 1024)} KiB of assistant text, over the ${Math.round(maxAssistantBytes / 1024)} KiB model-output ceiling; the provider is looping or echoing instead of answering`);
         });
         child.stderr.on('data', (chunk) => {
             [stderr, stderrBytes] = append(stderr, stderrBytes, chunk, 'stderr');
@@ -38726,6 +39180,98 @@ function rulesForProfiles(profiles) {
     return combinedRules(profiles.map((p) => p.id));
 }
 
+;// CONCATENATED MODULE: ./src/review/execution.ts
+/**
+ * Execution reporting for one review run.
+ *
+ * Two questions must be answerable from the run itself, without reading the
+ * action's source: "did the review actually run over everything it says it
+ * reviewed?" and "did the bot approve the PR?". This module owns the
+ * deterministic answers used by the step summary, the failure decision, and
+ * the opt-in raw harness dump.
+ */
+
+function execution_describeReviewExecution(input) {
+    const failedGroups = input.result.diagnostics?.failedGroups ?? 0;
+    const status = input.result.reviewStatus ?? 'complete';
+    const filesReviewed = input.result.filesReviewed.length;
+    const reportedNotAnalyzed = input.result.diagnostics?.filesNotAnalyzed ?? 0;
+    const filesNotAnalyzed = Math.max(reportedNotAnalyzed, input.filesSelected - filesReviewed);
+    return {
+        complete: status === 'complete' && failedGroups === 0 && filesNotAnalyzed <= 0,
+        filesReviewed,
+        filesSelected: input.filesSelected,
+        filesNotAnalyzed,
+        failedGroups,
+        status,
+    };
+}
+/**
+ * Reason the step should fail, or `null` when the run is a genuine success.
+ * A crashed harness group used to leave the step green and post a summary that
+ * looked like a clean review, so the caller can now surface it as a failure.
+ */
+function incompleteReviewFailure(input) {
+    const execution = execution_describeReviewExecution(input);
+    if (execution.complete)
+        return null;
+    const reasons = [
+        execution.status !== 'complete' ? `status ${execution.status}` : '',
+        execution.failedGroups > 0
+            ? `${execution.failedGroups} review group(s) failed`
+            : '',
+        execution.filesNotAnalyzed > 0
+            ? `${execution.filesNotAnalyzed} of ${execution.filesSelected} selected file(s) were not analyzed`
+            : '',
+    ].filter(Boolean);
+    return `Review incomplete (${reasons.join('; ')}). No approval was submitted. Re-run the workflow; if it keeps failing, check the harness output above.`;
+}
+/** Hard cap on the raw dump written to the job summary, in characters. */
+const RAW_HARNESS_SUMMARY_MAX_CHARS = 60 * 1024;
+/**
+ * Opt-in raw harness dump. `AI_REVIEW_DEBUG_HARNESS` accepts `1`/`true` for the
+ * default budget or a positive byte count; anything else disables it. The dump
+ * is redacted and truncated, and lands in the step summary so an operator can
+ * see what the model actually produced without re-running the review.
+ */
+function rawHarnessDumpEnabled(env = process.env) {
+    const raw = env.AI_REVIEW_DEBUG_HARNESS?.trim();
+    if (!raw)
+        return null;
+    if (raw === '1' || raw.toLowerCase() === 'true')
+        return RAW_HARNESS_SUMMARY_MAX_CHARS;
+    const bytes = Number(raw);
+    if (!Number.isFinite(bytes) || bytes <= 0)
+        return null;
+    return Math.min(Math.floor(bytes), 5 * 1024 * 1024);
+}
+function buildRawHarnessSection(runs, maxChars) {
+    if (runs.length === 0)
+        return null;
+    const combined = runs
+        .map((run, index) => {
+        const header = runs.length > 1 ? `--- run ${index + 1}/${runs.length} ---\n` : '';
+        const stderr = run.stderr
+            ? `\n[stderr]\n${(0,redactor/* redactSecrets */.f)(run.stderr)}`
+            : '';
+        return `${header}${(0,redactor/* redactSecrets */.f)(run.stdout)}${stderr}`;
+    })
+        .join('\n\n')
+        .trim();
+    if (!combined)
+        return null;
+    // Untrusted model output must not break out of the fence or the details tag.
+    let body = combined
+        .replaceAll('```', '\\`\\`\\`')
+        .replaceAll('</details>', '&lt;/details&gt;');
+    let truncated = false;
+    if (body.length > maxChars) {
+        body = `${body.slice(0, maxChars)}\n\n... truncated (${combined.length - maxChars} of ${combined.length} chars omitted)`;
+        truncated = true;
+    }
+    return `<details><summary>Raw harness output (debug)${truncated ? ' _(truncated)_' : ''}</summary>\n\n\`\`\`\n${body}\n\`\`\`\n\n</details>`;
+}
+
 ;// CONCATENATED MODULE: ./src/review/report.ts
 /**
  * Machine-readable review report (`review-report` action output).
@@ -38834,6 +39380,8 @@ function buildReviewReport(input) {
             failedRules: [...result.ruleCoverage.failedRules],
         };
     }
+    if (result.approval)
+        report.approval = { ...result.approval };
     return report;
 }
 /**
@@ -39384,6 +39932,7 @@ async function runReview(context, harness, options = {}) {
     const summaries = [];
     const filesReviewed = [];
     let failedGroups = 0;
+    let filesNotAnalyzed = 0;
     for (let start = 0; start < groups.length; start += 3) {
         const outcomes = await Promise.allSettled(groups.slice(start, start + 3).map(async (group) => {
             const groupContext = {
@@ -39407,6 +39956,9 @@ async function runReview(context, harness, options = {}) {
             }
             else {
                 failedGroups += 1;
+                // Files in a failed group were never analyzed. Reporting the
+                // count keeps a partial pass from reading as full coverage.
+                filesNotAnalyzed += group.files.length;
                 console.warn(`Review group failed: ${outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)}`);
             }
         }
@@ -39455,7 +40007,7 @@ async function runReview(context, harness, options = {}) {
             bucketedUnknownCategories: normalized.bucketedCount,
             crossFindingConflictsResolved: crossChecked.droppedCount,
             trivialPrFastPath: fastPathed.trivialPr,
-            ...(failedGroups > 0 ? { failedGroups } : {}),
+            ...(failedGroups > 0 ? { failedGroups, filesNotAnalyzed } : {}),
         };
     }
     return result;
@@ -41448,9 +42000,21 @@ var selector = __nccwpck_require__(9347);
 
 
 
+
 function positiveTimeout(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+/**
+ * Like {@link positiveTimeout} but explicit `0` is honored (it disables the
+ * corresponding cap), so an operator can opt out of a budget instead of
+ * silently getting the default.
+ */
+function budgetOrFallback(value, fallback) {
+    if (value === undefined || value.trim() === '')
+        return fallback;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 function recordArgs(args) {
     if (!args || typeof args !== 'object')
@@ -41886,14 +42450,21 @@ async function main(argv) {
             return;
         }
         const detected = resolveProfiles(reviewContext.repositoryPath, process.env.AI_REVIEW_PROFILE);
-        // ponytail: default=all — trade ~9k system-prompt chars for full coverage; revert to `detected` to save cost.
-        const profiles = process.env.AI_REVIEW_PROFILE == null
-            ? profilesWithSkills().map((id) => ({ id, evidence: ['default:all'] }))
+        // Detected profiles by default: loading every stack's rules for a repo
+        // that uses one stack buries the relevant rules in ~6k chars of noise and
+        // measurably degrades review quality. `AI_REVIEW_PROFILE=all` keeps the
+        // old load-everything behavior; an explicit comma list still pins stacks.
+        const loadAllProfiles = process.env.AI_REVIEW_PROFILE === 'all';
+        const profiles = loadAllProfiles
+            ? profilesWithSkills().map((id) => ({
+                id,
+                evidence: ['AI_REVIEW_PROFILE=all'],
+            }))
             : detected;
         reviewContext.profiles = profiles;
-        trackPhase('profiles', profiles.map((p) => p.id).join(', ') || 'auto', {
-            enabled: trackEnabled,
-        });
+        trackPhase('profiles', profiles.length > 0
+            ? profiles.map((p) => p.id).join(', ')
+            : 'none detected', { enabled: trackEnabled });
         const previousConfigDir = process.env.PI_CODING_AGENT_DIR;
         let harness;
         const runtimeConfig = await preparePiRuntimeConfig(llmConfig, {
@@ -41945,6 +42516,10 @@ async function main(argv) {
                 binaryPath: piBinaryPath,
                 piArgs: lib_core.getInput('pi-args'),
                 timeoutMs: positiveTimeout(process.env.AI_REVIEW_PI_TIMEOUT_MS, 15 * 60_000),
+                maxOutputBytes: budgetOrFallback(process.env.AI_REVIEW_PI_MAX_OUTPUT_BYTES, DEFAULT_MAX_OUTPUT_BYTES),
+                maxToolCalls: budgetOrFallback(process.env.AI_REVIEW_PI_MAX_TOOL_CALLS, DEFAULT_MAX_TOOL_CALLS),
+                maxAssistantBytes: budgetOrFallback(process.env.AI_REVIEW_PI_MAX_ASSISTANT_BYTES, DEFAULT_MAX_ASSISTANT_BYTES),
+                repairAttempts: budgetOrFallback(process.env.AI_REVIEW_PI_REPAIR_ATTEMPTS, 1),
                 model: llmConfig.model,
                 apiKey: llmConfig.apiKey,
                 includeFullContent: legacyOptions.includeFullContent,
@@ -42009,6 +42584,7 @@ async function main(argv) {
                     model: llmConfig.model,
                     filesTotal,
                     filesExcluded,
+                    filesSelected,
                     blockOnIssues: legacyOptions.blockOnIssues,
                     minSeverity: legacyOptions.minSeverity,
                     requireWritePermissions: lib_core.getInput('require-write-permissions') === 'true',
@@ -42029,12 +42605,32 @@ async function main(argv) {
                 filesReviewed: result.filesReviewed,
                 filesTotal,
                 filesExcluded,
+                filesSelected,
                 result,
                 toolFindings: result.toolFindings,
                 diagnostics: result.diagnostics,
             }))
                 .write();
+            // Opt-in raw harness dump: the only way to see what the model
+            // actually returned when a group fails.
+            const dumpBudget = rawHarnessDumpEnabled();
+            if (dumpBudget && harness) {
+                const section = buildRawHarnessSection(harness.runs, dumpBudget);
+                if (section)
+                    await lib_core.summary.addRaw(section).write();
+            }
             lib_core.setOutput('review-summary', `${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`);
+            // A crashed group or an unanalyzed file used to leave the step green
+            // while the summary looked like a clean review. Fail the step so the
+            // run is visible; set AI_REVIEW_FAIL_ON_INCOMPLETE=false to keep the
+            // old lenient behavior.
+            const failure = incompleteReviewFailure({ result, filesSelected });
+            if (failure && process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false') {
+                lib_core.setFailed(failure);
+            }
+            else if (failure) {
+                lib_core.warning(failure);
+            }
         }
         finally {
             // Ensure agent debug log attached even if review/publish failed

@@ -89,7 +89,7 @@ export function buildReviewPrompt(
 export function parseHarnessFindings(
 	raw: string
 ): HarnessOutput & { findings: Finding[] } {
-	const json = extractJsonBlock(raw);
+	const json = extractJsonBlock(raw, ['findings', 'summary']);
 	if (!json)
 		throw new Error(
 			`Unable to parse harness output as JSON. Output started with: ${raw.slice(0, 120)}`
