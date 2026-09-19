@@ -607,6 +607,72 @@ describe('approval outcome reporting', () => {
 		expect(result.approval?.state).toBe('skipped-no-write-permission');
 	});
 
+	it('approves a clean review whose PR has no AI threads at all', async () => {
+		// Regression: an empty thread list used to fail closed, so
+		// auto-approval never fired for a PR whose review found nothing.
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval).toEqual({ state: 'approved' });
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledWith(
+			expect.objectContaining({ event: 'APPROVE' })
+		);
+	});
+
+	it('reports the approval outcome in the posted summary, not not-requested', async () => {
+		// Regression: the summary was rendered before the approval was
+		// resolved, so it always claimed an approval was not requested.
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result: cleanResult(),
+			autoApproveWhenResolved: true,
+		});
+		const body = (
+			octokit.rest.issues.createComment as ReturnType<typeof vi.fn>
+		).mock.calls.at(-1)?.[0].body as string;
+		expect(body).toContain('**Approval:** submitted');
+		expect(body).toContain('> ✨ **APPROVED**');
+		expect(body).not.toContain('not requested');
+	});
+
+	it('reports a refused approval in the posted summary', async () => {
+		const octokit = octokitWithApproval(async () => {
+			throw Object.assign(
+				new Error('GitHub Actions is not permitted to approve pull requests.'),
+				{ status: 422 }
+			);
+		});
+		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result: cleanResult(),
+			autoApproveWhenResolved: true,
+		});
+		const body = (
+			octokit.rest.issues.createComment as ReturnType<typeof vi.fn>
+		).mock.calls.at(-1)?.[0].body as string;
+		expect(body).toContain('APPROVAL NOT PERMITTED');
+		expect(body).toContain(
+			'Allow GitHub Actions to create and approve pull requests'
+		);
+	});
+
 	it('records not-requested when the flag is off', async () => {
 		const octokit = octokitWithApproval(async () => ({ data: {} }));
 		const result = cleanResult();

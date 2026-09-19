@@ -37420,6 +37420,13 @@ async function publishReview(octokit, params) {
             }
         }
     }
+    // Resolve the approval before rendering anything: the summary must report
+    // the outcome that actually happened, not "not requested" because the
+    // decision had not been made yet.
+    result.approval = await resolveApproval(octokit, params, {
+        hasWrite,
+        hasBlockingFinding,
+    });
     const marker = stickySummaryMarker(owner, repo, prNumber);
     const summaryBody = `${buildSummaryBody({
         risk: result.risk,
@@ -37437,6 +37444,7 @@ async function publishReview(octokit, params) {
         diagnostics: result.diagnostics,
         ruleCoverage: result.ruleCoverage,
         reviewStatus: result.reviewStatus,
+        approval: result.approval,
     })}\n\n${marker}`;
     if (params.stickySummary) {
         const existing = await findStickyComment(octokit, owner, repo, prNumber, marker);
@@ -37465,14 +37473,6 @@ async function publishReview(octokit, params) {
             body: summaryBody,
         });
     }
-    // Approval defaults on via the action input (explicit false opts out).
-    // Never approve a review whose groups partially failed — an LLM/Pi
-    // outage must not look "clean". The real outcome is recorded on the
-    // result so the summary can never imply an approval GitHub refused.
-    result.approval = await resolveApproval(octokit, params, {
-        hasWrite,
-        hasBlockingFinding,
-    });
 }
 /**
  * True when GitHub rejected the review because repository policy forbids
@@ -37493,7 +37493,6 @@ function redactDetail(error) {
         .slice(0, 300);
 }
 async function resolveApproval(octokit, params, state) {
-    lib_core.info(`[review][diag] approval gate: autoApprove=${String(params.autoApproveWhenResolved)} requireWrite=${String(params.requireWritePermissions)} hasWrite=${String(state.hasWrite)} blocking=${String(state.hasBlockingFinding)} status=${String(params.result.reviewStatus)} failedGroups=${String(params.result.diagnostics?.failedGroups)}`);
     if (params.autoApproveWhenResolved !== true)
         return { state: 'not-requested' };
     if (params.requireWritePermissions && !state.hasWrite)
@@ -37501,7 +37500,6 @@ async function resolveApproval(octokit, params, state) {
     if (state.hasBlockingFinding || reviewFailed(params.result))
         return { state: 'not-requested' };
     const resolved = await areAiThreadsResolved(octokit, params.owner, params.repo, params.prNumber);
-    lib_core.info(`[review][diag] threads resolved=${String(resolved)}`);
     if (!resolved)
         return { state: 'skipped-unresolved-threads' };
     try {
@@ -37553,8 +37551,10 @@ async function areAiThreadsResolved(octokit, owner, repo, prNumber) {
             return false;
         const threads = await listThreads({ owner, repo, pull_number: prNumber });
         const aiThreads = (threads ?? []).filter((thread) => (thread.comments ?? []).some((comment) => comment.user?.login === selfLogin));
-        if (aiThreads.length === 0)
-            return false;
+        // A PR with no AI-authored thread has nothing left to resolve: a clean
+        // review must be approvable. Failing closed here (the old behaviour)
+        // meant auto-approval never fired for a PR whose review found nothing.
+        // API failures and malformed thread data still fail closed above.
         return aiThreads.every((thread) => thread.resolved === true);
     }
     catch (error) {

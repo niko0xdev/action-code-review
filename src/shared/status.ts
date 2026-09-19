@@ -15,9 +15,8 @@ export const REVIEW_STATUSES = [
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 
 /** Statuses that must never be presented as a clean result. */
-export const NON_CLEAN_STATUSES: readonly ReviewStatus[] = REVIEW_STATUSES.filter(
-	(status) => status !== 'complete'
-);
+export const NON_CLEAN_STATUSES: readonly ReviewStatus[] =
+	REVIEW_STATUSES.filter((status) => status !== 'complete');
 
 export function isCleanStatus(status: ReviewStatus): boolean {
 	return status === 'complete';
