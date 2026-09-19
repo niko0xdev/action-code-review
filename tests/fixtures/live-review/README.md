@@ -8,3 +8,7 @@ escalation, and the decision banner.
 production code or by the test suite.
 
 Delete this directory once the live verification is recorded.
+
+## Verification log
+
+- Run with `MiniMax-M3`: review completed, 0 findings on this module.
