@@ -27,7 +27,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           openai-base-url: ${{ secrets.OPENAI_API_URL }}
-          openai-model: ${{ secrets.OPENAI_API_MODEL }}
+          openai-model: gpt-4o
           exclude-patterns: "*.md,*.txt,*.json,*.yml,*.yaml"
           track-progress: 'true'
         env:
