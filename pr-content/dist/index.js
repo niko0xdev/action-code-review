@@ -37780,6 +37780,7 @@ function coerceFinding(item) {
 
 const PI_READONLY_TOOLS = ['read', 'grep', 'find', 'ls'];
 const MAX_OUTPUT_BYTES = 50 * 1024 * 1024;
+const STRUCTURED_OUTPUT_SYSTEM_PROMPT = 'Your final response must be exactly one valid JSON object matching the review schema in the user prompt. Never emit a prose status update, markdown, or code fence as the final response. If there are no findings, still emit the JSON object with an empty findings array.';
 const PI_ARGS_ALLOWLIST = new Set([
     '--max-duration',
     '--model-override',
@@ -37864,6 +37865,7 @@ function buildPiArgs(repositoryPath, model, provider = 'openai', extraArgs = [],
             args.push('--model', v);
         }
     }
+    args.push('--append-system-prompt', STRUCTURED_OUTPUT_SYSTEM_PROMPT);
     args.push(`Review this pull request in ${repositoryPath}. See instructions.`);
     return args;
 }

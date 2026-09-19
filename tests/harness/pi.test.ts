@@ -65,6 +65,10 @@ describe('buildPiArgs', () => {
 		expect(args[args.indexOf('--tools') + 1].split(',').sort()).toEqual(
 			[...PI_READONLY_TOOLS].sort()
 		);
+		expect(args).toContain('--append-system-prompt');
+		expect(args[args.indexOf('--append-system-prompt') + 1]).toContain(
+			'one valid JSON object'
+		);
 	});
 
 	it('disables session storage and context-file discovery', () => {
