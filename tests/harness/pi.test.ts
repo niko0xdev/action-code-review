@@ -116,6 +116,46 @@ describe('extractAssistantText', () => {
 		);
 	});
 
+	it('extracts structured JSON from prose and ignores later acknowledgements', () => {
+		const structured = JSON.stringify({
+			type: 'message_end',
+			message: {
+				role: 'assistant',
+				content: [
+					{
+						type: 'text',
+						text: 'Findings:\n```json\n{"findings":[],"summary":"clean"}\n```',
+					},
+				],
+			},
+		});
+		const acknowledgement = JSON.stringify({
+			type: 'message_end',
+			message: {
+				role: 'assistant',
+				content: [{ type: 'text', text: 'Review complete.' }],
+			},
+		});
+
+		expect(extractAssistantText(`${structured}\n${acknowledgement}`)).toBe(
+			'{"findings":[],"summary":"clean"}'
+		);
+	});
+
+	it('fails clearly when no assistant message contains review JSON', () => {
+		const prose = JSON.stringify({
+			type: 'message_end',
+			message: {
+				role: 'assistant',
+				content: [{ type: 'text', text: 'I could not complete the review.' }],
+			},
+		});
+
+		expect(() => extractAssistantText(prose)).toThrow(
+			/Pi assistant response did not contain structured review JSON/
+		);
+	});
+
 	it('surfaces provider errors from empty assistant messages', () => {
 		const errorEvent = JSON.stringify({
 			type: 'message_end',

@@ -36851,14 +36851,19 @@ function buildSummaryBody(result) {
     const excluded = result.filesExcluded ??
         Math.max((result.filesTotal ?? reviewed) - reviewed, 0);
     const total = result.filesTotal ?? reviewed + excluded;
+    const failedGroups = result.diagnostics?.failedGroups ?? 0;
+    const unanalyzed = Math.max(total - excluded - reviewed, 0);
+    const incompleteScope = failedGroups > 0
+        ? `; ${failedGroups} review group${failedGroups === 1 ? '' : 's'} failed${unanalyzed > 0 ? `; ${unanalyzed} file${unanalyzed === 1 ? '' : 's'} were not analyzed` : ''}`
+        : '';
     const filesLine = result.filesTotal !== undefined || result.filesExcluded !== undefined
         ? `**Files reviewed:** ${reviewed} of ${total} (${excluded} excluded by filter)`
         : `**Files reviewed:** ${reviewed}`;
     const status = result.reviewStatus ??
         (result.diagnostics?.failedGroups ? 'incomplete' : 'complete');
     const executionLine = result.usage
-        ? `**Review execution:** ${status} — ${reviewed} files analyzed; ${result.usage.processes.succeeded}/${result.usage.processes.started} harness processes succeeded; ${result.usage.toolCallsStarted} read-only tool calls; ${result.usage.assistantMessages} assistant responses.`
-        : `**Review execution:** ${status} — ${reviewed} files analyzed.`;
+        ? `**Review execution:** ${status} — ${reviewed} files analyzed${incompleteScope}; ${result.usage.processes.succeeded}/${result.usage.processes.started} harness processes succeeded; ${result.usage.toolCallsStarted} read-only tool calls; ${result.usage.assistantMessages} assistant responses.`
+        : `**Review execution:** ${status} — ${reviewed} files analyzed${incompleteScope}.`;
     const reviewedFiles = result.filesReviewed.length > 0
         ? [
             `<details><summary>Reviewed files (${result.filesReviewed.length})</summary>`,
@@ -37772,6 +37777,7 @@ function coerceFinding(item) {
 
 
 
+
 const PI_READONLY_TOOLS = ['read', 'grep', 'find', 'ls'];
 const MAX_OUTPUT_BYTES = 50 * 1024 * 1024;
 const PI_ARGS_ALLOWLIST = new Set([
@@ -37908,24 +37914,19 @@ function extractAssistantText(stdout) {
             /* ignore non-JSON event lines */
         }
     }
-    // Pi can emit multiple assistant messages (for example, a progress answer
-    // followed by the final structured artifact). Prefer the last message that
-    // contains a JSON object with findings so progress text cannot corrupt the
-    // harness parser by being concatenated with the final answer.
+    // Pi can emit many assistant messages while it reads the repository. Search
+    // every message for the structured artifact instead of assuming the last
+    // message is the answer: a final prose acknowledgement must not erase a
+    // valid JSON response emitted earlier in the same run.
     for (let i = messages.length - 1; i >= 0; i--) {
         const candidate = messages[i];
-        try {
-            const parsed = JSON.parse(candidate);
-            if (parsed && typeof parsed === 'object' && 'findings' in parsed)
-                return candidate;
-        }
-        catch {
-            /* Try the next assistant message. */
-        }
+        const parsed = (0,openai_compatible/* extractJsonBlock */.zR)(candidate);
+        if (parsed && Array.isArray(parsed.findings))
+            return JSON.stringify(parsed);
     }
     if (errors.length > 0)
         throw new Error(`Pi assistant request failed: ${errors.at(-1)}`);
-    return messages.at(-1) ?? '';
+    throw new Error('Pi assistant response did not contain structured review JSON');
 }
 /** A counter the provider may report as nonsense; unknown => 0. */
 function counter(value) {

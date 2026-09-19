@@ -148,9 +148,11 @@ exits non-zero.
 
 The human-readable PR summary also shows a `Review execution` line with the
 number of analyzed files, successful harness processes, tool calls, and
-assistant responses. When files were reviewed, their paths are available in a
-collapsed `Reviewed files` section. This distinguishes a completed clean review
-from a run that produced no report or failed before analysis.
+assistant responses. If a review group fails after its harness process exits,
+the same line reports the failed group and files that were not analyzed. When
+files were reviewed, their paths are available in a collapsed `Reviewed files`
+section. This distinguishes a completed clean review from a run that produced
+no report or failed before analysis.
 
 Shape (`schemaVersion: 1`):
 

@@ -3,6 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { extractJsonBlock } from '../llm/openai-compatible.js';
 import { redactSecrets } from '../security/redaction/redactor.js';
 import type { ReviewContext } from '../types/context.js';
 import type {
@@ -186,23 +187,20 @@ export function extractAssistantText(stdout: string): string {
 			/* ignore non-JSON event lines */
 		}
 	}
-	// Pi can emit multiple assistant messages (for example, a progress answer
-	// followed by the final structured artifact). Prefer the last message that
-	// contains a JSON object with findings so progress text cannot corrupt the
-	// harness parser by being concatenated with the final answer.
+	// Pi can emit many assistant messages while it reads the repository. Search
+	// every message for the structured artifact instead of assuming the last
+	// message is the answer: a final prose acknowledgement must not erase a
+	// valid JSON response emitted earlier in the same run.
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const candidate = messages[i];
-		try {
-			const parsed = JSON.parse(candidate) as unknown;
-			if (parsed && typeof parsed === 'object' && 'findings' in parsed)
-				return candidate;
-		} catch {
-			/* Try the next assistant message. */
-		}
+		const parsed = extractJsonBlock(candidate);
+		if (parsed && Array.isArray(parsed.findings)) return JSON.stringify(parsed);
 	}
 	if (errors.length > 0)
 		throw new Error(`Pi assistant request failed: ${errors.at(-1)}`);
-	return messages.at(-1) ?? '';
+	throw new Error(
+		'Pi assistant response did not contain structured review JSON'
+	);
 }
 
 /** Per-process token/tool counters parsed from one Pi JSONL run. */

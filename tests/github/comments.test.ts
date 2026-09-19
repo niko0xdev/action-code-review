@@ -141,7 +141,9 @@ describe('buildSummaryBody', () => {
 		});
 
 		expect(body).toContain('REVIEW INCOMPLETE — NO APPROVAL');
-		expect(body).toContain('**Review execution:** incomplete');
+		expect(body).toContain(
+			'**Review execution:** incomplete — 0 files analyzed; 1 review group failed; 2 files were not analyzed'
+		);
 		expect(body).not.toContain('**Review execution:** complete');
 	});
 

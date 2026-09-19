@@ -210,6 +210,12 @@ export function buildSummaryBody(result: SummaryResult): string {
 		result.filesExcluded ??
 		Math.max((result.filesTotal ?? reviewed) - reviewed, 0);
 	const total = result.filesTotal ?? reviewed + excluded;
+	const failedGroups = result.diagnostics?.failedGroups ?? 0;
+	const unanalyzed = Math.max(total - excluded - reviewed, 0);
+	const incompleteScope =
+		failedGroups > 0
+			? `; ${failedGroups} review group${failedGroups === 1 ? '' : 's'} failed${unanalyzed > 0 ? `; ${unanalyzed} file${unanalyzed === 1 ? '' : 's'} were not analyzed` : ''}`
+			: '';
 	const filesLine =
 		result.filesTotal !== undefined || result.filesExcluded !== undefined
 			? `**Files reviewed:** ${reviewed} of ${total} (${excluded} excluded by filter)`
@@ -218,8 +224,8 @@ export function buildSummaryBody(result: SummaryResult): string {
 		result.reviewStatus ??
 		(result.diagnostics?.failedGroups ? 'incomplete' : 'complete');
 	const executionLine = result.usage
-		? `**Review execution:** ${status} — ${reviewed} files analyzed; ${result.usage.processes.succeeded}/${result.usage.processes.started} harness processes succeeded; ${result.usage.toolCallsStarted} read-only tool calls; ${result.usage.assistantMessages} assistant responses.`
-		: `**Review execution:** ${status} — ${reviewed} files analyzed.`;
+		? `**Review execution:** ${status} — ${reviewed} files analyzed${incompleteScope}; ${result.usage.processes.succeeded}/${result.usage.processes.started} harness processes succeeded; ${result.usage.toolCallsStarted} read-only tool calls; ${result.usage.assistantMessages} assistant responses.`
+		: `**Review execution:** ${status} — ${reviewed} files analyzed${incompleteScope}.`;
 	const reviewedFiles =
 		result.filesReviewed.length > 0
 			? [
