@@ -426,6 +426,9 @@ async function areAiThreadsResolved(
 		const selfLogin = auth?.data?.login;
 		if (!selfLogin) return false;
 		const threads = await listThreads({ owner, repo, pull_number: prNumber });
+		core.info(
+			`[review] thread check: self=${selfLogin} threads=${Array.isArray(threads) ? threads.length : 'non-array'}`
+		);
 		const aiThreads = (threads ?? []).filter((thread) =>
 			(thread.comments ?? []).some(
 				(comment) => comment.user?.login === selfLogin
@@ -438,7 +441,7 @@ async function areAiThreadsResolved(
 		return aiThreads.every((thread) => thread.resolved === true);
 	} catch (error) {
 		core.warning(
-			`[review] thread resolution check failed: ${error instanceof Error ? error.message : String(error)}`
+			`[review] thread resolution check failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`
 		);
 		return false;
 	}

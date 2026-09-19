@@ -34,6 +34,6 @@ export function needsAttention(status: ReviewStatus): boolean {
 }
 
 /** Statuses that a summary may present as a clean result. */
-export function cleanStatuses(): ReviewStatus[] {
+export function cleanStatuses(): readonly ReviewStatus[] {
 	return REVIEW_STATUSES.filter(isCleanStatus);
 }

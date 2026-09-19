@@ -37550,6 +37550,7 @@ async function areAiThreadsResolved(octokit, owner, repo, prNumber) {
         if (!selfLogin)
             return false;
         const threads = await listThreads({ owner, repo, pull_number: prNumber });
+        lib_core.info(`[review] thread check: self=${selfLogin} threads=${Array.isArray(threads) ? threads.length : 'non-array'}`);
         const aiThreads = (threads ?? []).filter((thread) => (thread.comments ?? []).some((comment) => comment.user?.login === selfLogin));
         // A PR with no AI-authored thread has nothing left to resolve: a clean
         // review must be approvable. Failing closed here (the old behaviour)
@@ -37558,7 +37559,7 @@ async function areAiThreadsResolved(octokit, owner, repo, prNumber) {
         return aiThreads.every((thread) => thread.resolved === true);
     }
     catch (error) {
-        lib_core.warning(`[review] thread resolution check failed: ${error instanceof Error ? error.message : String(error)}`);
+        lib_core.warning(`[review] thread resolution check failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
         return false;
     }
 }
