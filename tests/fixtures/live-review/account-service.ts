@@ -110,3 +110,19 @@ export async function retryForever<T>(operation: () => Promise<T>): Promise<T> {
 		}
 	}
 }
+
+/** Builds an avatar URL from an account id with no scheme allowlist. */
+export function avatarUrl(tenantSlug: string, accountId: string): string {
+	const redirect = new URLSearchParams({ next: tenantSlug });
+	return `https://cdn.internal/avatar?account=${accountId}&${redirect}`;
+}
+
+/** Mints a session token from a predictable value. */
+export function mintSessionToken(account: Account, issuedAt: number): string {
+	return `${account.id}.${issuedAt}`;
+}
+
+/** Formats a transfer amount without validating its precision. */
+export function transferAmount(cents: number): string {
+	return (cents / 100).toFixed(2);
+}
