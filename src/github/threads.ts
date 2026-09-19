@@ -68,8 +68,17 @@ export async function listReviewThreads(
 			number: args.pullNumber,
 			after,
 		})) as ReviewThreadsResponse;
-		const connection = raw.repository?.pullRequest?.reviewThreads;
-		if (!connection?.pageInfo || !Array.isArray(connection.nodes)) {
+		// GitHub omits the connection (or its pageInfo) when a pull request has
+		// no review threads at all. Treating that as a malformed response made
+		// `publishReview` fail closed and never approve a PR whose review found
+		// nothing, so an absent connection is reported as zero threads. A
+		// present-but-malformed connection still throws.
+		if (raw.repository?.pullRequest === undefined) {
+			throw new Error('GitHub GraphQL reviewThreads response is incomplete');
+		}
+		const connection = raw.repository.pullRequest?.reviewThreads;
+		if (connection === null || connection === undefined) break;
+		if (!connection.pageInfo || !Array.isArray(connection.nodes)) {
 			throw new Error('GitHub GraphQL reviewThreads response is incomplete');
 		}
 

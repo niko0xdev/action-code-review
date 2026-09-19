@@ -32,3 +32,8 @@ export function labelForStatus(status: ReviewStatus): string {
 export function needsAttention(status: ReviewStatus): boolean {
 	return !isCleanStatus(status);
 }
+
+/** Statuses that a summary may present as a clean result. */
+export function cleanStatuses(): ReviewStatus[] {
+	return REVIEW_STATUSES.filter(isCleanStatus);
+}
