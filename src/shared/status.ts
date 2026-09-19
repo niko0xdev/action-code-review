@@ -23,6 +23,13 @@ export function isCleanStatus(status: ReviewStatus): boolean {
 	return status === 'complete';
 }
 
+/** Human-readable label, e.g. `complete` -> `Complete`. */
 export function labelForStatus(status: ReviewStatus): string {
-	return status.charAt(0).toUpperCase() + status.slice(1);
+	const [first = '', ...rest] = status;
+	return `${first.toUpperCase()}${rest.join('')}`;
+}
+
+/** True when the status should be surfaced as a warning in summaries. */
+export function needsAttention(status: ReviewStatus): boolean {
+	return !isCleanStatus(status);
 }
