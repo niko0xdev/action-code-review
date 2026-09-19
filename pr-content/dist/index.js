@@ -37888,6 +37888,22 @@ function buildPiEnv(configDir, apiKey) {
     };
 }
 function extractAssistantText(stdout) {
+    const { messages, errors } = collectAssistantMessages(stdout);
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const candidate = messages[i];
+        const parsed = (0,openai_compatible/* extractJsonBlock */.zR)(candidate);
+        if (parsed && Array.isArray(parsed.findings))
+            return JSON.stringify(parsed);
+    }
+    if (errors.length > 0)
+        throw new Error(`Pi assistant request failed: ${errors.at(-1)}`);
+    throw new Error('Pi assistant response did not contain structured review JSON');
+}
+/** Return the latest prose response for the bounded JSON-repair fallback. */
+function extractAssistantDraft(stdout) {
+    return collectAssistantMessages(stdout).messages.at(-1) ?? '';
+}
+function collectAssistantMessages(stdout) {
     const messages = [];
     const errors = [];
     let currentMessage = [];
@@ -37923,19 +37939,19 @@ function extractAssistantText(stdout) {
             /* ignore non-JSON event lines */
         }
     }
-    // Pi can emit many assistant messages while it reads the repository. Search
-    // every message for the structured artifact instead of assuming the last
-    // message is the answer: a final prose acknowledgement must not erase a
-    // valid JSON response emitted earlier in the same run.
-    for (let i = messages.length - 1; i >= 0; i--) {
-        const candidate = messages[i];
-        const parsed = (0,openai_compatible/* extractJsonBlock */.zR)(candidate);
-        if (parsed && Array.isArray(parsed.findings))
-            return JSON.stringify(parsed);
-    }
-    if (errors.length > 0)
-        throw new Error(`Pi assistant request failed: ${errors.at(-1)}`);
-    throw new Error('Pi assistant response did not contain structured review JSON');
+    return { messages, errors };
+}
+function buildJsonRepairPrompt(draft) {
+    return [
+        'The review agent produced the draft below, but it was not valid structured output.',
+        'Convert only the draft into exactly one valid JSON object. Do not perform more repository inspection and do not invent findings that are not supported by the draft.',
+        'Use this schema: {"findings":[{"severity":"critical|high|medium|low","confidence":0.0,"category":"correctness|security|regression|error-handling|data-integrity|concurrency|performance|maintainability|testing|compatibility","path":"file/path","line":1,"rule_id":"stable rule id or null","title":"...","description":"...","impact":"...","suggestion":"...","replacement":"exact replacement code or null"}],"summary":"...","risk":"critical|high|medium|low|none"}',
+        'If the draft contains no defensible finding, return an empty findings array. Return JSON only, with no prose or markdown fences.',
+        '',
+        'Untrusted draft begins:',
+        (0,redactor/* redactSecrets */.f)(draft.slice(0, 20_000)),
+        'Untrusted draft ends.',
+    ].join('\n');
 }
 /** A counter the provider may report as nonsense; unknown => 0. */
 function counter(value) {
@@ -38144,7 +38160,38 @@ class PiHarness {
             throw error;
         }
         this._runs.push(run);
-        return toReviewResult(parseHarnessFindings(extractAssistantText(run.stdout)), context.diff.files.map((f) => f.filename));
+        try {
+            return toReviewResult(parseHarnessFindings(extractAssistantText(run.stdout)), context.diff.files.map((f) => f.filename));
+        }
+        catch (error) {
+            if (!(error instanceof Error) ||
+                !error.message.includes('did not contain structured review JSON'))
+                throw error;
+            const draft = extractAssistantDraft(run.stdout);
+            if (!draft.trim())
+                throw error;
+            let repairRun;
+            try {
+                repairRun = await runPi({
+                    binaryPath: this.options.binaryPath ?? 'pi',
+                    args: buildPiArgs(context.repositoryPath, this.options.model ?? process.env.OPENAI_API_MODEL, this.options.provider ?? 'openai', parsePiArgs(this.options.piArgs ?? ''), skillPaths),
+                    cwd: context.repositoryPath,
+                    configDir,
+                    apiKey: this.options.apiKey,
+                    prompt: buildJsonRepairPrompt(draft),
+                    timeoutMs: this.options.timeoutMs ?? 15 * 60_000,
+                });
+            }
+            catch (repairError) {
+                const repairLog = repairError
+                    ?.piLog;
+                if (repairLog)
+                    this._runs.push(repairLog);
+                throw repairError;
+            }
+            this._runs.push(repairRun);
+            return toReviewResult(parseHarnessFindings(extractAssistantText(repairRun.stdout)), context.diff.files.map((f) => f.filename));
+        }
     }
 }
 async function resolveRuntimeConfigDir() {

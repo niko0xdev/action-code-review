@@ -255,6 +255,22 @@ EOF
 		expect(result.summary).toBe('Critical security issue.');
 	});
 
+	it('repairs an unstructured assistant draft with a second harness pass', async () => {
+		const state = join(scratchRoot, 'repair-state');
+		const bin = writeFakePi(`#!/bin/sh
+if [ -f '${state}' ]; then
+  printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"{\\"findings\\":[],\\"summary\\":\\"repaired\\",\\"risk\\":\\"none\\"}"}]}}'
+else
+  touch '${state}'
+  printf '%s\\n' '{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"I found no structured output."}]}}'
+fi
+`);
+		const harness = new PiHarness({ binaryPath: bin });
+		const result = await harness.review(makeContext());
+		expect(result.summary).toBe('repaired');
+		expect(harness.runs).toHaveLength(2);
+	});
+
 	it('throws when the harness exits non-zero with diagnostics', async () => {
 		const bin = writeFakePi('#!/bin/sh\necho "boom" >&2\nexit 3\n');
 		const harness = new PiHarness({ binaryPath: bin });
