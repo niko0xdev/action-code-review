@@ -278,6 +278,7 @@ export async function publishReview(
 		diagnostics: result.diagnostics,
 		ruleCoverage: result.ruleCoverage,
 		reviewStatus: result.reviewStatus,
+		usage: result.usage,
 	})}\n\n${marker}`;
 	if (params.stickySummary) {
 		const existing = await findStickyComment(

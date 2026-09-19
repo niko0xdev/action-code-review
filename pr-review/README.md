@@ -146,6 +146,12 @@ gate, reads the report through `env` rather than `${{ }}`, and parses it inside
 a fixed `node -e` program — a missing, malformed, or non-`complete` report
 exits non-zero.
 
+The human-readable PR summary also shows a `Review execution` line with the
+number of analyzed files, successful harness processes, tool calls, and
+assistant responses. When files were reviewed, their paths are available in a
+collapsed `Reviewed files` section. This distinguishes a completed clean review
+from a run that produced no report or failed before analysis.
+
 Shape (`schemaVersion: 1`):
 
 | Field | Meaning |

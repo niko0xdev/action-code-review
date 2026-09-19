@@ -150,10 +150,13 @@ interface AgentEndEvent {
 		role?: string;
 		content?: Array<{ type?: string; text?: string }>;
 		usage?: unknown;
+		stopReason?: string;
+		errorMessage?: string;
 	};
 }
 export function extractAssistantText(stdout: string): string {
 	const messages: string[] = [];
+	const errors: string[] = [];
 	let currentMessage: string[] = [];
 	for (const line of stdout.split('\n')) {
 		const trimmed = line.trim();
@@ -165,6 +168,14 @@ export function extractAssistantText(stdout: string): string {
 				event.message?.role === 'assistant' &&
 				Array.isArray(event.message.content)
 			) {
+				if (
+					event.message.stopReason === 'error' ||
+					event.message.errorMessage
+				) {
+					const message = event.message.errorMessage?.trim();
+					errors.push(message || 'provider returned an assistant error');
+					continue;
+				}
 				currentMessage = [];
 				for (const block of event.message.content)
 					if (block?.type === 'text' && typeof block.text === 'string')
@@ -189,6 +200,8 @@ export function extractAssistantText(stdout: string): string {
 			/* Try the next assistant message. */
 		}
 	}
+	if (errors.length > 0)
+		throw new Error(`Pi assistant request failed: ${errors.at(-1)}`);
 	return messages.at(-1) ?? '';
 }
 

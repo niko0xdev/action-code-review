@@ -196,4 +196,42 @@ describe('runReview', () => {
 		expect(result.filesReviewed).toEqual([]);
 		expect(result.diagnostics?.failedGroups).toBeGreaterThan(0);
 	});
+
+	it('records successful execution evidence even when no findings are emitted', async () => {
+		const harness: ReviewHarness = {
+			name: 'clean',
+			usage: {
+				inputTokens: 100,
+				outputTokens: 20,
+				cacheReadTokens: 0,
+				cacheWriteTokens: 0,
+				totalTokens: 120,
+				assistantMessages: 2,
+				toolCallsStarted: 3,
+				durationMs: 50,
+				processes: { started: 1, succeeded: 1, failed: 0 },
+			},
+			async review(): Promise<ReviewResult> {
+				return {
+					findings: [],
+					summary: 'No issues found.',
+					risk: 'none',
+					counts: { critical: 0, high: 0, medium: 0, low: 0 },
+					filesReviewed: [],
+				};
+			},
+		};
+
+		const result = await runReview(makeContext(['clean.ts']), harness);
+
+		expect(result.reviewStatus).toBe('complete');
+		expect(result.filesReviewed).toEqual(['clean.ts']);
+		expect(result.findings).toEqual([]);
+		expect(result.usage?.processes).toEqual({
+			started: 1,
+			succeeded: 1,
+			failed: 0,
+		});
+		expect(result.usage?.toolCallsStarted).toBe(3);
+	});
 });

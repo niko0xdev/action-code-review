@@ -36804,7 +36804,12 @@ function buildChecksTable(findings, _counts, ruleCoverage) {
         '|-------|:------:|:-----:|-------------|',
         ...CATEGORIES.map((category) => {
             const count = categoryCounts.get(category) ?? 0;
-            return `| ${count ? '❌' : '✅'} ${CATEGORY_LABEL[category]} | ${count ? `${count} issue${count === 1 ? '' : 's'}` : 'passed'} | ${rulesCell} | ${failedCell} |`;
+            const cleanLabel = !count &&
+                ruleCoverage?.assessed !== undefined &&
+                ruleCoverage.assessed < ruleCoverage.total
+                ? 'no finding'
+                : 'passed';
+            return `| ${count ? '❌' : '✅'} ${CATEGORY_LABEL[category]} | ${count ? `${count} issue${count === 1 ? '' : 's'}` : cleanLabel} | ${rulesCell} | ${failedCell} |`;
         }),
     ];
 }
@@ -36849,6 +36854,20 @@ function buildSummaryBody(result) {
     const filesLine = result.filesTotal !== undefined || result.filesExcluded !== undefined
         ? `**Files reviewed:** ${reviewed} of ${total} (${excluded} excluded by filter)`
         : `**Files reviewed:** ${reviewed}`;
+    const status = result.reviewStatus ??
+        (result.diagnostics?.failedGroups ? 'incomplete' : 'complete');
+    const executionLine = result.usage
+        ? `**Review execution:** ${status} — ${reviewed} files analyzed; ${result.usage.processes.succeeded}/${result.usage.processes.started} harness processes succeeded; ${result.usage.toolCallsStarted} read-only tool calls; ${result.usage.assistantMessages} assistant responses.`
+        : `**Review execution:** ${status} — ${reviewed} files analyzed.`;
+    const reviewedFiles = result.filesReviewed.length > 0
+        ? [
+            `<details><summary>Reviewed files (${result.filesReviewed.length})</summary>`,
+            '',
+            ...result.filesReviewed.map((file) => `- \`${mdSafe(file).replaceAll('`', '\\`')}\``),
+            '',
+            '</details>',
+        ]
+        : [];
     const truncationNotice = result.filesTruncated
         ? '\n> ⚠️ **FILE LIST TRUNCATED** — GitHub pagination reached its safety limit; this review does not cover every changed file.\n'
         : '';
@@ -36870,8 +36889,11 @@ function buildSummaryBody(result) {
         `**Duration:** ${formatDuration(result.durationMs)}`,
         truncationNotice,
         filesLine,
+        executionLine,
         `**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,
     ];
+    if (reviewedFiles.length > 0)
+        lines.push('', ...reviewedFiles);
     if (result.summary)
         lines.push('', result.summary);
     lines.push('', '## Findings', '', '| Severity | Count | Status |', '|----------|------:|:------:|', `| 🚨 Critical | ${result.counts.critical} | ${result.counts.critical ? '❌' : '✅'} |`, `| 🔥 High | ${result.counts.high} | ${result.counts.high ? '❌' : '✅'} |`, `| ⚠️ Medium | ${result.counts.medium} | ${result.counts.medium ? '❌' : '✅'} |`, `| ✅ Low | ${result.counts.low} | ${result.counts.low ? '❌' : '✅'} |`, '', '## Decision', '', decision, '', ...findingLines(findings), '', ...buildChecksTable(findings, result.counts, result.ruleCoverage), '', ...(result.toolFindings && result.toolFindings.length > 0
@@ -37271,6 +37293,7 @@ async function publishReview(octokit, params) {
         diagnostics: result.diagnostics,
         ruleCoverage: result.ruleCoverage,
         reviewStatus: result.reviewStatus,
+        usage: result.usage,
     })}\n\n${marker}`;
     if (params.stickySummary) {
         const existing = await findStickyComment(octokit, owner, repo, prNumber, marker);
@@ -37856,6 +37879,7 @@ function buildPiEnv(configDir, apiKey) {
 }
 function extractAssistantText(stdout) {
     const messages = [];
+    const errors = [];
     let currentMessage = [];
     for (const line of stdout.split('\n')) {
         const trimmed = line.trim();
@@ -37866,6 +37890,12 @@ function extractAssistantText(stdout) {
             if (event.type === 'message_end' &&
                 event.message?.role === 'assistant' &&
                 Array.isArray(event.message.content)) {
+                if (event.message.stopReason === 'error' ||
+                    event.message.errorMessage) {
+                    const message = event.message.errorMessage?.trim();
+                    errors.push(message || 'provider returned an assistant error');
+                    continue;
+                }
                 currentMessage = [];
                 for (const block of event.message.content)
                     if (block?.type === 'text' && typeof block.text === 'string')
@@ -37893,6 +37923,8 @@ function extractAssistantText(stdout) {
             /* Try the next assistant message. */
         }
     }
+    if (errors.length > 0)
+        throw new Error(`Pi assistant request failed: ${errors.at(-1)}`);
     return messages.at(-1) ?? '';
 }
 /** A counter the provider may report as nonsense; unknown => 0. */

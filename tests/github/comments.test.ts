@@ -91,6 +91,60 @@ describe('buildSummaryBody', () => {
 		expect(body).not.toContain('undefined');
 	});
 
+	it('shows execution evidence and the files actually reviewed', () => {
+		const body = buildSummaryBody({
+			...empty,
+			filesReviewed: ['src/a.ts', 'src/b.ts'],
+			filesTotal: 3,
+			filesExcluded: 1,
+			reviewStatus: 'complete',
+			usage: {
+				inputTokens: 100,
+				outputTokens: 40,
+				cacheReadTokens: 5,
+				cacheWriteTokens: 0,
+				totalTokens: 145,
+				assistantMessages: 3,
+				toolCallsStarted: 4,
+				durationMs: 1000,
+				processes: { started: 1, succeeded: 1, failed: 0 },
+			},
+		});
+
+		expect(body).toContain('**Review execution:** complete');
+		expect(body).toContain('4 read-only tool calls');
+		expect(body).toContain('3 assistant responses');
+		expect(body).toContain('<summary>Reviewed files (2)</summary>');
+		expect(body).toContain('`src/a.ts`');
+		expect(body).toContain('`src/b.ts`');
+	});
+
+	it('shows incomplete execution when a review group fails', () => {
+		const body = buildSummaryBody({
+			...empty,
+			filesReviewed: [],
+			filesTotal: 2,
+			filesExcluded: 0,
+			reviewStatus: 'incomplete',
+			diagnostics: { failedGroups: 1 },
+			usage: {
+				inputTokens: 0,
+				outputTokens: 0,
+				cacheReadTokens: 0,
+				cacheWriteTokens: 0,
+				totalTokens: 0,
+				assistantMessages: 0,
+				toolCallsStarted: 0,
+				durationMs: 100,
+				processes: { started: 1, succeeded: 0, failed: 1 },
+			},
+		});
+
+		expect(body).toContain('REVIEW INCOMPLETE — NO APPROVAL');
+		expect(body).toContain('**Review execution:** incomplete');
+		expect(body).not.toContain('**Review execution:** complete');
+	});
+
 	it('formats critical banner', () => {
 		expect(formatDecisionBanner('critical')).toContain('CRITICAL');
 	});
@@ -124,9 +178,10 @@ describe('buildSummaryBody - tool findings + diagnostics (Q3)', () => {
 		model: 'test-model',
 	};
 
-	it('omits details blocks when neither toolFindings nor diagnostics provided', () => {
+	it('omits tool details when neither toolFindings nor diagnostics provided', () => {
 		const body = buildSummaryBody(base);
-		expect(body).not.toContain('<details>');
+		expect(body).not.toContain('<summary>Static analyzer findings</summary>');
+		expect(body).not.toContain('<summary>Pipeline diagnostics</summary>');
 	});
 
 	it('renders toolFindings in collapsible block', () => {

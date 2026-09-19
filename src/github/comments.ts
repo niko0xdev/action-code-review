@@ -3,6 +3,7 @@ import { redactSecrets } from '../security/redaction/redactor.js';
 import type {
 	Finding,
 	ReviewDiagnostics,
+	ReviewUsageMetrics,
 	RiskLevel,
 	RuleCoverage,
 	ToolFinding,
@@ -91,6 +92,7 @@ type SummaryResult = {
 	diagnostics?: ReviewDiagnostics;
 	ruleCoverage?: RuleCoverage;
 	reviewStatus?: 'complete' | 'incomplete' | 'failed' | 'stale';
+	usage?: ReviewUsageMetrics;
 };
 
 function hasBlockingFindings(
@@ -154,7 +156,13 @@ export function buildChecksTable(
 		'|-------|:------:|:-----:|-------------|',
 		...CATEGORIES.map((category) => {
 			const count = categoryCounts.get(category) ?? 0;
-			return `| ${count ? '❌' : '✅'} ${CATEGORY_LABEL[category]} | ${count ? `${count} issue${count === 1 ? '' : 's'}` : 'passed'} | ${rulesCell} | ${failedCell} |`;
+			const cleanLabel =
+				!count &&
+				ruleCoverage?.assessed !== undefined &&
+				ruleCoverage.assessed < ruleCoverage.total
+					? 'no finding'
+					: 'passed';
+			return `| ${count ? '❌' : '✅'} ${CATEGORY_LABEL[category]} | ${count ? `${count} issue${count === 1 ? '' : 's'}` : cleanLabel} | ${rulesCell} | ${failedCell} |`;
 		}),
 	];
 }
@@ -206,6 +214,24 @@ export function buildSummaryBody(result: SummaryResult): string {
 		result.filesTotal !== undefined || result.filesExcluded !== undefined
 			? `**Files reviewed:** ${reviewed} of ${total} (${excluded} excluded by filter)`
 			: `**Files reviewed:** ${reviewed}`;
+	const status =
+		result.reviewStatus ??
+		(result.diagnostics?.failedGroups ? 'incomplete' : 'complete');
+	const executionLine = result.usage
+		? `**Review execution:** ${status} — ${reviewed} files analyzed; ${result.usage.processes.succeeded}/${result.usage.processes.started} harness processes succeeded; ${result.usage.toolCallsStarted} read-only tool calls; ${result.usage.assistantMessages} assistant responses.`
+		: `**Review execution:** ${status} — ${reviewed} files analyzed.`;
+	const reviewedFiles =
+		result.filesReviewed.length > 0
+			? [
+					`<details><summary>Reviewed files (${result.filesReviewed.length})</summary>`,
+					'',
+					...result.filesReviewed.map(
+						(file) => `- \`${mdSafe(file).replaceAll('`', '\\`')}\``
+					),
+					'',
+					'</details>',
+				]
+			: [];
 	const truncationNotice = result.filesTruncated
 		? '\n> ⚠️ **FILE LIST TRUNCATED** — GitHub pagination reached its safety limit; this review does not cover every changed file.\n'
 		: '';
@@ -230,8 +256,10 @@ export function buildSummaryBody(result: SummaryResult): string {
 		`**Duration:** ${formatDuration(result.durationMs)}`,
 		truncationNotice,
 		filesLine,
+		executionLine,
 		`**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,
 	];
+	if (reviewedFiles.length > 0) lines.push('', ...reviewedFiles);
 	if (result.summary) lines.push('', result.summary);
 	lines.push(
 		'',

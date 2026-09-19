@@ -115,6 +115,45 @@ describe('extractAssistantText', () => {
 			'{"findings":[],"summary":"done"}'
 		);
 	});
+
+	it('surfaces provider errors from empty assistant messages', () => {
+		const errorEvent = JSON.stringify({
+			type: 'message_end',
+			message: {
+				role: 'assistant',
+				content: [],
+				stopReason: 'error',
+				errorMessage: 'MiniMax request rejected: invalid model',
+			},
+		});
+
+		expect(() => extractAssistantText(errorEvent)).toThrow(
+			/MiniMax request rejected: invalid model/
+		);
+	});
+
+	it('does not hide a provider error behind an earlier progress message', () => {
+		const progress = JSON.stringify({
+			type: 'message_end',
+			message: {
+				role: 'assistant',
+				content: [{ type: 'text', text: 'Checking files…' }],
+			},
+		});
+		const error = JSON.stringify({
+			type: 'message_end',
+			message: {
+				role: 'assistant',
+				content: [],
+				stopReason: 'error',
+				errorMessage: 'gateway timeout',
+			},
+		});
+
+		expect(() => extractAssistantText(`${progress}\n${error}`)).toThrow(
+			/gateway timeout/
+		);
+	});
 });
 
 describe('PiHarness.review', () => {
