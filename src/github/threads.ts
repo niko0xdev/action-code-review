@@ -70,8 +70,17 @@ export async function listReviewThreads(
 			number: args.pullNumber,
 			after,
 		})) as ReviewThreadsResponse;
+		// GitHub omits the connection (or its pageInfo) when a pull request has
+		// no review threads at all. A null `reviewThreads` is a successful
+		// empty result, not a malformed response; treating it as one made the
+		// approval path fail closed for every clean review. A missing
+		// `pullRequest` or `nodes` shape is still a malformed response.
+		if (raw.repository?.pullRequest === null) {
+			throw new Error('GitHub GraphQL reviewThreads response is incomplete');
+		}
 		const connection = raw.repository?.pullRequest?.reviewThreads;
-		if (!connection?.pageInfo || !Array.isArray(connection.nodes)) {
+		if (connection === null || connection === undefined) break;
+		if (!connection.pageInfo || !Array.isArray(connection.nodes)) {
 			throw new Error('GitHub GraphQL reviewThreads response is incomplete');
 		}
 
