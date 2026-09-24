@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildFileCoverage } from '../../src/review/coverage.js';
+import { redactSecrets } from '../../src/security/redaction/redactor.js';
 import type { ChangedFile } from '../../src/types/context.js';
 
 function file(filename: string, patch = 'diff'): ChangedFile {
@@ -125,5 +126,70 @@ describe('buildFileCoverage', () => {
 			fileDetailsTruncated: true,
 		});
 		expect(JSON.stringify(coverage.files).length).toBeLessThanOrEqual(80);
+	});
+
+	it('handles an empty PR file list without reporting false truncation', () => {
+		expect(
+			buildFileCoverage({
+				files: [],
+				filteredPaths: [],
+				selectedPaths: [],
+				reviewedPaths: [],
+				failedGroups: 0,
+			})
+		).toEqual({ files: [], filesOmitted: 0, fileDetailsTruncated: false });
+	});
+
+	it('omits a first entry that alone exceeds the configured size ceiling', () => {
+		const coverage = buildFileCoverage(
+			{
+				files: [file(`src/${'a'.repeat(100)}.ts`)],
+				filteredPaths: [],
+				selectedPaths: [],
+				reviewedPaths: [],
+				failedGroups: 0,
+			},
+			80
+		);
+
+		expect(coverage).toEqual({
+			files: [],
+			filesOmitted: 1,
+			fileDetailsTruncated: true,
+		});
+	});
+
+	it('caps the redacted output size when redaction expands a file path', () => {
+		const coverage = buildFileCoverage(
+			{
+				files: [file('Bearer abcdefgh')],
+				filteredPaths: [],
+				selectedPaths: [],
+				reviewedPaths: [],
+				failedGroups: 0,
+			},
+			80
+		);
+
+		expect(
+			redactSecrets(JSON.stringify(coverage.files)).length
+		).toBeLessThanOrEqual(80);
+		expect(coverage.fileDetailsTruncated).toBe(true);
+	});
+
+	it('uses the default ceiling when the supplied limit is not a finite integer', () => {
+		const coverage = buildFileCoverage(
+			{
+				files: [file('src/a.ts')],
+				filteredPaths: ['src/a.ts'],
+				selectedPaths: ['src/a.ts'],
+				reviewedPaths: ['src/a.ts'],
+				failedGroups: 0,
+			},
+			Number.NaN
+		);
+
+		expect(coverage.files).toEqual([{ path: 'src/a.ts', status: 'reviewed' }]);
+		expect(coverage.fileDetailsTruncated).toBe(false);
 	});
 });

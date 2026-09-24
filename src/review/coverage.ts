@@ -1,4 +1,5 @@
 import { isReviewable } from '../context/files.js';
+import { redactSecrets } from '../security/redaction/redactor.js';
 import type { ChangedFile } from '../types/context.js';
 
 export type ReviewFileCoverageStatus = 'reviewed' | 'excluded' | 'not-analyzed';
@@ -47,6 +48,10 @@ export function buildFileCoverage(
 	const selected = new Set(input.selectedPaths);
 	const reviewed = new Set(input.reviewedPaths);
 	const files: ReviewFileCoverage[] = [];
+	const sizeLimit =
+		Number.isSafeInteger(maxChars) && maxChars >= 2
+			? Math.min(maxChars, MAX_FILE_COVERAGE_CHARS)
+			: MAX_FILE_COVERAGE_CHARS;
 	let serializedChars = 2; // JSON array brackets
 
 	for (const [index, file] of input.files.entries()) {
@@ -70,9 +75,12 @@ export function buildFileCoverage(
 			};
 		}
 
+		// Size the value that will actually be serialized, including any
+		// redaction expansion for a secret-like path.
+		const outputEntry = { ...entry, path: redactSecrets(entry.path) };
 		const entryChars =
-			JSON.stringify(entry).length + (files.length > 0 ? 1 : 0);
-		if (serializedChars + entryChars > maxChars) {
+			JSON.stringify(outputEntry).length + (files.length > 0 ? 1 : 0);
+		if (serializedChars + entryChars > sizeLimit) {
 			return {
 				files,
 				filesOmitted: input.files.length - index,

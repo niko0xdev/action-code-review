@@ -39231,6 +39231,7 @@ function rulesForProfiles(profiles) {
 
 ;// CONCATENATED MODULE: ./src/review/coverage.ts
 
+
 /** Keep the additive path ledger well below GitHub's per-job output limit. */
 const MAX_FILE_COVERAGE_CHARS = 128 * 1024;
 /**
@@ -39243,6 +39244,9 @@ function buildFileCoverage(input, maxChars = MAX_FILE_COVERAGE_CHARS) {
     const selected = new Set(input.selectedPaths);
     const reviewed = new Set(input.reviewedPaths);
     const files = [];
+    const sizeLimit = Number.isSafeInteger(maxChars) && maxChars >= 2
+        ? Math.min(maxChars, MAX_FILE_COVERAGE_CHARS)
+        : MAX_FILE_COVERAGE_CHARS;
     let serializedChars = 2; // JSON array brackets
     for (const [index, file] of input.files.entries()) {
         const path = file.filename;
@@ -39264,8 +39268,11 @@ function buildFileCoverage(input, maxChars = MAX_FILE_COVERAGE_CHARS) {
                 reason: input.failedGroups > 0 ? 'review-group-failed' : 'review-incomplete',
             };
         }
-        const entryChars = JSON.stringify(entry).length + (files.length > 0 ? 1 : 0);
-        if (serializedChars + entryChars > maxChars) {
+        // Size the value that will actually be serialized, including any
+        // redaction expansion for a secret-like path.
+        const outputEntry = { ...entry, path: (0,redactor/* redactSecrets */.f)(entry.path) };
+        const entryChars = JSON.stringify(outputEntry).length + (files.length > 0 ? 1 : 0);
+        if (serializedChars + entryChars > sizeLimit) {
             return {
                 files,
                 filesOmitted: input.files.length - index,
