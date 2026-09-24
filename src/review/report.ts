@@ -23,6 +23,7 @@ import type {
 	RuleCoverage,
 	Severity,
 } from '../types/finding.js';
+import type { ReviewFileCoverageLedger } from './coverage.js';
 
 /** Bumped only for breaking changes to the serialized shape. */
 export const REVIEW_REPORT_SCHEMA_VERSION = 1 as const;
@@ -73,6 +74,11 @@ export interface ReviewReportCoverage {
 	filesExcluded: number;
 	/** True when the PR file list hit a pagination safety cap. */
 	filesTruncated: boolean;
+	/** Per-file review/exclusion state; paths only, without PR source content. */
+	files: ReviewFileCoverageLedger['files'];
+	/** File entries omitted when the per-file detail size ceiling is reached. */
+	filesOmitted: number;
+	fileDetailsTruncated: boolean;
 }
 
 /** Per-process tallies for the Pi review-group subprocesses. */
@@ -134,6 +140,8 @@ export interface BuildReviewReportInput {
 	filesTotal: number;
 	/** Files dropped as non-reviewable (see {@link ReviewReportCoverage}). */
 	filesExcluded: number;
+	/** Deterministic per-file scope accounting from the PR review pipeline. */
+	fileCoverage?: ReviewFileCoverageLedger;
 }
 
 /**
@@ -213,6 +221,9 @@ export function buildReviewReport(input: BuildReviewReportInput): ReviewReport {
 			filesTotal: input.filesTotal,
 			filesExcluded: input.filesExcluded,
 			filesTruncated: Boolean(result.filesTruncated),
+			files: (input.fileCoverage?.files ?? []).map((file) => ({ ...file })),
+			filesOmitted: input.fileCoverage?.filesOmitted ?? 0,
+			fileDetailsTruncated: input.fileCoverage?.fileDetailsTruncated ?? false,
 		},
 		findings: result.findings.map(copyFinding),
 		usage: buildUsage(result),
