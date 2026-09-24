@@ -28,6 +28,7 @@ Operational quick reference for a run that looks wrong:
 | [research/alibaba-open-code-review-2026-09-18.md](research/alibaba-open-code-review-2026-09-18.md) | Competitor teardown of Alibaba's open-code-review and the bounded decision to ship the `review-report` output | Assessing competitive capability gaps and why the machine-readable report slice was chosen |
 | [research/cloudflare-security-audit-skill-2026-09-18.md](research/cloudflare-security-audit-skill-2026-09-18.md) | Current-source research and bounded report-evidence opportunity from Cloudflare's `security-audit-skill` | Comparing security audit workflow and evidence reporting |
 | [research/review-usage-observability-2026-09-18.md](research/review-usage-observability-2026-09-18.md) | User feedback, pinned Pi event evidence, and the case for reporting review usage in JSON | Auditing token/tool usage and incomplete runs from CI |
+| [research/2026-09-24-file-level-coverage.md](research/2026-09-24-file-level-coverage.md) | Why `review-report` identifies reviewed and skipped files | Auditing review scope in workflow consumers |
 
 ## Historical decisions (folded in, files removed)
 

@@ -42,6 +42,7 @@ import {
 	validateReviewEvent,
 } from './modes/detector.js';
 import { resolveProfiles, rulesForProfiles } from './profiles/index.js';
+import { buildFileCoverage } from './review/coverage.js';
 import {
 	buildRawHarnessSection,
 	incompleteReviewFailure,
@@ -598,8 +599,9 @@ export async function main(argv: string[]): Promise<void> {
 		}
 		reviewContext.repositoryPath =
 			process.env.GITHUB_WORKSPACE || process.cwd();
+		const allPrFiles = reviewContext.diff.files;
 		const filtered = applyLegacyFilters(
-			reviewContext.diff.files.map((f) => f.filename),
+			allPrFiles.map((f) => f.filename),
 			legacyOptions
 		);
 		const maxFiles = Math.min(
@@ -612,9 +614,9 @@ export async function main(argv: string[]): Promise<void> {
 		);
 		// Captured before filtering so the summary can report
 		// "N of M (X excluded by filter)" (src/github/comments.ts).
-		const filesTotal = reviewContext.diff.files.length;
+		const filesTotal = allPrFiles.length;
 		reviewContext.diff.files = prioritizeFiles(
-			reviewContext.diff.files.filter(
+			allPrFiles.filter(
 				(f) => filtered.includes(f.filename) && Boolean(f.patch)
 			),
 			maxFiles
@@ -837,7 +839,20 @@ export async function main(argv: string[]): Promise<void> {
 				},
 				() =>
 					serializeReviewReport(
-						buildReviewReport({ result, filesTotal, filesExcluded })
+						buildReviewReport({
+							result,
+							filesTotal,
+							filesExcluded,
+							fileCoverage: buildFileCoverage({
+								files: allPrFiles,
+								filteredPaths: filtered,
+								selectedPaths: reviewContext.diff.files.map(
+									(file) => file.filename
+								),
+								reviewedPaths: result.filesReviewed,
+								failedGroups: result.diagnostics?.failedGroups ?? 0,
+							}),
+						})
 					),
 				(serialized) => core.setOutput('review-report', serialized)
 			);

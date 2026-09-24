@@ -1,0 +1,64 @@
+{
+  "id": "opp-20260924-file-level-review-coverage",
+  "title": "Expose per-file review coverage and exclusion reasons",
+  "insight_ids": [
+    "sig-20260924-local-aggregate-coverage-gap",
+    "sig-20260924-ocr-file-accountability"
+  ],
+  "problem": "The existing review report gives aggregate file counts but cannot show which PR files were excluded by policy, lacked patch data, exceeded max-files, or were selected but not analyzed after a group failure.",
+  "hypothesis": "Adding one bounded status/reason entry per listed PR file to the additive review-report output lets workflow consumers audit review scope without scraping logs, permissions, provider calls, or source content.",
+  "alternative_solutions": [
+    "Add aggregate excluded-file counts by reason only; cheaper but does not identify which paths need a policy or workflow change.",
+    "Keep the existing aggregate totals; zero implementation cost but leaves the documented ambiguity unresolved."
+  ],
+  "scores": {
+    "weights": {
+      "strategic_fit": 0.25,
+      "user_pain": 0.2,
+      "market_evidence": 0.15,
+      "differentiation": 0.15,
+      "business_value": 0.1,
+      "feasibility": 0.1,
+      "timing": 0.05
+    },
+    "dimensions": {
+      "strategic_fit": 9,
+      "user_pain": 6,
+      "market_evidence": 8,
+      "differentiation": 5,
+      "business_value": 6,
+      "feasibility": 9,
+      "timing": 8
+    },
+    "raw": 73,
+    "units": "out of 100",
+    "formula": "raw = sum(score * weight) * 10 = 7.30 * 10 = 73",
+    "confidence": 0.78,
+    "adjusted": 56.94,
+    "adjusted_formula": "adjusted = raw * confidence = 73 * 0.78 = 56.94"
+  },
+  "confidence": 0.78,
+  "confidence_rationale": "The local contract and source directly prove the aggregate ambiguity and that all required file sets exist at report time. A public competitor demonstrates the accountability pattern. Direct demand and the value of per-path reporting in this repository remain unknown.",
+  "effort": "S",
+  "recommendation": "PROTOTYPE",
+  "score_band": "PROTOTYPE (55-74 adjusted). The confidence-adjusted score is 56.94/100.",
+  "state": "ACCEPTED",
+  "authorization": "The user explicitly requested deep product research, feature implementation, review, and merge in this turn. This authorizes this bounded prototype, tests, docs, research artifacts, branch/PR, and merge if verification and repository policy permit it. It does not authorize unrelated roadmap work.",
+  "why_build": "A concrete gap is explicitly documented in this repository, and the pipeline already has the exact path sets needed to account for it. The additive output can improve scope transparency without new permissions, dependencies, or model calls.",
+  "why_not_build": "There is no direct user-demand evidence here. This is a parity and observability improvement, not a review-quality improvement. Per-file entries increase output size on large PRs.",
+  "counterevidence": [
+    "One competitor's published contract does not establish demand among this repository's users.",
+    "No repository user interview, adoption metric, or support issue was available to validate pain severity.",
+    "The feature reports pipeline status; it cannot prove that the review result for a file is accurate."
+  ],
+  "risk": "low",
+  "acceptance_criteria": [
+    "Every PR file in the collected list appears exactly once in coverage.files unless the detail-size ceiling is hit; omissions are counted and explicit.",
+    "Entries report reviewed, excluded, or not-analyzed with a concrete closed reason for non-reviewed files.",
+    "Existing aggregate coverage fields and schemaVersion 1 remain compatible.",
+    "No source content is added; report serialization retains existing redaction.",
+    "Tests and interface documentation cover every classification path."
+  ],
+  "human_decision": "The user authorized this bounded feature prototype and requested merge in the current turn.",
+  "what_would_change_conclusion": "Direct maintainer feedback that aggregate reason counts are sufficient, or evidence that per-path output is too large or too sensitive for common consumers."
+}
