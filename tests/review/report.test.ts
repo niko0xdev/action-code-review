@@ -137,8 +137,50 @@ describe('buildReviewReport', () => {
 			filesTotal: 3,
 			filesExcluded: 2,
 			filesTruncated: false,
+			files: [],
+			filesOmitted: 0,
+			fileDetailsTruncated: false,
 		});
 		expect(report.findings).toEqual([]);
+	});
+
+	it('copies and serializes per-file coverage without changing the analysis result', () => {
+		const fileCoverage = {
+			filesOmitted: 2,
+			fileDetailsTruncated: true,
+			files: [
+				{ path: 'src/a.ts', status: 'reviewed' as const },
+				{
+					path: 'docs/internal.md',
+					status: 'excluded' as const,
+					reason: 'configured-filter' as const,
+				},
+				{
+					path: 'src/failed.ts',
+					status: 'not-analyzed' as const,
+					reason: 'review-group-failed' as const,
+				},
+			],
+		};
+		const result = emptyResult({
+			filesReviewed: ['src/a.ts'],
+			diagnostics: { failedGroups: 1 },
+		});
+		const report = buildReviewReport({
+			result,
+			filesTotal: 3,
+			filesExcluded: 1,
+			fileCoverage,
+		});
+
+		expect(report.coverage.files).toEqual(fileCoverage.files);
+		expect(report.coverage.files).not.toBe(fileCoverage.files);
+		expect(report.coverage.filesOmitted).toBe(2);
+		expect(report.coverage.fileDetailsTruncated).toBe(true);
+		expect(result.filesReviewed).toEqual(['src/a.ts']);
+		expect(JSON.parse(serializeReviewReport(report)).coverage.files).toEqual(
+			fileCoverage.files
+		);
 	});
 
 	it('always emits a zeroed usage object when the result recorded none', () => {
@@ -394,6 +436,17 @@ describe('buildReviewReport', () => {
 			result: original,
 			filesTotal: 1,
 			filesExcluded: 0,
+			fileCoverage: {
+				files: [
+					{
+						path: `src/${canary}.ts`,
+						status: 'excluded',
+						reason: 'configured-filter',
+					},
+				],
+				filesOmitted: 0,
+				fileDetailsTruncated: false,
+			},
 		});
 		const serialized = serializeReviewReport(report);
 
@@ -403,6 +456,7 @@ describe('buildReviewReport', () => {
 		// redaction is applied only when the copy is serialized.
 		expect(original.findings[0].description).toContain(canary);
 		expect(original.diagnostics?.prelintRan?.[0]).toContain(canary);
+		expect(report.coverage.files[0].path).toContain(canary);
 		expect(report.findings[0]).not.toBe(original.findings[0]);
 	});
 });
@@ -433,6 +487,9 @@ describe('withReviewReportOutput', () => {
 			filesTotal: 2,
 			filesExcluded: 1,
 			filesTruncated: false,
+			files: [],
+			filesOmitted: 0,
+			fileDetailsTruncated: false,
 		});
 	});
 

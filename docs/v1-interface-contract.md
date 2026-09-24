@@ -106,7 +106,13 @@ breaking shape change.
     "filesReviewed": 4,
     "filesTotal": 6,
     "filesExcluded": 2,
-    "filesTruncated": false
+    "filesTruncated": false,
+    "fileDetailsTruncated": false,
+    "filesOmitted": 0,
+    "files": [
+      { "path": "src/app.ts", "status": "reviewed" },
+      { "path": "docs/guide.md", "status": "excluded", "reason": "configured-filter" }
+    ]
   },
   "findings": [ /* validated, capped findings */ ],
   "usage": {
@@ -147,6 +153,19 @@ breaking shape change.
   patterns, a missing patch, and the `max-files` cap. On an incomplete review,
   `filesReviewed + filesExcluded` can be less than `filesTotal`: files in a
   failed review group are counted as neither reviewed nor excluded.
+- `coverage.files` is an additive per-file ledger for the collected PR file
+  list. `status` is `reviewed`, `excluded`, or `not-analyzed`. Excluded entries
+  use one reason: `configured-filter`, `missing-patch`, `default-ignore`, or
+  `max-files`. A selected but unreviewed file uses `review-group-failed` when
+  any review group failed, otherwise `review-incomplete`. Entries contain only
+  the repository-relative path and status/reason, never the patch or file
+  contents. Existing string redaction also applies to these paths. The ledger
+  is capped at 128 Ki UTF-16 characters; `fileDetailsTruncated` and
+  `filesOmitted` report any entries omitted at that limit. This is separate
+  from `filesTruncated`, which means GitHub pagination hit its safety cap. The
+  field is empty only when a caller builds a report without the pipeline's file
+  ledger; the action's normal review path supplies the collected list, subject
+  to the detail-size cap.
 - `usage` is always present and **additive**. Its counters are
   **provider-reported** values aggregated from the harness's JSON event stream:
   `inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheWriteTokens`/`totalTokens`

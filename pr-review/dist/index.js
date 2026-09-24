@@ -1926,7 +1926,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getOctokit = exports.context = void 0;
 const Context = __importStar(__nccwpck_require__(5539));
-const utils_1 = __nccwpck_require__(3302);
+const utils_1 = __nccwpck_require__(921);
 exports.context = new Context.Context();
 /**
  * Returns a hydrated octokit ready to use for GitHub Actions
@@ -1992,7 +1992,7 @@ exports.getApiBaseUrl = getApiBaseUrl;
 
 /***/ }),
 
-/***/ 3302:
+/***/ 921:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 
@@ -39229,6 +39229,62 @@ function rulesForProfiles(profiles) {
     return combinedRules(profiles.map((p) => p.id));
 }
 
+;// CONCATENATED MODULE: ./src/review/coverage.ts
+
+
+/** Keep the additive path ledger well below GitHub's per-job output limit. */
+const MAX_FILE_COVERAGE_CHARS = 128 * 1024;
+/**
+ * Account for each PR file using the same filter order as the review pipeline.
+ * A selected file absent from `reviewedPaths` is never presented as excluded.
+ * Stop at a bounded serialized size and report omitted detail explicitly.
+ */
+function buildFileCoverage(input, maxChars = MAX_FILE_COVERAGE_CHARS) {
+    const filtered = new Set(input.filteredPaths);
+    const selected = new Set(input.selectedPaths);
+    const reviewed = new Set(input.reviewedPaths);
+    const files = [];
+    const sizeLimit = Number.isSafeInteger(maxChars) && maxChars >= 2
+        ? Math.min(maxChars, MAX_FILE_COVERAGE_CHARS)
+        : MAX_FILE_COVERAGE_CHARS;
+    let serializedChars = 2; // JSON array brackets
+    for (const [index, file] of input.files.entries()) {
+        const path = file.filename;
+        let entry;
+        if (!filtered.has(path))
+            entry = { path, status: 'excluded', reason: 'configured-filter' };
+        else if (!file.patch)
+            entry = { path, status: 'excluded', reason: 'missing-patch' };
+        else if (!isReviewable(file))
+            entry = { path, status: 'excluded', reason: 'default-ignore' };
+        else if (!selected.has(path))
+            entry = { path, status: 'excluded', reason: 'max-files' };
+        else if (reviewed.has(path))
+            entry = { path, status: 'reviewed' };
+        else {
+            entry = {
+                path,
+                status: 'not-analyzed',
+                reason: input.failedGroups > 0 ? 'review-group-failed' : 'review-incomplete',
+            };
+        }
+        // Size the value that will actually be serialized, including any
+        // redaction expansion for a secret-like path.
+        const outputEntry = { ...entry, path: (0,redactor/* redactSecrets */.f)(entry.path) };
+        const entryChars = JSON.stringify(outputEntry).length + (files.length > 0 ? 1 : 0);
+        if (serializedChars + entryChars > sizeLimit) {
+            return {
+                files,
+                filesOmitted: input.files.length - index,
+                fileDetailsTruncated: true,
+            };
+        }
+        files.push(entry);
+        serializedChars += entryChars;
+    }
+    return { files, filesOmitted: 0, fileDetailsTruncated: false };
+}
+
 ;// CONCATENATED MODULE: ./src/review/execution.ts
 /**
  * Execution reporting for one review run.
@@ -39410,6 +39466,9 @@ function buildReviewReport(input) {
             filesTotal: input.filesTotal,
             filesExcluded: input.filesExcluded,
             filesTruncated: Boolean(result.filesTruncated),
+            files: (input.fileCoverage?.files ?? []).map((file) => ({ ...file })),
+            filesOmitted: input.fileCoverage?.filesOmitted ?? 0,
+            fileDetailsTruncated: input.fileCoverage?.fileDetailsTruncated ?? false,
         },
         findings: result.findings.map(copyFinding),
         usage: buildUsage(result),
@@ -42050,6 +42109,7 @@ var selector = __nccwpck_require__(9347);
 
 
 
+
 function positiveTimeout(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -42485,13 +42545,14 @@ async function main(argv) {
         }
         reviewContext.repositoryPath =
             process.env.GITHUB_WORKSPACE || process.cwd();
-        const filtered = applyLegacyFilters(reviewContext.diff.files.map((f) => f.filename), legacyOptions);
+        const allPrFiles = reviewContext.diff.files;
+        const filtered = applyLegacyFilters(allPrFiles.map((f) => f.filename), legacyOptions);
         const maxFiles = Math.min(legacyOptions.maxFiles, Number.parseInt(process.env.AI_REVIEW_MAX_FILES ||
             `${config/* REVIEW_OPTION_DEFAULTS */.Ag.aiReviewMaxFiles}`, 10));
         // Captured before filtering so the summary can report
         // "N of M (X excluded by filter)" (src/github/comments.ts).
-        const filesTotal = reviewContext.diff.files.length;
-        reviewContext.diff.files = prioritizeFiles(reviewContext.diff.files.filter((f) => filtered.includes(f.filename) && Boolean(f.patch)), maxFiles);
+        const filesTotal = allPrFiles.length;
+        reviewContext.diff.files = prioritizeFiles(allPrFiles.filter((f) => filtered.includes(f.filename) && Boolean(f.patch)), maxFiles);
         const filesSelected = reviewContext.diff.files.length;
         trackPhase('filter', `${reviewContext.diff.files.length} files after filter`, { enabled: trackEnabled });
         if (reviewContext.diff.files.length === 0) {
@@ -42646,7 +42707,18 @@ async function main(argv) {
                         github.context.actor,
                 });
                 trackPhase('publish', 'review published', { enabled: trackEnabled });
-            }, () => serializeReviewReport(buildReviewReport({ result, filesTotal, filesExcluded })), (serialized) => lib_core.setOutput('review-report', serialized));
+            }, () => serializeReviewReport(buildReviewReport({
+                result,
+                filesTotal,
+                filesExcluded,
+                fileCoverage: buildFileCoverage({
+                    files: allPrFiles,
+                    filteredPaths: filtered,
+                    selectedPaths: reviewContext.diff.files.map((file) => file.filename),
+                    reviewedPaths: result.filesReviewed,
+                    failedGroups: result.diagnostics?.failedGroups ?? 0,
+                }),
+            })), (serialized) => lib_core.setOutput('review-report', serialized));
             await lib_core.summary
                 .addRaw(buildJobSummary({
                 model: llmConfig.model,
