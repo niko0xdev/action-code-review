@@ -11,7 +11,10 @@ interface ReviewThreadsResponse {
 					isResolved?: boolean;
 					comments?: {
 						nodes?: Array<{
-							author?: { login?: string | null } | null;
+							author?: {
+								__typename?: string | null;
+								login?: string | null;
+							} | null;
 							body?: string | null;
 						} | null> | null;
 					} | null;
@@ -40,6 +43,7 @@ query ReviewThreads($owner: String!, $repo: String!, $number: Int!, $after: Stri
           comments(first: 1) {
             nodes {
               author {
+                __typename
                 login
               }
               body
@@ -80,7 +84,7 @@ export async function listReviewThreads(
 				throw new Error('GitHub GraphQL review thread is incomplete');
 			}
 			const root = node.comments?.nodes?.[0];
-			const author = root?.author?.login ?? undefined;
+			const author = restLogin(root?.author);
 			if (!author) {
 				throw new Error('GitHub GraphQL review thread is incomplete');
 			}
@@ -100,4 +104,24 @@ export async function listReviewThreads(
 	} while (after);
 
 	return threads;
+}
+
+/**
+ * GraphQL reports a Bot actor's login without the `[bot]` suffix that REST
+ * uses (`github-actions` vs `github-actions[bot]`). Approval attribution
+ * relies on that suffix, so bot logins are normalised to the REST form; an
+ * unsuffixed bot login would never match and every AI thread would be
+ * silently ignored. A missing `__typename` is incomplete data, not a user.
+ */
+function restLogin(
+	author:
+		| { __typename?: string | null; login?: string | null }
+		| null
+		| undefined
+): string | undefined {
+	const login = author?.login;
+	if (!login || typeof author?.__typename !== 'string') return undefined;
+	if (author.__typename === 'Bot' && !login.endsWith('[bot]'))
+		return `${login}[bot]`;
+	return login;
 }

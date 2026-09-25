@@ -15,6 +15,15 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Fixed
 
+- **Unresolved AI threads now block auto-approval under `GITHUB_TOKEN`.**
+  GraphQL `reviewThreads` reports the workflow token's actor as
+  `github-actions`, while REST uses `github-actions[bot]`. Without the `[bot]`
+  suffix no thread was attributed to the action, so the "all AI threads
+  resolved" gate passed vacuously and approved with findings still open. Bot
+  authors are now normalised to the REST form (the query requests
+  `author { __typename login }`; an untyped author fails closed). Approval is
+  stricter as a result: repositories using `auto-approve-when-resolved` must
+  resolve the action's review threads before it approves.
 - **Pi's own error is no longer swallowed.** When the provider call fails, Pi
   emits `message_end` with `stopReason: "error"`, an `errorMessage` and an empty
   `content` array. That became `Unable to parse harness output as JSON. Output

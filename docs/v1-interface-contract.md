@@ -267,9 +267,13 @@ matching ids are skipped.
   ```
 
 - Sets output `review-summary`.
-- When `auto-approve-when-resolved` is enabled (default `true`): resolves the
-  bot login and paginates GitHub's GraphQL `reviewThreads` connection. A thread
-  is treated as AI-authored only when its root comment author matches that bot.
+- When `auto-approve-when-resolved` is enabled (default `true`): paginates
+  GitHub's GraphQL `reviewThreads` connection. A thread is treated as
+  AI-authored only when its root comment carries the action's hidden marker and
+  its author matches the token's login, or, when the login cannot be resolved (a
+  workflow `GITHUB_TOKEN` is refused on `GET /user`), is a bot account. GraphQL
+  reports bot logins without the `[bot]` suffix (`github-actions`), so they are
+  normalised to the REST form (`github-actions[bot]`) before matching.
   If every AI-authored thread is resolved, submits an `APPROVE` review with body
   `All AI-generated review comments have been resolved. Auto-approving PR.`
   Missing or malformed thread data fails closed and never triggers approval.
