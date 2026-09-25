@@ -228,7 +228,19 @@ export function extractAssistantResult(stdout: string): AssistantResult {
 				for (const block of event.message.content)
 					if (block?.type === 'text' && typeof block.text === 'string')
 						currentMessage.push(block.text);
-				if (currentMessage.length > 0) messages.push(currentMessage.join(''));
+				const joined = currentMessage.join('');
+				// Pi can exit cleanly (no errorMessage, stopReason "stop") with
+				// an empty content array — for example when a gateway answers a
+				// streaming request with a non-streaming body. Surface this as a
+				// harness failure rather than letting it fall through to the JSON
+				// parser, which would report the misleading
+				// "Unable to parse harness output as JSON. Output started with: ".
+				if (joined.trim().length === 0 && !lastError) {
+					lastError =
+						'the model returned an empty assistant message. Check the gateway base URL, model id and streaming compatibility.';
+					continue;
+				}
+				if (currentMessage.length > 0) messages.push(joined);
 			}
 		} catch {
 			/* ignore non-JSON event lines */
@@ -377,10 +389,20 @@ export const MAX_REPAIR_ECHO_CHARS = 4000;
  * the actual cause (401, timeout, aborted request).
  */
 function assertAssistantUsable(assistant: AssistantResult): void {
-	if (assistant.error && !assistant.text.trim())
+	const text = assistant.text.trim();
+	if (!text) {
+		if (assistant.error)
+			throw new Error(
+				`Pi harness reported an error instead of a review result: ${assistant.error}`
+			);
+		// Pi can exit cleanly with no error and no content — for example when a
+		// gateway answers a streaming request with a non-streaming body.
+		// Without this guard the group fails with the misleading
+		// "Unable to parse harness output as JSON. Output started with: ".
 		throw new Error(
-			`Pi harness reported an error instead of a review result: ${assistant.error}`
+			'Pi harness produced no output: the model returned an empty assistant message. Check the gateway base URL, model id and streaming compatibility.'
 		);
+	}
 }
 
 /**

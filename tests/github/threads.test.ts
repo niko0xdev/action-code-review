@@ -93,6 +93,34 @@ describe('listReviewThreads', () => {
 		).rejects.toThrow('GitHub GraphQL reviewThreads response is incomplete');
 	});
 
+	it('returns no threads when GitHub omits the reviewThreads connection', async () => {
+		// GitHub omits the `reviewThreads` field entirely for a PR with zero
+		// review threads. Treating that as a malformed response failed the
+		// approval path closed, so a PR whose review found nothing could
+		// never be auto-approved.
+		const nullConnection = vi.fn(async () => ({
+			repository: { pullRequest: { reviewThreads: null } },
+		}));
+		await expect(
+			listReviewThreads(nullConnection, {
+				owner: 'acme',
+				repo: 'widget',
+				pullNumber: 42,
+			})
+		).resolves.toEqual([]);
+
+		const absentConnection = vi.fn(async () => ({
+			repository: { pullRequest: {} },
+		}));
+		await expect(
+			listReviewThreads(absentConnection, {
+				owner: 'acme',
+				repo: 'widget',
+				pullNumber: 42,
+			})
+		).resolves.toEqual([]);
+	});
+
 	it('rejects a thread with incomplete resolution or root-author state', async () => {
 		const graphql = vi.fn(async () => ({
 			repository: {

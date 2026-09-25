@@ -696,6 +696,41 @@ describe('assistant failures reported by Pi', () => {
 	});
 });
 
+describe('empty harness output', () => {
+	function messageEnd(message: Record<string, unknown>): string {
+		return `${JSON.stringify({ type: 'message_end', message })}\n`;
+	}
+
+	it('reports an empty answer as a model/gateway problem', async () => {
+		// Pi exits 0 with no errorMessage and an empty content array when a
+		// gateway answers a streaming request with a non-streaming body.
+		// Without this guard the group fails with the misleading parse error.
+		const stdout = messageEnd({
+			role: 'assistant',
+			content: [],
+			stopReason: 'stop',
+		});
+		const runner = vi.fn(async () => ({ stdout, stderr: '' }));
+		const harness = new PiHarness({ runPi: runner as never });
+		await expect(harness.review(makeContext())).rejects.toThrow(
+			/the model returned an empty assistant message/
+		);
+	});
+
+	it('treats whitespace-only output as empty', async () => {
+		const stdout = messageEnd({
+			role: 'assistant',
+			content: [{ type: 'text', text: '   \n  ' }],
+			stopReason: 'stop',
+		});
+		const runner = vi.fn(async () => ({ stdout, stderr: '' }));
+		const harness = new PiHarness({ runPi: runner as never });
+		await expect(harness.review(makeContext())).rejects.toThrow(
+			/the model returned an empty assistant message/
+		);
+	});
+});
+
 describe('buildAgentDebugSection', () => {
 	it('returns null when no runs or only blank output', () => {
 		expect(buildAgentDebugSection([])).toBeNull();
