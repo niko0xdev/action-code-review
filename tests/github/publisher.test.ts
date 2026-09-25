@@ -6,6 +6,7 @@ import {
 	buildSummaryBody,
 	publishReview,
 } from '../../src/github/review.js';
+import { listReviewThreads } from '../../src/github/threads.js';
 import { normalizeCommentId } from '../../src/review/dedupe.js';
 import type { Finding, ReviewResult } from '../../src/types/finding.js';
 
@@ -811,6 +812,97 @@ describe('approval outcome reporting', () => {
 			autoApproveWhenResolved: true,
 		});
 		expect(result.approval).toEqual({ state: 'approved' });
+	});
+
+	describe('with GraphQL-sourced threads and a GITHUB_TOKEN', () => {
+		// End to end through listReviewThreads: GraphQL reports the workflow
+		// token's actor as `github-actions` (no `[bot]` suffix) and `GET /user`
+		// is refused, so attribution depends on the Bot author normalisation.
+		function graphqlThread(
+			author: { __typename: string; login: string },
+			resolved: boolean
+		) {
+			return vi.fn(async () => ({
+				repository: {
+					pullRequest: {
+						reviewThreads: {
+							nodes: [
+								{
+									isResolved: resolved,
+									comments: {
+										nodes: [
+											{
+												author,
+												body: 'finding\n\n<!-- ai-review-id:aaaaaaaaaaaa -->',
+											},
+										],
+									},
+								},
+							],
+							pageInfo: { hasNextPage: false, endCursor: null },
+						},
+					},
+				},
+			}));
+		}
+
+		async function approvalFor(
+			author: { __typename: string; login: string },
+			resolved: boolean
+		) {
+			const octokit = octokitWithApproval(async () => ({ data: {} }));
+			octokit.users.getAuthenticated = vi.fn(async () => {
+				throw Object.assign(
+					new Error('Resource not accessible by integration'),
+					{ status: 403 }
+				);
+			});
+			const graphql = graphqlThread(author, resolved);
+			octokit.rest.pulls.listThreads = vi.fn(async () =>
+				listReviewThreads(graphql, {
+					owner: 'acme',
+					repo: 'widget',
+					pullNumber: 7,
+				})
+			) as never;
+			const result = cleanResult();
+			await publishReview(octokit as never, {
+				owner: 'acme',
+				repo: 'widget',
+				prNumber: 7,
+				headSha: 'sha-approve',
+				result,
+				autoApproveWhenResolved: true,
+			});
+			return { state: result.approval?.state, octokit };
+		}
+
+		it('withholds approval while a bot-authored AI thread is unresolved', async () => {
+			const { state, octokit } = await approvalFor(
+				{ __typename: 'Bot', login: 'github-actions' },
+				false
+			);
+			expect(state).toBe('skipped-unresolved-threads');
+			expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+		});
+
+		it('approves once the bot-authored AI thread is resolved', async () => {
+			const { state } = await approvalFor(
+				{ __typename: 'Bot', login: 'github-actions' },
+				true
+			);
+			expect(state).toBe('approved');
+		});
+
+		it('does not trust the marker in a human-authored thread', async () => {
+			// A user login never gains the [bot] suffix, so a pasted marker in
+			// an unresolved human thread cannot block or unlock approval.
+			const { state } = await approvalFor(
+				{ __typename: 'User', login: 'github-actions' },
+				false
+			);
+			expect(state).toBe('approved');
+		});
 	});
 
 	it('records not-requested when the flag is off', async () => {
