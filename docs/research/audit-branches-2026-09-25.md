@@ -227,3 +227,33 @@ to the current tree without manual rework.
   every new file in detail; some may be empty or low-value.
 - `scripts/audit-branches.sh` reproduces this report against any
   reference (default `origin/main`).
+
+## Outcome of the audit
+
+This audit started from the branch `fix/zero-thread-and-empty-answer-guard`,
+which turned out to be obsolete: the named fix already shipped on
+`origin/main` via PR #124 ("feat: add shared date helpers"), so there
+was nothing to ship from that branch itself. The branch is now reset to
+`origin/main` (`a642536`) and safe to delete.
+
+The audit did surface one piece of real value: a 241-line end-to-end
+scenario-matrix test (`tests/e2e/pr-scenarios.test.ts`) sitting on
+`fix/review-execution-visibility`. That file was cherry-picked into a
+dedicated branch `test/pr-review-scenario-matrix` (commit
+`27591e5`), with two assertions adjusted to the V3 summary format.
+After that cherry-pick, every other "unique delta" branch turned out
+to be either a stale `v2/`-tree branch (predating PR #79's flatten),
+a workflow downgrade, or a dead fixture; none are worth shipping.
+
+Two branches are ready for human review:
+
+- `chore/branch-audit-2026-09-25` (3 commits) — this audit doc,
+  the `scripts/audit-branches.sh` script with the file-comparison bug
+  fix, and the matching `docs/index.md` row.
+- `test/pr-review-scenario-matrix` (1 commit) — the scenario matrix
+  test, asserting six representative PR shapes against the current
+  reviewer / publisher / summary pipeline.
+
+Both pass `pnpm test` (593/593 on the audit branch, 599/599 on the
+test branch), `pnpm typecheck`, `pnpm lint`, and have not been
+pushed; the user retains the merge decision.
