@@ -124,6 +124,38 @@ them would conflict with current work.
 | `feat/e2e-reply-test` | 0 | 0 | 3 | 0 | Adds reply-target fixtures + a reply E2E scenario that lives in the obsolete `v2/tests/e2e/` tree. Re-authoring needed. |
 | `fix/review-execution-visibility` | 0 | 9 | 1 | 0 | 8 work-in-progress commits. The 9 differing source files are largely absorbed by PR #118 / #123 / #124 / #126 on `origin/main`. The 1 added file, `tests/e2e/pr-scenarios.test.ts`, is a 241-line scenario matrix that does not exist on `origin/main` and was cherry-picked separately as `test/pr-review-scenario-matrix`. |
 
+#### Per-fixture-branch verdict
+
+Closer inspection of the fixture branches (`feat/test-v2-skills`,
+`test/customer-compat`, `test/v2-auto-approve`, `test/v2-delegation`,
+`feat/e2e-reply-test`) shows the workflow changes are *downgrades*,
+not upgrades:
+
+- `feat/test-v2-skills` drops the `track-progress: 'true'` step,
+  every `AI_REVIEW_*` dogfooding env var (prelint, skip-drafts,
+  verify-pass, min-confidence), downgrades `actions/checkout@v5` to
+  `v4`, and replaces the local `uses: ./pr-review` with
+  `uses: niko0xdev/action-code-review/pr-review@main`. Cherry-picking
+  would silently disable every dogfooding setting the workflow
+  currently exercises.
+- `test/v2-auto-approve`, `test/v2-delegation`, and
+  `test/customer-compat` carry similar downgrades and one even
+  re-adds a `pr-content` step the current workflow does not call.
+  The fixtures are `examples/clean-test/clean.js`,
+  `examples/customer-test/sample.js` — small JS snippets unrelated
+  to any test runner on `origin/main` (the `pr-review.yml`
+  workflow on `origin/main` does not look at `examples/`).
+- `feat/e2e-reply-test` adds two files under
+  `pr-review/__tests__/fixtures/reply-target/` (a fixture TS file
+  with deliberate `console.log` + `unused` plus a `diff.patch`) and
+  one test at `v2/tests/e2e/reply-e2e.test.ts` (path removed by
+  PR #79). The fixture directory does not exist on `origin/main`,
+  so cherry-picking adds dead files.
+
+**Conclusion:** none of these branches is worth shipping. They look
+like one-shot agent-loop probes, not work the maintainer intends to
+keep. The right action is to delete them locally.
+
 ### Likely stale — predates the `v2/` flatten (PR #79)
 
 These branches add files under `v2/src/`, `v2/tests/`, `v2/dist/` that
@@ -152,12 +184,25 @@ to the current tree without manual rework.
 2. The **4 "source merged but tip differs"** branches are not
    shippable as-is — the same ideas are already on `origin/main`, just
    refactored. Deleting is the right call.
-3. The **6 "real delta"** branches mostly add test fixtures
-   (`examples/*`) and one workflow tweak. Decide per-branch whether
-   to keep the fixture on the current tree or drop the branch.
-4. The **4 "predates flatten"** branches are stale. Close without
+3. The **5 "real delta" fixture branches** all carry workflow
+   downgrades (see "Per-fixture-branch verdict" above). Cherry-picking
+   the fixtures without the workflow change leaves dead files;
+   cherry-picking the workflow change drops the V3 dogfooding settings.
+   Deleting is the right call.
+4. `fix/review-execution-visibility` had its one durable contribution
+   (`tests/e2e/pr-scenarios.test.ts`) cherry-picked as
+   `test/pr-review-scenario-matrix` in round 3. The remaining
+   8 work-in-progress commits are absorbed by PR #118 / #123 / #124 /
+   #126 and should not be re-applied. Delete the branch.
+5. The **4 "predates flatten"** branches are stale. Close without
    merge; re-author any feature you actually want on top of the
    current tree.
+6. **In total, every one of the 14 pre-existing 'unique delta'
+   branches can be deleted locally.** The only branches worth keeping
+   on top of `origin/main` are the two new ones this audit produced:
+   `chore/branch-audit-2026-09-25` (the audit itself) and
+   `test/pr-review-scenario-matrix` (the cherry-picked scenario
+   matrix). Both still need to be reviewed and merged.
 
 ## Remote-only branches (no local tracking branch)
 
