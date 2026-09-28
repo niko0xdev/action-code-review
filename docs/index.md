@@ -29,6 +29,7 @@ Operational quick reference for a run that looks wrong:
 | [research/cloudflare-security-audit-skill-2026-09-18.md](research/cloudflare-security-audit-skill-2026-09-18.md) | Current-source research and bounded report-evidence opportunity from Cloudflare's `security-audit-skill` | Comparing security audit workflow and evidence reporting |
 | [research/review-usage-observability-2026-09-18.md](research/review-usage-observability-2026-09-18.md) | User feedback, pinned Pi event evidence, and the case for reporting review usage in JSON | Auditing token/tool usage and incomplete runs from CI |
 | [research/2026-09-24-file-level-coverage.md](research/2026-09-24-file-level-coverage.md) | Why `review-report` identifies reviewed and skipped files | Auditing review scope in workflow consumers |
+| [research/audit-branches-2026-09-25.md](research/audit-branches-2026-09-25.md) | Inventory of every open branch, classified as obsolete / merged-equivalent / has-unique-delta, with file-level overlap | Triaging which stale branches to delete vs ship; reproduces with `scripts/audit-branches.sh` |
 
 ## Historical decisions (folded in, files removed)
 

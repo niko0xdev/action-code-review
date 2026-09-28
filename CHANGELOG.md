@@ -29,6 +29,13 @@ Questions) lives in `docs/v3-decisions.md`.
   `content` array. That became `Unable to parse harness output as JSON. Output
   started with: ` — the real cause (for example `401 Invalid or expired API
   key`) was invisible. Harness failures now report the upstream error.
+- **A clean review no longer fails the approval path closed.** GitHub omits the
+  `reviewThreads` connection (or its `pageInfo`) when a pull request has no
+  review threads at all; treating that omission as a malformed GraphQL response
+  made every clean review unable to auto-approve. A null `reviewThreads` is
+  now a successful empty result, and a null `pullRequest` is still treated as
+  malformed so the approval path does not silently approve when GitHub returns
+  nothing usable. Ships in #124 alongside the empty-answer guard.
 - **Approval claims are now truthful.** The PR summary no longer prints
   `APPROVED` from a zero-finding count: it renders the publisher's recorded
   outcome (`approved`, `not-permitted`, `failed`, `skipped-*`, `not-requested`).
