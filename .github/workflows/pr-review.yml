@@ -28,7 +28,7 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           openai-base-url: ${{ secrets.OPENAI_API_URL }}
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
-          exclude-patterns: "*.md,*.txt,*.json,*.yml,*.yaml"
+          exclude-patterns: "*.md,*.txt"
           track-progress: 'true'
         env:
           AI_REVIEW_ENABLE_PRELINT: 'true'

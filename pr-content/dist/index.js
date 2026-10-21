@@ -35576,7 +35576,7 @@ const SECURITY_DEFAULTS = {
 const PR_REVIEW_DEFAULTS = {
     openaiModel: 'gpt-4',
     maxFiles: '10',
-    excludePatterns: '*.md,*.txt,*.json,*.yml,*.yaml',
+    excludePatterns: '*.md,*.txt',
     autoApproveWhenResolved: 'true',
     minSeverity: 'critical',
     blockOnIssues: 'true',

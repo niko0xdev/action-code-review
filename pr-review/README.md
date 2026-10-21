@@ -64,7 +64,7 @@ jobs:
 | `openai-model` | OpenAI model to use for review | No | `gpt-4` |
 | `review-prompt` | Custom prompt for OpenAI review | No | Focus on correctness, code quality, security, performance, test coverage, and best practices. Provide actionable, line-specific feedback whenever possible. |
 | `max-files` | Maximum number of files to review | No | `10` |
-| `exclude-patterns` | Comma-separated list of file patterns to exclude | No | `*.md,*.txt,*.json,*.yml,*.yaml` |
+| `exclude-patterns` | Comma-separated list of file patterns to exclude | No | `*.md,*.txt` |
 | `include-dir` | Comma-separated list of directory paths to include in review | No | - |
 | `auto-approve-when-resolved` | Approve the pull request once all AI-created review threads are resolved | No | `true` |
 | `min-severity` | Minimum severity level for comments (low, high, critical) | No | `critical` |
@@ -254,7 +254,7 @@ Exclude specific file patterns from review:
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-    exclude-patterns: '*.md,*.txt,*.json,*.yml,*.yaml,*.lock,*.test.js,*.spec.ts'
+    exclude-patterns: '*.md,*.txt,*.test.js,*.spec.ts'
 ```
 
 Include only specific directories in review:

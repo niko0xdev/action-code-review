@@ -52,7 +52,7 @@ const PR_REVIEW_INPUTS = {
 	'max-files': { required: false, default: '10' },
 	'exclude-patterns': {
 		required: false,
-		default: '*.md,*.txt,*.json,*.yml,*.yaml',
+		default: '*.md,*.txt',
 	},
 	'include-dir': { required: false },
 	'auto-approve-when-resolved': { required: false, default: 'true' },
