@@ -43,6 +43,16 @@ describe('default ignore rules (spec §32)', () => {
 		}
 	);
 
+	it('reviews lockfiles when AI_REVIEW_INCLUDE_LOCKFILES=true', () => {
+		const env = { AI_REVIEW_INCLUDE_LOCKFILES: 'true' };
+		expect(isReviewable(file('pnpm-lock.yaml'), env)).toBe(true);
+		expect(isReviewable(file('node_modules/a/index.js'), env)).toBe(false);
+		expect(isReviewable(file('pnpm-lock.yaml'), {})).toBe(false);
+		expect(
+			isReviewable(file('pnpm-lock.yaml'), { AI_REVIEW_INCLUDE_LOCKFILES: '1' })
+		).toBe(false);
+	});
+
 	it('still reviews dependency manifests', () => {
 		for (const path of [
 			'package.json',
