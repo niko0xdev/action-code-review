@@ -3,7 +3,8 @@ import type { ChangedFile } from '../types/context.js';
 /**
  * Default ignore rules (spec §32). Generated artifacts, snapshots,
  * lockfiles and vendor code never consume review context. Dependency
- * manifests stay reviewable even though lockfiles do not.
+ * manifests stay reviewable even though lockfiles do not, unless
+ * `AI_REVIEW_INCLUDE_LOCKFILES=true` opts lockfiles back in.
  */
 
 export const DEFAULT_IGNORE_PATTERNS: RegExp[] = [
@@ -48,12 +49,15 @@ export function isLockfile(path: string): boolean {
 	return LOCKFILES.has(base);
 }
 
-export function isReviewable(file: ChangedFile): boolean {
+export function isReviewable(
+	file: ChangedFile,
+	env: NodeJS.ProcessEnv = process.env
+): boolean {
 	if (MANIFESTS.has(file.filename)) {
 		return true;
 	}
 	if (isLockfile(file.filename)) {
-		return false;
+		return env.AI_REVIEW_INCLUDE_LOCKFILES === 'true';
 	}
 	return !DEFAULT_IGNORE_PATTERNS.some((pattern) =>
 		pattern.test(file.filename)
@@ -69,7 +73,7 @@ export function prioritizeFiles(
 	maxFiles: number
 ): ChangedFile[] {
 	return files
-		.filter(isReviewable)
+		.filter((file) => isReviewable(file))
 		.sort((a, b) => b.changes - a.changes)
 		.slice(0, maxFiles);
 }

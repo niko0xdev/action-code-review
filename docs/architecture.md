@@ -179,6 +179,7 @@ pnpm build         # ncc → pr-*/dist/index.js
 | `AI_REVIEW_PROFILE` | detected | comma-separated profile override; `auto` = detect, `all` = load every stack's rules |
 | `AI_REVIEW_ENABLE_PRELINT` | `false` | run biome/ruff/swiftlint/ktlint/sqlfluff first (`'true'` to enable) |
 | `AI_REVIEW_SKIP_DRAFTS` | `false` | skip draft PRs (`'true'` to enable); `ready_for_review` still triggers a full review |
+| `AI_REVIEW_INCLUDE_LOCKFILES` | `false` | review lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, and others) instead of skipping them (`'true'` to enable); other default ignore rules still apply |
 | `AI_REVIEW_PI_TIMEOUT_MS` | `900000` | Pi process timeout |
 | `AI_REVIEW_PI_MAX_OUTPUT_BYTES` | `67108864` | last-resort merged stdout+stderr ceiling per harness process (`0` disables). Pi runs in text mode (final message only), so this only fires on a truly stuck process |
 | `AI_REVIEW_PI_MAX_TOOL_CALLS` | `60` | tool-execution ceiling; a runaway tool loop is stopped with an attributable error (`0` disables) |

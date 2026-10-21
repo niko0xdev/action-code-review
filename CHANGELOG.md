@@ -13,6 +13,11 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ## [Unreleased]
 
+### Added
+
+- `AI_REVIEW_INCLUDE_LOCKFILES=true` opts lockfiles into review. Default is
+  unchanged: lockfiles stay excluded and manifests stay reviewable.
+
 ### Fixed
 
 - **Unresolved AI threads now block auto-approval under `GITHUB_TOKEN`.**

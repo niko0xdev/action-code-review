@@ -35930,7 +35930,8 @@ async function preparePiRuntimeConfig(config, options) {
 /**
  * Default ignore rules (spec §32). Generated artifacts, snapshots,
  * lockfiles and vendor code never consume review context. Dependency
- * manifests stay reviewable even though lockfiles do not.
+ * manifests stay reviewable even though lockfiles do not, unless
+ * `AI_REVIEW_INCLUDE_LOCKFILES=true` opts lockfiles back in.
  */
 const DEFAULT_IGNORE_PATTERNS = [
     /node_modules\//,
@@ -35970,12 +35971,12 @@ function isLockfile(path) {
     const base = path.split('/').pop() ?? path;
     return LOCKFILES.has(base);
 }
-function isReviewable(file) {
+function isReviewable(file, env = process.env) {
     if (MANIFESTS.has(file.filename)) {
         return true;
     }
     if (isLockfile(file.filename)) {
-        return false;
+        return env.AI_REVIEW_INCLUDE_LOCKFILES === 'true';
     }
     return !DEFAULT_IGNORE_PATTERNS.some((pattern) => pattern.test(file.filename));
 }
@@ -35985,7 +35986,7 @@ function isReviewable(file) {
  */
 function prioritizeFiles(files, maxFiles) {
     return files
-        .filter(isReviewable)
+        .filter((file) => isReviewable(file))
         .sort((a, b) => b.changes - a.changes)
         .slice(0, maxFiles);
 }
@@ -37856,8 +37857,18 @@ async function listReviewThreads(graphql, args) {
             number: args.pullNumber,
             after,
         }));
+        // GitHub omits the connection (or its pageInfo) when a pull request has
+        // no review threads at all. A null `reviewThreads` is a successful
+        // empty result, not a malformed response; treating it as one made the
+        // approval path fail closed for every clean review. A missing
+        // `pullRequest` or `nodes` shape is still a malformed response.
+        if (raw.repository?.pullRequest === null) {
+            throw new Error('GitHub GraphQL reviewThreads response is incomplete');
+        }
         const connection = raw.repository?.pullRequest?.reviewThreads;
-        if (!connection?.pageInfo || !Array.isArray(connection.nodes)) {
+        if (connection === null || connection === undefined)
+            break;
+        if (!connection.pageInfo || !Array.isArray(connection.nodes)) {
             throw new Error('GitHub GraphQL reviewThreads response is incomplete');
         }
         for (const node of connection.nodes) {
@@ -38182,8 +38193,20 @@ function extractAssistantResult(stdout) {
                 for (const block of event.message.content)
                     if (block?.type === 'text' && typeof block.text === 'string')
                         currentMessage.push(block.text);
+                const joined = currentMessage.join('');
+                // Pi can exit cleanly (no errorMessage, stopReason "stop") with
+                // an empty content array — for example when a gateway answers a
+                // streaming request with a non-streaming body. Surface this as a
+                // harness failure rather than letting it fall through to the JSON
+                // parser, which would report the misleading
+                // "Unable to parse harness output as JSON. Output started with: ".
+                if (joined.trim().length === 0 && !lastError) {
+                    lastError =
+                        'the model returned an empty assistant message. Check the gateway base URL, model id and streaming compatibility.';
+                    continue;
+                }
                 if (currentMessage.length > 0)
-                    messages.push(currentMessage.join(''));
+                    messages.push(joined);
             }
         }
         catch {
@@ -38327,8 +38350,16 @@ const MAX_REPAIR_ECHO_CHARS = 4000;
  * the actual cause (401, timeout, aborted request).
  */
 function assertAssistantUsable(assistant) {
-    if (assistant.error && !assistant.text.trim())
-        throw new Error(`Pi harness reported an error instead of a review result: ${assistant.error}`);
+    const text = assistant.text.trim();
+    if (!text) {
+        if (assistant.error)
+            throw new Error(`Pi harness reported an error instead of a review result: ${assistant.error}`);
+        // Pi can exit cleanly with no error and no content — for example when a
+        // gateway answers a streaming request with a non-streaming body.
+        // Without this guard the group fails with the misleading
+        // "Unable to parse harness output as JSON. Output started with: ".
+        throw new Error('Pi harness produced no output: the model returned an empty assistant message. Check the gateway base URL, model id and streaming compatibility.');
+    }
 }
 /**
  * Build the follow-up prompt used when a harness answer cannot be parsed.
