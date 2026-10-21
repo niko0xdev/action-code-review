@@ -75,7 +75,7 @@ None declared.
 | `openai-model` | false | `'gpt-4'` |
 | `review-prompt` | false | `'Focus on correctness, code quality, security, performance, test coverage, and best practices. Provide actionable, line-specific feedback whenever possible.'` |
 | `max-files` | false | `'10'` |
-| `exclude-patterns` | false | `'*.md,*.txt,*.json,*.yml,*.yaml'` |
+| `exclude-patterns` | false | `'*.md,*.txt'` |
 | `include-dir` | false | — (no default) |
 | `auto-approve-when-resolved` | false | `'true'` |
 | `min-severity` | false | `'critical'` |

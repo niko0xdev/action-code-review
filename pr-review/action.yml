@@ -30,7 +30,7 @@ inputs:
   exclude-patterns:
     description: 'Comma-separated list of file patterns to exclude from review'
     required: false
-    default: '*.md,*.txt,*.json,*.yml,*.yaml'
+    default: '*.md,*.txt'
   include-dir:
     description: 'Comma-separated list of directory paths to include in review. Only files in these directories will be reviewed.'
     required: false
