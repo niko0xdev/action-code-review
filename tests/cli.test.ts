@@ -1,11 +1,29 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyLegacyFilters, main, parseArgs } from '../src/cli.js';
+import {
+	applyLegacyFilters,
+	escalateMaxTokens,
+	main,
+	parseArgs,
+} from '../src/cli.js';
 
 import {
 	FINDING_LIMITS,
 	SEVERITY_ORDER,
 	type Severity,
 } from '../src/types/finding.js';
+
+describe('escalateMaxTokens', () => {
+	it('doubles the budget', () => {
+		expect(escalateMaxTokens(4096)).toBe(8192);
+		expect(escalateMaxTokens(8192)).toBe(16384);
+	});
+
+	it('stops at the ceiling', () => {
+		expect(escalateMaxTokens(16384)).toBe(32768);
+		expect(escalateMaxTokens(32768)).toBe(32768);
+		expect(escalateMaxTokens(100000)).toBe(32768);
+	});
+});
 
 describe('parseArgs', () => {
 	it('selects pr-review by default', () => {
