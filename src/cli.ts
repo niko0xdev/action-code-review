@@ -279,6 +279,18 @@ async function appendAgentDebugToSummary(
 	}
 }
 
+const DEFAULT_PR_CONTENT_MAX_TOKENS = 4096;
+const PR_CONTENT_RETRY_CEILING = 32_768;
+
+/**
+ * Retry budget after a truncated, empty, or unparseable answer. Reasoning
+ * models spend output tokens on thinking before the JSON, so repeating the
+ * same budget fails the same way; double it up to a ceiling.
+ */
+export function escalateMaxTokens(current: number): number {
+	return Math.min(current * 2, PR_CONTENT_RETRY_CEILING);
+}
+
 async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 	const started = performance.now();
 	const context = github.context;
@@ -334,20 +346,22 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 	];
 	const complete = (maxOutputTokens: number) =>
 		provider.complete(messages, { temperature: 0.3, maxOutputTokens });
+	let budget = options.maxTokens || DEFAULT_PR_CONTENT_MAX_TOKENS;
 	let completion: ChatCompletion;
 	try {
-		completion = await complete(options.maxTokens || 4096);
+		completion = await complete(budget);
 	} catch (error) {
 		core.warning(
-			`First AI call failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=4096`
+			`First AI call failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=${budget}`
 		);
-		completion = await complete(4096);
+		completion = await complete(budget);
 	}
 	if (!completion.content || completion.finishReason === 'length') {
+		budget = escalateMaxTokens(budget);
 		core.warning(
-			'AI response truncated or empty; retrying with max_tokens=4096'
+			`AI response truncated or empty; retrying with max_tokens=${budget}`
 		);
-		completion = await complete(4096);
+		completion = await complete(budget);
 	}
 	try {
 		await updatePrContent(octokit, repoInfo.owner, repoInfo.repo, prNumber, {
@@ -355,10 +369,11 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 			templateContent,
 		});
 	} catch (error) {
+		budget = escalateMaxTokens(budget);
 		core.warning(
-			`First parse failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=4096`
+			`First parse failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=${budget}`
 		);
-		completion = await complete(4096);
+		completion = await complete(budget);
 		await updatePrContent(octokit, repoInfo.owner, repoInfo.repo, prNumber, {
 			response: completion.content,
 			templateContent,

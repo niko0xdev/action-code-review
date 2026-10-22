@@ -20,6 +20,10 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Fixed
 
+- **`pr-content` retries now raise the output budget.** A truncated, empty, or
+  unparseable answer was retried with a hardcoded `max_tokens=4096`, so a
+  reasoning model that spent the whole budget thinking failed identically on
+  every attempt. Each retry now doubles the budget, up to 32768.
 - **Unresolved AI threads now block auto-approval under `GITHUB_TOKEN`.**
   GraphQL `reviewThreads` reports the workflow token's actor as
   `github-actions`, while REST uses `github-actions[bot]`. Without the `[bot]`

@@ -10,7 +10,7 @@ This GitHub Action automatically updates pull request titles and descriptions us
 | `openai-api-key` | OpenAI API key for generating content | Yes | - |
 | `openai-base-url` | Custom OpenAI API base URL (optional) | No | - |
 | `openai-model` | OpenAI model to use | No | `gpt-4` |
-| `max-tokens` | Maximum tokens for AI response | No | `1000` |
+| `max-tokens` | Maximum tokens for AI response; retries after a truncated or unparseable answer double it, up to 32768 | No | `1000` |
 | `include-file-list` | Whether to include list of changed files in description | No | `true` |
 | `custom-instructions` | Additional instructions for content generation | No | `''` |
 | `template-path` | Path to pull request template file in the repository | No | `.github/pull_request_template.md` |
