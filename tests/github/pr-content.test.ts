@@ -43,4 +43,31 @@ describe('updatePrContent', () => {
 			updatePrContent(octokit(), 'a', 'r', 1, { response: '{"title":"x"' })
 		).rejects.toThrow(/title and description/);
 	});
+
+	it('keeps the AI description when the template has no anchor', async () => {
+		const client = octokit();
+		await updatePrContent(client, 'acme', 'repo', 1, {
+			response:
+				'{"title":"New","description":"## Summary\\nReal change\\n\\n## Checklist\\n- [x] Tests"}',
+			templateContent:
+				'## Summary\n_Describe the change_\n\n## Checklist\n- [ ] Tests',
+		});
+		expect(client.rest.pulls.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				body: '## Summary\nReal change\n\n## Checklist\n- [x] Tests',
+			})
+		);
+	});
+
+	it('fills the template when it carries the description anchor', async () => {
+		const client = octokit();
+		await updatePrContent(client, 'acme', 'repo', 1, {
+			response: '{"title":"New","description":"Real change"}',
+			templateContent:
+				'## Summary\n<!-- AI will fill this section with a description of what changed -->\n',
+		});
+		expect(client.rest.pulls.update).toHaveBeenCalledWith(
+			expect.objectContaining({ body: '## Summary\nReal change\n' })
+		);
+	});
 });

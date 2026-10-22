@@ -20,6 +20,12 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Fixed
 
+- **`pr-content` no longer replaces the generated description with the blank
+  template.** When the pull request template had no
+  `<!-- AI will fill this section ... -->` anchor, nothing was substituted and
+  the raw template was written back, so the title updated while the body
+  reverted to placeholders. The AI description is now used as written in that
+  case.
 - **`pr-content` retries now raise the output budget.** A truncated, empty, or
   unparseable answer was retried with a hardcoded `max_tokens=4096`, so a
   reasoning model that spent the whole budget thinking failed identically on
