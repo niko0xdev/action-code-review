@@ -36602,10 +36602,15 @@ function parseUpdate(response) {
     }
     return { title: parsed.title, description: parsed.description };
 }
+const DESCRIPTION_ANCHOR = /<!-- AI will fill this section with a description of what changed -->/;
 function applyTemplate(description, templateContent) {
-    if (!templateContent || description.includes('## Description'))
+    // Without the anchor there is nothing to fill; returning the template would
+    // discard the generated text, so keep the AI description as written.
+    if (!templateContent ||
+        description.includes('## Description') ||
+        !DESCRIPTION_ANCHOR.test(templateContent))
         return description;
-    let result = templateContent.replace(/<!-- AI will fill this section with a description of what changed -->/, description);
+    let result = templateContent.replace(DESCRIPTION_ANCHOR, description);
     if (description.includes('## How Has This Been Tested')) {
         const match = description.match(/## How Has This Been Tested\s*\n([\s\S]*?)(?=\n##|\n\n|$)/);
         if (match) {
