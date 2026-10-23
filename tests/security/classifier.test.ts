@@ -113,4 +113,27 @@ describe('RiskClassifier', () => {
 		expect(result.domains).toContain('payments');
 		expect(result.reasons.length).toBeGreaterThanOrEqual(3);
 	});
+
+	it('classifies client-side rendering sinks as client-xss domain', () => {
+		const files = [
+			{
+				filename: 'src/components/RichText.tsx',
+				patch: '+<div dangerouslySetInnerHTML={{ __html: body }} />',
+			},
+		];
+		const result = classifyPrRisk(files);
+		expect(result.domains).toContain('client-xss');
+	});
+
+	it('classifies credential-shaped content as secrets domain', () => {
+		const files = [
+			{
+				filename: 'src/config/keys.ts',
+				patch: '+export const KEY = "AKIAIOSFODNN7EXAMPLE";',
+			},
+		];
+		const result = classifyPrRisk(files);
+		expect(result.level).toBe('critical_surface');
+		expect(result.domains).toContain('secrets');
+	});
 });

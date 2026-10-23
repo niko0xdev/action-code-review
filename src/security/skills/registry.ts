@@ -9,6 +9,8 @@
  * Spec reference: §7, §14, §32.
  */
 
+import { LICENSE_CLEAN_SKILLS } from './license-clean.js';
+
 export interface SecuritySkill {
 	id: string;
 	domain: string;
@@ -20,6 +22,7 @@ export interface SecuritySkill {
 }
 
 export const CURATED_SECURITY_SKILLS: SecuritySkill[] = [
+	...LICENSE_CLEAN_SKILLS,
 	{
 		id: 'auth-authentication-security',
 		domain: 'authentication',
