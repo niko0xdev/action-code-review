@@ -100,7 +100,13 @@ Derived and adapted from `mukul975/Anthropic-Cybersecurity-Skills` under the **A
 - AI & LLM Application Security (CWE-20, CWE-74)
 - File Upload & Deserialization Security (CWE-434, CWE-502)
 
-Skills are dynamically and deterministically routed by the `SecuritySkillSelector` based on the PR risk classifier output.
+Skills are dynamically and deterministically routed by the `SecuritySkillSelector` based on the PR risk classifier output. Every non-empty render appends a seven-question Review Validation Gate (file, line, source, data flow, impact, fix, false-positive evidence); findings that cannot answer all seven are dropped.
+
+Licence-clean defensive skills (original prose; MIT/Apache sources ported with attribution in code comments, OWASP sheets used as linked references only, never copied verbatim):
+- Payment Safety: Race Conditions & Idempotency (CWE-367, CWE-841)
+- Client-Side XSS: Contextual Output Encoding (CWE-79, CWE-116)
+- Secret Hygiene: Entropy Scan & Allowlisting (CWE-798, CWE-312)
+- Cryptographic Hygiene & Randomness (CWE-327, CWE-338, CWE-295)
 
 ---
 

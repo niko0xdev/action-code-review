@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import {
+	LICENSE_CLEAN_SKILLS,
+	REVIEW_VALIDATION_GATE,
+} from '../../src/security/skills/license-clean.js';
 import { CURATED_SECURITY_SKILLS } from '../../src/security/skills/registry.js';
 import {
 	renderSkillsForPrompt,
@@ -36,5 +40,33 @@ describe('SecuritySkills', () => {
 		const rendered = renderSkillsForPrompt(selected);
 		expect(rendered).toContain('Targeted Security Review Knowledge');
 		expect(rendered).toContain('Authentication');
+	});
+
+	it('includes licence-clean defensive skills in the registry', () => {
+		const ids = CURATED_SECURITY_SKILLS.map((s) => s.id);
+		for (const skill of LICENSE_CLEAN_SKILLS) {
+			expect(ids).toContain(skill.id);
+		}
+		expect(ids).toContain('payments-race-idempotency');
+		expect(ids).toContain('client-xss-encoding');
+		expect(ids).toContain('secrets-entropy-hygiene');
+		expect(ids).toContain('crypto-hygiene-randomness');
+	});
+
+	it('routes payment and client-xss domains to their skills', () => {
+		const selected = selectSecuritySkills(['payments', 'client-xss']);
+		const ids = selected.map((s) => s.id);
+		expect(ids).toContain('payments-race-idempotency');
+		expect(ids).toContain('client-xss-encoding');
+	});
+
+	it('appends the validation gate to every non-empty render', () => {
+		const rendered = renderSkillsForPrompt(selectSecuritySkills(['payments']));
+		expect(rendered).toContain('Review Validation Gate');
+		expect(rendered).toContain(REVIEW_VALIDATION_GATE.trim().split('\n')[0]);
+	});
+
+	it('renders empty string cleanly when no skills are selected', () => {
+		expect(renderSkillsForPrompt([])).toBe('');
 	});
 });
