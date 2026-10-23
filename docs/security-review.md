@@ -45,7 +45,7 @@
 
 ## 2. Execution Profiles
 
-- **`diff`** (Default PR security mode): Fast, cost-efficient security analysis over PR changed files, hunks, and dependencies. Combines static scanners (Semgrep, secret scan, dependency scan) with skill-routed Pi reasoning and quality gating.
+- **`diff`** (Default PR security mode): Fast, cost-efficient security analysis over PR changed files, hunks, and dependencies. Combines static scanners (Semgrep, secret scan, dependency scan, OSV dependency-CVE scan) with skill-routed Pi reasoning and quality gating.
 - **`lite`**: Lightweight repository-wide security scan focusing on critical surfaces (auth, API boundaries, crypto, CI/CD).
 - **`balanced`**: Standard repository security audit across all domain categories with evidence collection and SARIF generation.
 - **`deep`**: Exhaustive security audit evaluating data flows, indirect attack chains, and multi-file vulnerabilities.
@@ -210,6 +210,20 @@ vs findings-absent exits); re-verify the nonzero-exit rule against the pinned
 CLI version. WATCH: ruleset or network failures surface as structured `errors`
 with exit 0 — coverage can still be partial when only the failing subset is
 excluded.
+
+---
+
+### OSV Dependency-CVE Scanner
+
+The `osv-dependency-cve` scanner extracts pinned (name, version) pairs added
+in the diff from `package.json`, `package-lock.json`, `pnpm-lock.yaml`,
+`requirements*.txt`, and `go.mod`, then queries the public OSV.dev batch API
+(`https://api.osv.dev/v1/querybatch`, no token required) for known
+vulnerabilities. Findings carry the CVE/GHSA identifier, CVSS-derived severity,
+a fixed-version remediation hint when the OSV record provides one, and a link
+to the OSV advisory page. Network failure degrades to `skipped`, never to a
+run failure; an empty added-dependency list or `OSV_SCAN_DISABLED=1` also
+reports `skipped`. At most 50 packages are queried per run.
 
 ---
 

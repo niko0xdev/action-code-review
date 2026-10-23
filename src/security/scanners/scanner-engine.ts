@@ -4,6 +4,7 @@ import type {
 	SecurityFinding,
 } from '../types.js';
 import { scanDependenciesInDiff } from './dependency-scanner.js';
+import { runOsvDependencyScan } from './osv-scanner.js';
 import { scanSecretsInDiff } from './secret-scanner.js';
 import { runSemgrepScanner } from './semgrep.js';
 
@@ -64,13 +65,18 @@ export async function runSecurityScanners(
 		});
 	}
 
-	// 3. Semgrep Scanner (runs if binary available)
+	// 3. OSV Dependency CVE Scanner (queries osv.dev for added deps)
+	const osvRes = await runOsvDependencyScan(context.changedFiles);
+	executions.push(osvRes.execution);
+	allFindings.push(...osvRes.findings);
+
+	// 4. Semgrep Scanner (runs if binary available)
 	const filenames = context.changedFiles.map((f) => f.filename);
 	const semgrepRes = await runSemgrepScanner(context.repositoryPath, filenames);
 	executions.push(semgrepRes.execution);
 	allFindings.push(...semgrepRes.findings);
 
-	// 4. CodeQL (recorded as skipped when not present in environment)
+	// 5. CodeQL (recorded as skipped when not present in environment)
 	if (!process.env.CODEQL_ACTION_ENABLED) {
 		executions.push({
 			name: 'codeql',
