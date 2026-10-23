@@ -711,7 +711,7 @@ export async function main(argv: string[]): Promise<void> {
 					);
 				}
 			}
-			// ponytail: all security skills into default review (8 domains, ~4k chars); filter by domain when cost matters.
+			// ponytail: all security skills into default review (12 domains + validation gate); filter by domain when cost matters.
 			const allSecurityPrompt = renderSkillsForPrompt(CURATED_SECURITY_SKILLS);
 			const promptFile = await readPromptFileIfNeeded(
 				reviewContext.repositoryPath

@@ -72,6 +72,26 @@ const SECURITY_DOMAIN_PATTERNS: DomainPattern[] = [
 		weight: 3,
 		reason: 'Data parsing / deserialization boundary changes',
 	},
+	// Client-side rendering (XSS surfaces)
+	{
+		domain: 'client-xss',
+		pathRegex:
+			/(?:template|renderer|markdown|sanitiz|dompurify|rich-text|wysiwyg)/i,
+		contentRegex:
+			/(?:dangerouslySetInnerHTML|innerHTML|outerHTML|insertAdjacentHTML|document\.write|v-html|\[innerHTML\]|bypassSecurityTrustHtml)/i,
+		weight: 3,
+		reason:
+			'Client-side HTML rendering / DOM sink changes (potential XSS surface)',
+	},
+	// Secrets & credentials in diffs
+	{
+		domain: 'secrets',
+		pathRegex: /(?:\.env|secret|credential|token|keyvault|keystore)/i,
+		contentRegex:
+			/(?:api[_-]?key|secret[_-]?key|BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|xox[bap]-|AKIA[0-9A-Z]{16})/i,
+		weight: 4,
+		reason: 'Potential secret / credential material in changed files',
+	},
 	// Network & HTTP client (SSRF surfaces)
 	{
 		domain: 'network-boundary',

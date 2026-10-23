@@ -1,3 +1,4 @@
+import { REVIEW_VALIDATION_GATE } from './license-clean.js';
 import { CURATED_SECURITY_SKILLS, type SecuritySkill } from './registry.js';
 
 /**
@@ -36,5 +37,5 @@ export function renderSkillsForPrompt(skills: SecuritySkill[]): string {
 	const parts = skills.map(
 		(skill) => `#### ${skill.title}\n${skill.promptInstructions.trim()}`
 	);
-	return `\n## Targeted Security Review Knowledge\n${parts.join('\n\n')}\n`;
+	return `\n## Targeted Security Review Knowledge\n${parts.join('\n\n')}\n\n${REVIEW_VALIDATION_GATE}\n`;
 }
