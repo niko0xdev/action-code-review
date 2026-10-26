@@ -36,6 +36,18 @@ export function buildPiRuntimeModelsJson(config: LlmConfig): string {
 	);
 }
 
+/**
+ * Pi settings for a review run. Auto-compaction is off: Pi text mode prints
+ * only the last message in its state, and compaction (triggered once the
+ * context passes `contextWindow - 16384`) replaces that state after the final
+ * answer. A review that read many files then exited 0 with empty stdout and
+ * surfaced as "the model returned an empty assistant message". With compaction
+ * off, a real overflow is reported by the provider as an explicit error.
+ */
+export function buildPiRuntimeSettingsJson(): string {
+	return JSON.stringify({ compaction: { enabled: false } }, null, 2);
+}
+
 export interface PiRuntimeConfig {
 	configDir: string;
 	cleanup(): Promise<void>;
@@ -75,6 +87,11 @@ export async function preparePiRuntimeConfig(
 		await writeFile(
 			join(configDir, 'models.json'),
 			buildPiRuntimeModelsJson(config),
+			'utf8'
+		);
+		await writeFile(
+			join(configDir, 'settings.json'),
+			buildPiRuntimeSettingsJson(),
 			'utf8'
 		);
 		if (options?.profiles && options.profiles.length > 0) {

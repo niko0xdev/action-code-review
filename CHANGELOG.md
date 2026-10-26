@@ -20,6 +20,15 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Fixed
 
+- **A long review no longer fails with "the model returned an empty assistant
+  message".** Pi text mode prints only the last message in its state, and Pi
+  auto-compacts the session once the context passes `contextWindow - 16384`
+  (about 111,600 tokens for the declared 128k window), replacing that state
+  after the final answer. A review that grep'd and read many files (a
+  cross-module pull request reached 164k tokens) therefore exited 0 with empty
+  stdout. The runtime config now writes a Pi `settings.json` with
+  `compaction.enabled=false`; a genuine context overflow is reported by the
+  provider as an explicit error instead.
 - **`pr-content` no longer replaces the generated description with the blank
   template.** When the pull request template had no
   `<!-- AI will fill this section ... -->` anchor, nothing was substituted and

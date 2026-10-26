@@ -56,7 +56,7 @@ engine CLI (src/cli.ts)
   ├─ fetchPrContext         — PR metadata + paginated file list
   ├─ legacy exclude/include filters + change-volume prioritization
   ├─ detectProfiles         — react/nextjs/nestjs/nodejs/ts/js/python/swift/kotlin
-  ├─ preparePiRuntimeConfig — models.json in a temp PI_CODING_AGENT_DIR
+  ├─ preparePiRuntimeConfig — models.json and settings.json (compaction off) in a temp PI_CODING_AGENT_DIR
   ↓
 Pi coding agent (child process, read-only tools: read,grep,find,ls)
   ↓  OpenAI-compatible gateway (chat/completions)

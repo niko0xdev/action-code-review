@@ -51,6 +51,21 @@ describe('preparePiRuntimeConfig — skills', () => {
 		}
 	});
 
+	it('disables Pi auto-compaction so the final answer is never replaced', async () => {
+		// Pi text mode prints only the last message in its state. Auto-compaction
+		// (context > contextWindow - 16384) rewrites that state after the final
+		// answer, so a long agentic review exited 0 with an empty stdout.
+		const cfg = await preparePiRuntimeConfig(FAKE_LLM);
+		try {
+			const settings = JSON.parse(
+				readFileSync(join(cfg.configDir, 'settings.json'), 'utf8')
+			);
+			expect(settings.compaction).toEqual({ enabled: false });
+		} finally {
+			await cfg.cleanup();
+		}
+	});
+
 	it('omits the skills/ directory when no profiles are provided', async () => {
 		const cfg = await preparePiRuntimeConfig(FAKE_LLM);
 		try {
