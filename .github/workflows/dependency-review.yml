@@ -15,9 +15,9 @@ jobs:
     name: Dependency review
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Trial: non-blocking until the dependency graph is confirmed enabled in the
-    # repository settings. Remove this line to make the check blocking.
-    continue-on-error: true
+    # Opt-in: skipped unless the owner enables the dependency graph and sets the
+    # repository variable DEPENDENCY_REVIEW_ENABLED to 'true'.
+    if: ${{ vars.DEPENDENCY_REVIEW_ENABLED == 'true' }}
     steps:
       - name: Harden runner (audit)
         uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0

@@ -65,6 +65,8 @@ describe('repository workflows', () => {
 		expect(wf.permissions).toEqual({ contents: 'read' });
 		const job = wf.jobs['dependency-review'];
 		expect(job.permissions).toBeUndefined();
+		expect(job.if).toBe("${{ vars.DEPENDENCY_REVIEW_ENABLED == 'true' }}");
+		expect(job['continue-on-error']).toBeUndefined();
 		const step = job.steps.find((s: any) =>
 			String(s.uses).startsWith('actions/dependency-review-action@')
 		);
