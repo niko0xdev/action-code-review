@@ -60,6 +60,10 @@ pnpm test && pnpm typecheck && pnpm lint
 pnpm build   # emits pr-review/dist/index.js + pr-content/dist/index.js
 ```
 
+CI (`.github/workflows/ci.yml`) runs lint, typecheck, tests, and `pnpm build`,
+then fails if the committed `pr-*/dist` bundles differ from a fresh build.
+Rebuild with the pinned `ncc` (`pnpm build`) and commit the bundles.
+
 Engine lives in `src/`; contract tests (`tests/contract.test.ts`) fail on
 any frozen input/output drift. The repo reviews its own PRs
 (`.github/workflows/pr-review.yml`).
