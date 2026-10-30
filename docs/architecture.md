@@ -175,7 +175,8 @@ Properties:
 `pnpm test:coverage` enforces the thresholds in `vitest.config.ts` (lines and
 statements 87, functions 83, branches 82), set just below the totals measured
 when `src/cli.ts` was split into `src/runners/`. Raise them as coverage grows;
-never lower them to make a change pass. `tests/cli-main.test.ts` pins the
+never lower them to make a change pass. CI runs `pnpm test:coverage`, so a
+pull request that drops below the floor fails. `tests/cli-main.test.ts` pins the
 observable behaviour of each `main()` flow.
 
 ## Running
