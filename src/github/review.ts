@@ -206,15 +206,16 @@ export async function publishReview(
 		repo,
 		prNumber
 	);
-	const findings = result.findings.filter(
+	// The blocking decision covers every valid finding, including those already
+	// commented on a previous run: a re-run must not silently drop the
+	// REQUEST_CHANGES state just because nothing new needs posting.
+	const freshFindings = result.findings.filter(
 		(finding) => !existingIds.has(normalizeCommentId(finding))
 	);
-	const hasBlockingFinding = findings.some(
-		(finding) => finding.severity !== 'low'
-	);
-	let findingsToPublish: Finding[] = findings;
+	let findingsToPublish: Finding[] = freshFindings;
+	let validFindings: Finding[] = result.findings;
 	if (params.bufferInlineComments) {
-		const buffered = findings.map(
+		const buffered = freshFindings.map(
 			(f) =>
 				({ ...f, ts: new Date().toISOString() }) as unknown as import(
 					'./buffer.js'
@@ -230,23 +231,37 @@ export async function publishReview(
 			);
 		}
 		findingsToPublish = real as unknown as Finding[];
+		const probeIds = new Set(
+			(probe as unknown as Finding[]).map((f) => normalizeCommentId(f))
+		);
+		validFindings = result.findings.filter(
+			(f) => !probeIds.has(normalizeCommentId(f))
+		);
 	}
-	if (findingsToPublish.length > 0) {
-		// Honor the frozen block-on-issues contract: when the caller turns
-		// blocking off, findings are posted as plain COMMENTs instead of
-		// REQUEST_CHANGES (docs/v1-interface-contract.md).
-		const shouldBlock = params.blockOnIssues !== false && hasBlockingFinding;
+	const hasBlockingFinding = validFindings.some(
+		(finding) => finding.severity !== 'low'
+	);
+	// Honor the frozen block-on-issues contract: when the caller turns
+	// blocking off, findings are posted as plain COMMENTs instead of
+	// REQUEST_CHANGES (docs/v1-interface-contract.md).
+	const shouldBlock = params.blockOnIssues !== false && hasBlockingFinding;
+	if (findingsToPublish.length > 0 || shouldBlock) {
 		const payload = buildReviewPayload(findingsToPublish, headSha, {
 			blockOnIssues: shouldBlock,
 		});
+		const event = shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT';
+		// GitHub requires a body when a review carries no inline comments.
+		const eventOnlyBody =
+			'Blocking findings remain open on this pull request. See the summary comment for details.';
 		try {
 			await octokit.rest.pulls.createReview({
 				owner,
 				repo,
 				pull_number: prNumber,
 				commit_id: payload.commit_id,
-				event: shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT',
+				event,
 				comments: payload.comments,
+				...(payload.comments.length === 0 ? { body: eventOnlyBody } : {}),
 			});
 		} catch (error) {
 			core.warning(
@@ -273,6 +288,24 @@ export async function publishReview(
 					});
 				}
 			}
+			// The review event must survive the per-comment fallback.
+			if (shouldBlock) {
+				try {
+					await octokit.rest.pulls.createReview({
+						owner,
+						repo,
+						pull_number: prNumber,
+						commit_id: headSha,
+						event,
+						comments: [],
+						body: eventOnlyBody,
+					});
+				} catch (eventError) {
+					core.warning(
+						`Could not submit ${event} review after fallback: ${redactDetail(eventError)}`
+					);
+				}
+			}
 		}
 	}
 	// Resolve the approval before rendering anything: the summary must report
@@ -282,13 +315,18 @@ export async function publishReview(
 		hasWrite,
 		hasBlockingFinding,
 	});
+	const alreadyCommented = validFindings.length - findingsToPublish.length;
+	const alreadyCommentedNote =
+		alreadyCommented > 0
+			? `\n\n> ${alreadyCommented} finding(s) already commented on earlier runs; not posted again.`
+			: '';
 	const marker = stickySummaryMarker(owner, repo, prNumber);
 	const summaryBody = `${buildSummaryBody({
 		risk: result.risk,
 		counts: result.counts,
 		filesReviewed: result.filesReviewed,
 		summary: result.summary,
-		findings,
+		findings: validFindings,
 		model: params.model,
 		durationMs: params.durationMs,
 		filesTotal: params.filesTotal,
@@ -300,7 +338,7 @@ export async function publishReview(
 		ruleCoverage: result.ruleCoverage,
 		reviewStatus: result.reviewStatus,
 		approval: result.approval,
-	})}\n\n${marker}`;
+	})}${alreadyCommentedNote}\n\n${marker}`;
 	if (params.stickySummary) {
 		const existing = await findStickyComment(
 			octokit,

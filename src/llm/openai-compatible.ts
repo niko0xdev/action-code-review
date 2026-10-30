@@ -31,12 +31,51 @@ interface WireResponse {
 	};
 }
 
+export interface RetryOptions {
+	maxAttempts?: number;
+	sleep?: (ms: number) => Promise<void>;
+	random?: () => number;
+}
+
+const MAX_ATTEMPTS = 3;
+const BASE_DELAY_MS = 1000;
+const MAX_DELAY_MS = 30_000;
+const TRANSIENT_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+
+const defaultSleep = (ms: number) =>
+	new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Errors from a failed connection (not a timeout, not a bad body). */
+const CONNECTION_ERRORS = new WeakSet<LlmError>();
+
+/**
+ * Transient: listed HTTP statuses and connection resets. Request timeouts and
+ * unparseable 200 bodies are not retried: a timeout would multiply the
+ * wait (workflow limits), and a bad body means the paid call already ran.
+ */
+function isTransient(error: unknown): boolean {
+	if (!(error instanceof LlmError)) return false;
+	if (error.status === undefined) return CONNECTION_ERRORS.has(error);
+	return TRANSIENT_STATUS.has(error.status);
+}
+
+/** `Retry-After` as non-negative integer seconds or an HTTP date; else undefined. */
+function parseRetryAfter(value: string | null): number | undefined {
+	const text = value?.trim();
+	if (!text) return undefined;
+	if (/^\d+$/.test(text)) return Number(text) * 1000;
+	if (!/[a-z]/i.test(text)) return undefined;
+	const at = Date.parse(text);
+	return Number.isNaN(at) ? undefined : Math.max(0, at - Date.now());
+}
+
 export class OpenAiCompatibleProvider implements LlmProvider {
 	constructor(
 		private readonly config: LlmConfig,
 		private readonly capabilities: ProviderCapabilities = DEFAULT_CAPABILITIES,
 		private readonly fetchImpl: typeof fetch = globalThis.fetch,
-		private readonly timeoutMs: number = timeoutFromEnv()
+		private readonly timeoutMs: number = timeoutFromEnv(),
+		private readonly retry: RetryOptions = {}
 	) {}
 
 	async complete(
@@ -52,27 +91,63 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 				options?.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
 		};
 
+		const maxAttempts = this.retry.maxAttempts ?? MAX_ATTEMPTS;
+		const sleep = this.retry.sleep ?? defaultSleep;
+		const random = this.retry.random ?? Math.random;
+		for (let attempt = 1; ; attempt++) {
+			try {
+				return await this.attempt(url, body);
+			} catch (error) {
+				if (attempt >= maxAttempts || !isTransient(error)) throw error;
+				// Retry-After can lengthen the wait, never shorten it below backoff.
+				const floor = Math.round(
+					BASE_DELAY_MS * 2 ** (attempt - 1) * (0.5 + random())
+				);
+				const delay = Math.max(floor, (error as LlmError).retryAfterMs ?? 0);
+				await sleep(Math.min(delay, MAX_DELAY_MS));
+			}
+		}
+	}
+
+	/** One HTTP attempt with its own deadline, covering body parsing too. */
+	private async attempt(
+		url: string,
+		body: Record<string, unknown>
+	): Promise<ChatCompletion> {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+		const redact = (text: string) =>
+			scrubSecrets(
+				this.config.apiKey
+					? text.replaceAll(this.config.apiKey, '[redacted]')
+					: text
+			);
 
 		try {
-			const response = await this.fetchImpl(url, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${this.config.apiKey}`,
-				},
-				body: JSON.stringify(body),
-				signal: controller.signal,
-			});
-			if (!response.ok) {
-				const detail = (await safeErrorDetail(response)).replaceAll(
-					this.config.apiKey,
-					'[redacted]'
+			let response: Response;
+			try {
+				response = await this.fetchImpl(url, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${this.config.apiKey}`,
+					},
+					body: JSON.stringify(body),
+					signal: controller.signal,
+				});
+			} catch (error) {
+				const failure = new LlmError(
+					`LLM request failed: ${redact(error instanceof Error ? error.message : String(error))}`
 				);
+				if (!controller.signal.aborted) CONNECTION_ERRORS.add(failure);
+				throw failure;
+			}
+			if (!response.ok) {
+				const detail = redact(await safeErrorDetail(response));
 				throw new LlmError(
 					`LLM endpoint returned ${response.status}: ${detail}`,
-					response.status
+					response.status,
+					parseRetryAfter(response.headers.get('retry-after'))
 				);
 			}
 
@@ -96,7 +171,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 		} catch (error) {
 			if (error instanceof LlmError) throw error;
 			throw new LlmError(
-				`LLM request failed: ${error instanceof Error ? error.message : String(error)}`
+				`LLM request failed: ${redact(error instanceof Error ? error.message : String(error))}`
 			);
 		} finally {
 			clearTimeout(timer);

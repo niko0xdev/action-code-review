@@ -348,15 +348,8 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 	const complete = (maxOutputTokens: number) =>
 		provider.complete(messages, { temperature: 0.3, maxOutputTokens });
 	let budget = options.maxTokens || DEFAULT_PR_CONTENT_MAX_TOKENS;
-	let completion: ChatCompletion;
-	try {
-		completion = await complete(budget);
-	} catch (error) {
-		core.warning(
-			`First AI call failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=${budget}`
-		);
-		completion = await complete(budget);
-	}
+	// Transient failures (429/5xx/network) are retried inside the provider.
+	let completion: ChatCompletion = await complete(budget);
 	if (!completion.content || completion.finishReason === 'length') {
 		budget = escalateMaxTokens(budget);
 		core.warning(
