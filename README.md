@@ -45,8 +45,9 @@ Full input list: [`pr-review/action.yml`](pr-review/action.yml),
 (symlinks are resolved and may not leave it, 50 KiB cap). Because the file feeds
 the trusted rules slot, the copy on the pull request's **base** commit is used,
 so a PR cannot steer the reviewer by editing it. If the base copy is unavailable
-(for example a shallow checkout) the file is read from the checkout only when
-the PR does not change it; otherwise it is ignored with a warning. See
+(a shallow checkout falls back to the GitHub contents API) the file is read from
+the checkout only when the PR does not touch it and no symlink is involved;
+otherwise it is ignored with a warning. See
 [`docs/security-model.md`](docs/security-model.md).
 
 ## What it does

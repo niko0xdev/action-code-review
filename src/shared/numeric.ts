@@ -55,7 +55,9 @@ export function parseEnum<T extends string>(
 ): T {
 	const text = raw?.trim();
 	if (!text) return fallback;
-	if ((allowed as readonly string[]).includes(text)) return text as T;
+	const lower = text.toLowerCase();
+	const match = allowed.find((value) => value === lower);
+	if (match) return match;
 	core.warning(
 		`${name}="${text}" is not one of ${allowed.join(', ')} – using default ${fallback}`
 	);

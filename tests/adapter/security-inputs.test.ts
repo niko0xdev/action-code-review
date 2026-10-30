@@ -35,4 +35,11 @@ describe('mapSecurityInputs enum validation', () => {
 		expect(opts.profile).toBe('deep');
 		expect(warn).not.toHaveBeenCalled();
 	});
+
+	it('matches enum values case-insensitively', () => {
+		const warn = vi.spyOn(core, 'warning').mockImplementation(() => {});
+		const opts = mapSecurityInputs({ 'security-fail-on': 'None' });
+		expect(opts.failOn).toBe('none');
+		expect(warn).not.toHaveBeenCalled();
+	});
 });

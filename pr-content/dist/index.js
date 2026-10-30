@@ -37367,8 +37367,10 @@ function parseEnum(raw, allowed, fallback, name) {
     const text = raw?.trim();
     if (!text)
         return fallback;
-    if (allowed.includes(text))
-        return text;
+    const lower = text.toLowerCase();
+    const match = allowed.find((value) => value === lower);
+    if (match)
+        return match;
     core.warning(`${name}="${text}" is not one of ${allowed.join(', ')} – using default ${fallback}`);
     return fallback;
 }
@@ -39880,40 +39882,94 @@ var external_node_util_ = __nccwpck_require__(7975);
 
 
 
+
 const run = (0,external_node_util_.promisify)(external_node_child_process_.execFile);
 const MAX_BYTES = 50 * 1024;
 function warn(file, why) {
     core.warning(`[review] review-prompt-file ${file} ${why} – ignored`);
     return undefined;
 }
-/** Regular-file blob content at `<baseSha>:<rel>`, or undefined if unavailable. */
-async function readFromBase(repoPath, baseSha, rel) {
+async function readFromGit(repoPath, baseSha, rel) {
     const git = (args, maxBuffer) => run('git', ['-C', repoPath, ...args], {
         env: { PATH: process.env.PATH, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0' },
         maxBuffer,
         timeout: 10_000,
     });
+    let listing;
     try {
-        const tree = await git(['ls-tree', baseSha, '--', rel], 4096);
-        // Only regular blobs: a symlink blob would yield its target path as text.
-        if (!/^100(644|755) blob /.test(tree.stdout))
-            return undefined;
-        const blob = await git(['cat-file', 'blob', `${baseSha}:${rel}`], MAX_BYTES);
-        return blob.stdout;
+        listing = (await git(['ls-tree', baseSha, '--', rel], 4096)).stdout;
     }
     catch {
-        return undefined;
+        return { kind: 'unavailable' };
     }
+    if (!listing.trim())
+        return { kind: 'absent' };
+    // Only regular blobs: a symlink blob would yield its target path as text.
+    if (!/^100(644|755) blob /.test(listing)) {
+        return { kind: 'ignore', why: 'is not a regular file at the base ref' };
+    }
+    try {
+        const blob = await git(['cat-file', 'blob', `${baseSha}:${rel}`], MAX_BYTES);
+        return { kind: 'content', text: blob.stdout };
+    }
+    catch (error) {
+        const code = error.code;
+        return code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+            ? { kind: 'ignore', why: 'exceeds 50 KiB at the base ref' }
+            : { kind: 'unavailable' };
+    }
+}
+async function readFromApi(fetchBase, baseSha, rel) {
+    let data;
+    try {
+        data = await fetchBase(rel, baseSha);
+    }
+    catch {
+        return { kind: 'unavailable' };
+    }
+    if (!data)
+        return { kind: 'absent' };
+    if (Array.isArray(data) || data.type !== 'file') {
+        return { kind: 'ignore', why: 'is not a regular file at the base ref' };
+    }
+    if (data.size > MAX_BYTES) {
+        return { kind: 'ignore', why: 'exceeds 50 KiB at the base ref' };
+    }
+    if (data.encoding !== 'base64' || typeof data.content !== 'string') {
+        return { kind: 'unavailable' };
+    }
+    return {
+        kind: 'content',
+        text: Buffer.from(data.content, 'base64').toString('utf8'),
+    };
+}
+/** `a/b/c.md` -> [`a`, `a/b`, `a/b/c.md`]. */
+function withAncestors(posixPath) {
+    const parts = posixPath.split('/');
+    return parts.map((_, i) => parts.slice(0, i + 1).join('/'));
+}
+/** True when any path component between root and `rel` is a symlink. */
+async function hasSymlinkComponent(root, rel) {
+    let current = root;
+    for (const part of rel.split(external_node_path_.sep)) {
+        current = (0,external_node_path_.resolve)(current, part);
+        if ((await (0,promises_.lstat)(current)).isSymbolicLink())
+            return true;
+    }
+    return false;
 }
 /**
  * Load `review-prompt-file` for the trusted rules slot. The file is
  * PR-controlled, so the base-branch copy wins: a PR cannot steer the reviewer by
- * editing it. When the base copy is unavailable the head copy is read only if
- * the PR leaves that path untouched. Symlinks are resolved and must stay inside
- * the workspace, and only regular files up to 50 KiB are read.
+ * editing it. A base entry that exists but is not a regular blob, or is too
+ * large, means the file is ignored. Only when no base copy can be obtained (the
+ * path is new, or the base object cannot be read) is the checkout copy used, and
+ * only if the changed-file list is complete, nothing on the path is a symlink,
+ * and neither the path nor any ancestor is touched by the PR (compared
+ * case-insensitively). Only regular files up to 50 KiB are read.
  */
 async function loadReviewPromptFile(opts) {
-    const { repoPath, file, baseSha, changedPaths } = opts;
+    const { repoPath, file, baseSha, changedPaths, filesTruncated } = opts;
     if (!file)
         return undefined;
     if (file.includes('\0'))
@@ -39927,27 +39983,51 @@ async function loadReviewPromptFile(opts) {
     const posixRel = rel.split(external_node_path_.sep).join('/');
     try {
         if (baseSha && /^[0-9a-f]{40,64}$/i.test(baseSha)) {
-            const content = await readFromBase(repoPath, baseSha, posixRel);
-            if (content !== undefined)
-                return content.trim() || undefined;
-            if (changedPaths.has(posixRel)) {
-                return warn(file, 'is modified by this pull request and has no base copy');
+            let base = await readFromGit(repoPath, baseSha, posixRel);
+            if (base.kind === 'unavailable' && opts.fetchBase) {
+                base = await readFromApi(opts.fetchBase, baseSha, posixRel);
             }
+            if (base.kind === 'content')
+                return base.text.trim() || undefined;
+            if (base.kind === 'ignore')
+                return warn(file, base.why);
+        }
+        if (filesTruncated) {
+            return warn(file, 'has no base copy and the changed-file list is truncated');
+        }
+        const full = (0,external_node_path_.resolve)(repoPath, file);
+        if (await hasSymlinkComponent(repoPath, rel)) {
+            return warn(file, 'passes through a symlink and has no base copy');
         }
         const [root, real] = await Promise.all([
             (0,promises_.realpath)(repoPath),
-            (0,promises_.realpath)((0,external_node_path_.resolve)(repoPath, file)),
+            (0,promises_.realpath)(full),
         ]);
         const inside = (0,external_node_path_.relative)(root, real);
         if (!inside || inside.startsWith('..') || (0,external_node_path_.isAbsolute)(inside)) {
             return warn(file, 'escapes repository');
         }
-        const info = await (0,promises_.stat)(real);
-        if (!info.isFile())
-            return warn(file, 'is not a regular file');
-        if (info.size > MAX_BYTES)
-            return warn(file, 'exceeds 50 KiB');
-        return (await (0,promises_.readFile)(real, 'utf8')).trim() || undefined;
+        const touched = new Set([...changedPaths].flatMap((p) => [p, p.toLowerCase()]));
+        const candidates = [
+            ...withAncestors(posixRel),
+            ...withAncestors(inside.split(external_node_path_.sep).join('/')),
+        ];
+        if (candidates.some((p) => touched.has(p) || touched.has(p.toLowerCase()))) {
+            return warn(file, 'is modified by this pull request and has no base copy');
+        }
+        // Open the resolved path once and inspect the handle, not the path.
+        const handle = await (0,promises_.open)(real, external_node_fs_.constants.O_RDONLY | external_node_fs_.constants.O_NOFOLLOW);
+        try {
+            const info = await handle.stat();
+            if (!info.isFile())
+                return warn(file, 'is not a regular file');
+            if (info.size > MAX_BYTES)
+                return warn(file, 'exceeds 50 KiB');
+            return (await handle.readFile('utf8')).trim() || undefined;
+        }
+        finally {
+            await handle.close();
+        }
     }
     catch (error) {
         core.warning(`[review] review-prompt-file read failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -43584,6 +43664,19 @@ async function main(argv) {
                 repoPath: reviewContext.repositoryPath,
                 file: core.getInput('review-prompt-file'),
                 baseSha: reviewContext.pullRequest.baseSha,
+                filesTruncated: reviewContext.diff.filesTruncated,
+                fetchBase: async (path, ref) => {
+                    try {
+                        const res = await github.getOctokit(legacyOptions.githubToken)
+                            .rest.repos.getContent({ ...repoInfo, path, ref });
+                        return res.data;
+                    }
+                    catch (error) {
+                        if (error.status === 404)
+                            return undefined;
+                        throw error;
+                    }
+                },
                 changedPaths: new Set(allPrFiles.flatMap((f) => f.previousFilename ? [f.filename, f.previousFilename] : [f.filename])),
             });
             const reviewRules = [

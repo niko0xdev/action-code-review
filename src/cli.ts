@@ -48,6 +48,7 @@ import {
 	incompleteReviewFailure,
 	rawHarnessDumpEnabled,
 } from './review/execution.js';
+import type { BaseFileData } from './review/prompt-file.js';
 import { loadReviewPromptFile } from './review/prompt-file.js';
 import {
 	buildReviewReport,
@@ -715,6 +716,18 @@ export async function main(argv: string[]): Promise<void> {
 				repoPath: reviewContext.repositoryPath,
 				file: core.getInput('review-prompt-file'),
 				baseSha: reviewContext.pullRequest.baseSha,
+				filesTruncated: reviewContext.diff.filesTruncated,
+				fetchBase: async (path, ref) => {
+					try {
+						const res = await github
+							.getOctokit(legacyOptions.githubToken)
+							.rest.repos.getContent({ ...repoInfo, path, ref });
+						return res.data as BaseFileData | BaseFileData[];
+					} catch (error) {
+						if ((error as { status?: number }).status === 404) return undefined;
+						throw error;
+					}
+				},
 				changedPaths: new Set(
 					allPrFiles.flatMap((f) =>
 						f.previousFilename ? [f.filename, f.previousFilename] : [f.filename]
