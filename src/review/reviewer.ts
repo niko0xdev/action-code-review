@@ -46,6 +46,7 @@ export async function runReview(
 	const filesReviewed: string[] = [];
 	let failedGroups = 0;
 	let filesNotAnalyzed = 0;
+	let truncatedFiles = 0;
 
 	for (let start = 0; start < groups.length; start += 3) {
 		const outcomes = await Promise.allSettled(
@@ -68,7 +69,15 @@ export async function runReview(
 				// Validate and rank the complete candidate set before applying a
 				// presentation cap, so output ordering cannot hide critical issues.
 				allFindings.push(...outcome.value.result.findings);
-				filesReviewed.push(...group.files);
+				// A harness that cut files off at its context limit reports only
+				// what it really analysed; the rest is not-analysed, not reviewed.
+				const analysed = outcome.value.result.filesReviewed ?? group.files;
+				filesReviewed.push(...analysed);
+				const cutOff = group.files.length - analysed.length;
+				if (cutOff > 0) {
+					filesNotAnalyzed += cutOff;
+					truncatedFiles += cutOff;
+				}
 				if (outcome.value.result.summary)
 					summaries.push(outcome.value.result.summary);
 			} else {
@@ -91,6 +100,7 @@ export async function runReview(
 	const filtered = allFindings.filter(
 		(finding) => SEVERITY_ORDER[finding.severity] >= minimum
 	);
+	const droppedBySeverity = allFindings.length - filtered.length;
 	const validated = validateFindings(
 		filtered,
 		context.diff.files,
@@ -123,7 +133,8 @@ export async function runReview(
 		filesReviewed,
 		...(context.diff.filesTruncated ? { filesTruncated: true } : {}),
 		ruleCoverage: deriveRuleCoverage(context, findings),
-		reviewStatus: failedGroups > 0 ? 'incomplete' : 'complete',
+		reviewStatus:
+			failedGroups > 0 || truncatedFiles > 0 ? 'incomplete' : 'complete',
 		// Read after every group settled so failed processes that still emitted
 		// usage before exiting are included in the aggregate.
 		...(harness.usage ? { usage: harness.usage } : {}),
@@ -135,14 +146,21 @@ export async function runReview(
 		normalized.bucketedCount > 0 ||
 		crossChecked.droppedCount > 0 ||
 		fastPathed.trivialPr ||
-		failedGroups > 0
+		failedGroups > 0 ||
+		truncatedFiles > 0 ||
+		droppedBySeverity > 0
 	) {
 		result.diagnostics = {
 			...result.diagnostics,
 			bucketedUnknownCategories: normalized.bucketedCount,
 			crossFindingConflictsResolved: crossChecked.droppedCount,
 			trivialPrFastPath: fastPathed.trivialPr,
-			...(failedGroups > 0 ? { failedGroups, filesNotAnalyzed } : {}),
+			...(failedGroups > 0 || truncatedFiles > 0
+				? { failedGroups, filesNotAnalyzed }
+				: {}),
+			...(droppedBySeverity > 0
+				? { findingsDroppedBySeverity: droppedBySeverity }
+				: {}),
 		};
 	}
 	return result;

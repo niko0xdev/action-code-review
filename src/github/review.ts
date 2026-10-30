@@ -131,8 +131,9 @@ export interface PublishParams {
 	bufferInlineComments?: boolean;
 	stickySummary?: boolean;
 	/**
-	 * Approve only when every AI-authored review thread is resolved.
-	 * Defaults to true via the action input; explicit false opts out.
+	 * Approve only when the review is complete, at least one AI-authored
+	 * thread exists, every such thread is resolved, and no findings were
+	 * dropped by `min-severity`. Defaults to false; opt in explicitly.
 	 */
 	autoApproveWhenResolved?: boolean;
 	/** Re-read PR head before publishing when the Octokit adapter supports it. */
@@ -366,13 +367,23 @@ async function resolveApproval(
 		return { state: 'skipped-no-write-permission' };
 	if (state.hasBlockingFinding || reviewFailed(params.result))
 		return { state: 'not-requested' };
-	const resolved = await areAiThreadsResolved(
+	if ((params.result.diagnostics?.findingsDroppedBySeverity ?? 0) > 0)
+		return {
+			state: 'not-requested',
+			detail: 'findings below min-severity were dropped',
+		};
+	const threads = await areAiThreadsResolved(
 		octokit,
 		params.owner,
 		params.repo,
 		params.prNumber
 	);
-	if (!resolved) return { state: 'skipped-unresolved-threads' };
+	if (threads === 'none')
+		return {
+			state: 'skipped-unresolved-threads',
+			detail: 'no prior AI thread',
+		};
+	if (threads !== 'resolved') return { state: 'skipped-unresolved-threads' };
 	try {
 		await octokit.rest.pulls.createReview({
 			owner: params.owner,
@@ -412,16 +423,17 @@ function reviewFailed(result: PublishParams['result']): boolean {
  * Resolve whether every AI-authored review thread on the PR is resolved.
  * Same semantics as the retired V1 approvalManager.areAiCommentsResolved;
  * uses the structural PublisherOctokit so tests stay transport-agnostic.
- * Fails closed: unknown/errored state is never "resolved".
+ * Fails closed: unknown/errored state, or no AI thread at all, is never
+ * "resolved".
  */
 async function areAiThreadsResolved(
 	octokit: PublisherOctokit,
 	_owner: string,
 	_repo: string,
 	prNumber: number
-): Promise<boolean> {
+): Promise<'resolved' | 'none' | 'unresolved'> {
 	const listThreads = octokit.rest.pulls.listThreads;
-	if (!listThreads) return false;
+	if (!listThreads) return 'unresolved';
 	try {
 		const threads = await listThreads({
 			owner: _owner,
@@ -446,12 +458,17 @@ async function areAiThreadsResolved(
 					isTrustedAuthor(comment.user?.login, selfLogin)
 			)
 		);
-		return aiThreads.every((thread) => thread.resolved === true);
+		// `[].every(...)` is vacuously true; with no prior AI thread there is
+		// nothing a human resolved, so never present that as an approval.
+		if (aiThreads.length === 0) return 'none';
+		return aiThreads.every((thread) => thread.resolved === true)
+			? 'resolved'
+			: 'unresolved';
 	} catch (error) {
 		core.warning(
 			`[review] thread resolution check failed: ${error instanceof Error ? error.message : String(error)}`
 		);
-		return false;
+		return 'unresolved';
 	}
 }
 

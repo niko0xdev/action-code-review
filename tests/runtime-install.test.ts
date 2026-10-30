@@ -96,7 +96,7 @@ const FROZEN_INPUTS = {
 			default: '*.md,*.txt',
 		},
 		'include-dir': { required: false },
-		'auto-approve-when-resolved': { required: false, default: 'true' },
+		'auto-approve-when-resolved': { required: false, default: 'false' },
 		'min-severity': { required: false, default: 'critical' },
 		'block-on-issues': { required: false, default: 'true' },
 		'include-full-content': { required: false, default: 'false' },

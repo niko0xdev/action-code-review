@@ -13,7 +13,7 @@ import type {
 } from '../types/finding.js';
 import {
 	type ReviewHarness,
-	buildReviewPrompt,
+	buildReviewPromptWithCoverage,
 	parseHarnessFindings,
 	toReviewResult,
 } from './harness.js';
@@ -696,11 +696,15 @@ export class PiHarness implements ReviewHarness {
 			.filter((value): value is string => Boolean(value?.trim()))
 			.filter((value, index, values) => values.indexOf(value) === index)
 			.join('\n\n');
-		const prompt = buildReviewPrompt(context, extraRules || undefined, {
-			includeFullContent: this.options.includeFullContent,
-			maxContextChars: this.options.maxContextChars,
-			toolFindings: this.options.toolFindings,
-		});
+		const { prompt, includedFiles } = buildReviewPromptWithCoverage(
+			context,
+			extraRules || undefined,
+			{
+				includeFullContent: this.options.includeFullContent,
+				maxContextChars: this.options.maxContextChars,
+				toolFindings: this.options.toolFindings,
+			}
+		);
 		let run = await this.run(prompt, context);
 		this._runs.push(run);
 		let assistant = extractAssistantResult(run.stdout);
@@ -736,10 +740,7 @@ export class PiHarness implements ReviewHarness {
 			throw new Error(
 				'Harness produced no review result after repair attempts.'
 			);
-		return toReviewResult(
-			output,
-			context.diff.files.map((f) => f.filename)
-		);
+		return toReviewResult(output, includedFiles);
 	}
 }
 async function resolveRuntimeConfigDir(): Promise<string> {

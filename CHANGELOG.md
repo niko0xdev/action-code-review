@@ -13,12 +13,28 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Behaviour change: `auto-approve-when-resolved` now defaults to `false`.**
+  Previously a review with no AI threads at all (`[].every(...)` is vacuously
+  true) could approve a pull request. Approval is now opt-in and, when enabled,
+  also requires a complete review, at least one earlier AI-authored thread
+  (all resolved), and no findings dropped by `min-severity`
+  (`diagnostics.findingsDroppedBySeverity`, additive).
+
 ### Added
 
 - `AI_REVIEW_INCLUDE_LOCKFILES=true` opts lockfiles into review. Default is
   unchanged: lockfiles stay excluded and manifests stay reviewable.
 
 ### Fixed
+
+- **A diff larger than `max-context-chars` no longer cuts mid-hunk or leaves a
+  code fence open.** The prompt now truncates per file at hunk boundaries, so
+  the final security instruction is never swallowed. Files that were cut off or
+  omitted are no longer reported as reviewed: they appear as `not-analyzed`
+  with reason `review-incomplete` in `coverage.files`, count towards
+  `filesNotAnalyzed`, and mark the review `incomplete` (which blocks approval).
 
 - **A long review no longer fails with "the model returned an empty assistant
   message".** Pi text mode prints only the last message in its state, and Pi

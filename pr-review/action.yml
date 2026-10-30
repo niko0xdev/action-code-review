@@ -35,9 +35,9 @@ inputs:
     description: 'Comma-separated list of directory paths to include in review. Only files in these directories will be reviewed.'
     required: false
   auto-approve-when-resolved:
-    description: 'If true, approve the pull request when all AI-generated review threads are resolved'
+    description: 'If true, approve the pull request when all AI-generated review threads are resolved. Requires a complete review, at least one earlier AI thread, and no findings dropped by min-severity'
     required: false
-    default: 'true'
+    default: 'false'
   min-severity:
     description: 'Minimum severity level for comments (low, high, critical)'
     required: false

@@ -196,4 +196,53 @@ describe('runReview', () => {
 		expect(result.filesReviewed).toEqual([]);
 		expect(result.diagnostics?.failedGroups).toBeGreaterThan(0);
 	});
+
+	it('reports files the harness cut off as not analysed and incomplete', async () => {
+		const harness: ReviewHarness = {
+			name: 'fake',
+			async review(): Promise<ReviewResult> {
+				return {
+					findings: [],
+					summary: '',
+					risk: 'none',
+					counts: { critical: 0, high: 0, medium: 0, low: 0 },
+					filesReviewed: ['a.ts'],
+				};
+			},
+		};
+		const result = await runReview(makeContext(['a.ts', 'b.ts']), harness);
+		expect(result.filesReviewed).toEqual(['a.ts']);
+		expect(result.reviewStatus).toBe('incomplete');
+		expect(result.diagnostics?.filesNotAnalyzed).toBe(1);
+	});
+
+	it('records findings dropped by min-severity', async () => {
+		const harness: ReviewHarness = {
+			name: 'fake',
+			async review(): Promise<ReviewResult> {
+				return {
+					findings: [
+						{
+							severity: 'low',
+							confidence: 0.9,
+							category: 'correctness',
+							path: 'a.ts',
+							line: 2,
+							title: 't',
+							description: 'd',
+							impact: 'i',
+						},
+					],
+					summary: '',
+					risk: 'low',
+					counts: { critical: 0, high: 0, medium: 0, low: 1 },
+					filesReviewed: ['a.ts'],
+				};
+			},
+		};
+		const result = await runReview(makeContext(['a.ts']), harness, {
+			minSeverity: 'critical',
+		});
+		expect(result.diagnostics?.findingsDroppedBySeverity).toBe(1);
+	});
 });

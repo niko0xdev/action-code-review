@@ -176,6 +176,8 @@ export interface ReviewDiagnostics {
 	 * was never analyzed instead of implying full coverage.
 	 */
 	filesNotAnalyzed?: number;
+	/** Findings removed by `min-severity`; non-zero blocks auto-approval. */
+	findingsDroppedBySeverity?: number;
 	/** Verify pass: high/critical findings that survived the second LLM challenge. */
 	verifyVerified?: number;
 	/** Verify pass: high/critical findings dropped as hallucinations. */
