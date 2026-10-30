@@ -180,10 +180,12 @@ pnpm build         # pinned ncc (devDependency) → pr-*/dist/index.js; CI diffs
 
 ## Optional configuration (spec §8)
 
+Numeric variables are validated by `src/shared/numeric.ts`: an invalid value logs a warning and falls back to the default, so it can never disable a limit.
+
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `AI_REVIEW_MAX_FILES` | `100` | hard ceiling above the input `max-files` |
-| `AI_REVIEW_MIN_CONFIDENCE` | `0.80` | validation confidence floor |
+| `AI_REVIEW_MAX_FILES` | `100` | hard ceiling above the input `max-files`; must be a positive integer |
+| `AI_REVIEW_MIN_CONFIDENCE` | `0.80` | validation confidence floor (0 to 1) |
 | `AI_REVIEW_PROFILE` | detected | comma-separated profile override; `auto` = detect, `all` = load every stack's rules |
 | `AI_REVIEW_ENABLE_PRELINT` | `false` | run biome/ruff/swiftlint/ktlint/sqlfluff first (`'true'` to enable) |
 | `AI_REVIEW_SKIP_DRAFTS` | `false` | skip draft PRs (`'true'` to enable); `ready_for_review` still triggers a full review |
@@ -195,7 +197,7 @@ pnpm build         # pinned ncc (devDependency) → pr-*/dist/index.js; CI diffs
 | `AI_REVIEW_PI_REPAIR_ATTEMPTS` | `1` | extra harness calls that ask the model to convert its own unparseable answer into the required JSON |
 | `AI_REVIEW_LLM_TIMEOUT_MS` | `600000` | OpenAI-compatible request timeout |
 | `AI_REVIEW_VERIFY_PASS` | `false` | second LLM pass over high/critical findings (`'true'` to enable; drops hallucinations, records stats in diagnostics) |
-| `AI_REVIEW_VERIFY_BUDGET_USD` | `0.50` | cost ceiling for the verify pass |
+| `AI_REVIEW_VERIFY_BUDGET_USD` | `0.50` | cost ceiling for the verify pass (0 or more) |
 | `AI_REVIEW_DEBUG_HARNESS` | unset | `true`/`1` or a byte budget: append redacted, truncated raw harness output to the step summary |
 | `AI_REVIEW_FAIL_ON_INCOMPLETE` | `true` | fail the step when the review is incomplete (crashed group, unanalyzed files); `false` downgrades to a warning |
 
@@ -209,7 +211,7 @@ Adopted from [anthropics/claude-code-action](https://github.com/anthropics/claud
 |---|-------------|------------|--------------|
 | 1 | Mode auto-detection (`detectMode`) | `src/modes/detector.ts:14`, `src/entrypoints/prepare.ts:30-34` | `src/modes/detector.ts:1-`, `src/cli.ts:26,289-298`, `pr-review/action.yml:57-60` |
 | 2 | Write-permission gating (`checkWritePermissions`) | `src/entrypoints/prepare.ts:40-54`, `src/github/validation/permissions.ts:56-130` | `src/github/permissions.ts:1-`, `src/github/review.ts:64-122`, `src/cli.ts:430-460` |
-| 3 | Buffered inline comments + Haiku classification | `src/entrypoints/post-buffered-inline-comments.ts:1-235` | `src/github/buffer.ts:1-`, `src/github/review.ts:138-160`, `src/cli.ts` buffer flag |
+| 3 | Buffered inline comments + Haiku classification | `src/entrypoints/post-buffered-inline-comments.ts:1-235` | `src/github/buffer.ts` (append and heuristic classify only), `src/github/review.ts:138-160`, `src/cli.ts` buffer flag |
 | 4 | `allowed_bots` / actor allowlist (`include/exclude_comments_by_actor`) | `action.yml:30-54`, `src/github/validation/permissions.ts:9-30` | `src/github/actor-filter.ts:1-`, `src/cli.ts:315-330`, `pr-review/action.yml:73-80` |
 | 5 | `use_sticky_comment` (single summary) | `action.yml:112-115` | `src/github/comments.ts:stickySummaryMarker`, `src/github/review.ts:196-320`, `pr-review/action.yml:81-84` |
 | 6 | `track_progress` via `$GITHUB_STEP_SUMMARY` | `action.yml:136-139`, `src/modes/detector.ts:16-31` | `src/github/progress.ts:1-`, `src/cli.ts` phase hooks, `pr-review/action.yml:85-88` |

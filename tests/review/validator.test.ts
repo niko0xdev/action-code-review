@@ -99,3 +99,16 @@ describe('validateFinding gates individually', () => {
 		expect(validateFinding(findingValue, files, 0.8)).toBe(expected);
 	});
 });
+
+describe('validateFinding fails closed on an invalid floor', () => {
+	it('rejects findings when minConfidence is NaN', () => {
+		const files = [file('src/app.ts', PATCH)];
+		expect(
+			validateFinding(
+				baseFinding({ path: 'src/app.ts', line: 11 }),
+				files,
+				Number.NaN
+			)
+		).toBe(false);
+	});
+});

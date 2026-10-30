@@ -37206,7 +37206,7 @@ const external_node_buffer_namespaceObject = __WEBPACK_EXTERNAL_createRequire(im
 // EXTERNAL MODULE: external "node:perf_hooks"
 var external_node_perf_hooks_ = __nccwpck_require__(643);
 // EXTERNAL MODULE: ./node_modules/.pnpm/@actions+core@1.11.1/node_modules/@actions/core/lib/core.js
-var lib_core = __nccwpck_require__(474);
+var core = __nccwpck_require__(474);
 // EXTERNAL MODULE: ./node_modules/.pnpm/@actions+github@5.1.1/node_modules/@actions/github/lib/github.js
 var github = __nccwpck_require__(1533);
 // EXTERNAL MODULE: ./src/llm/config.ts
@@ -37231,12 +37231,48 @@ function resolveEngineConfig(input) {
     };
 }
 
+;// CONCATENATED MODULE: ./src/shared/numeric.ts
+
+function fallBack(name, raw, fallback) {
+    core.warning(`${name}="${raw}" is not valid – using default ${fallback}`);
+    return fallback;
+}
+/**
+ * Parse a strict positive integer (no suffixes, no decimals). Unset or blank
+ * returns the fallback silently; anything invalid warns and returns the
+ * fallback, so a typo can never switch a safety limit off.
+ */
+function parsePositiveInt(raw, fallback, { name, max }) {
+    const text = raw?.trim();
+    if (!text)
+        return fallback;
+    const value = /^\d+$/.test(text) ? Number(text) : Number.NaN;
+    if (!Number.isSafeInteger(value) || value < 1) {
+        return fallBack(name, text, fallback);
+    }
+    if (max !== undefined && value > max)
+        return fallBack(name, text, fallback);
+    return value;
+}
+/** Parse a finite decimal within [min, max]; invalid values use the fallback. */
+function parseBoundedFloat(raw, fallback, { name, min = 0, max = Number.POSITIVE_INFINITY }) {
+    const text = raw?.trim();
+    if (!text)
+        return fallback;
+    const value = /^\d*\.?\d+$/.test(text) ? Number(text) : Number.NaN;
+    if (!Number.isFinite(value) || value < min || value > max) {
+        return fallBack(name, text, fallback);
+    }
+    return value;
+}
+
 ;// CONCATENATED MODULE: ./src/adapter/legacy-inputs.ts
 /**
  * Legacy input mapping (docs/v1-interface-contract.md). Every V1 action
  * input maps into engine configuration with identical defaults. Unknown
  * inputs are ignored; missing inputs fall back to the frozen defaults.
  */
+
 
 const SECURITY_DEFAULTS = {
     mode: 'auto',
@@ -37274,11 +37310,8 @@ function get(inputs, key) {
 function bool(value, fallback) {
     return (value ?? fallback) === 'true';
 }
-function legacy_inputs_int(value, fallback) {
-    const parsed = Number.parseInt(value ?? '', 10);
-    return Number.isFinite(parsed) && String(parsed) === (value ?? '').trim()
-        ? parsed
-        : Number.parseInt(fallback, 10);
+function legacy_inputs_int(value, fallback, name) {
+    return parsePositiveInt(value, Number.parseInt(fallback, 10), { name });
 }
 function splitList(value) {
     if (!value) {
@@ -37343,7 +37376,7 @@ function mapSecurityInputs(inputs) {
             get(inputs, 'sticky-summary'), SECURITY_DEFAULTS.stickyComment),
         generateSarif: bool(get(inputs, 'security_sarif') ?? get(inputs, 'security-sarif'), SECURITY_DEFAULTS.generateSarif),
         maxFindings: legacy_inputs_int(get(inputs, 'security_max_findings') ??
-            get(inputs, 'security-max-findings'), SECURITY_DEFAULTS.maxFindings),
+            get(inputs, 'security-max-findings'), SECURITY_DEFAULTS.maxFindings, 'security-max-findings'),
         riskThreshold: rawRiskThreshold,
         piArgs: get(inputs, 'pi-args') ?? get(inputs, 'pi_args'),
         piBinaryPath: get(inputs, 'pi-binary-path') ?? get(inputs, 'pi_binary_path'),
@@ -37358,7 +37391,7 @@ function mapPrReview(inputs) {
         baseUrl: rawBaseUrl ? (0,config/* normalizeBaseUrl */.qT)(rawBaseUrl) : undefined,
         model: get(inputs, 'openai-model') ?? PR_REVIEW_DEFAULTS.openaiModel,
         reviewPrompt: get(inputs, 'review-prompt'),
-        maxFiles: legacy_inputs_int(get(inputs, 'max-files'), PR_REVIEW_DEFAULTS.maxFiles),
+        maxFiles: legacy_inputs_int(get(inputs, 'max-files'), PR_REVIEW_DEFAULTS.maxFiles, 'max-files'),
         excludePatterns: splitList(get(inputs, 'exclude-patterns') ?? PR_REVIEW_DEFAULTS.excludePatterns),
         includeDirs: (() => {
             const dirs = splitList(get(inputs, 'include-dir'));
@@ -37368,7 +37401,7 @@ function mapPrReview(inputs) {
         minSeverity: get(inputs, 'min-severity') ?? PR_REVIEW_DEFAULTS.minSeverity,
         blockOnIssues: bool(get(inputs, 'block-on-issues'), PR_REVIEW_DEFAULTS.blockOnIssues),
         includeFullContent: bool(get(inputs, 'include-full-content'), PR_REVIEW_DEFAULTS.includeFullContent),
-        maxContextChars: legacy_inputs_int(get(inputs, 'max-context-chars'), PR_REVIEW_DEFAULTS.maxContextChars),
+        maxContextChars: legacy_inputs_int(get(inputs, 'max-context-chars'), PR_REVIEW_DEFAULTS.maxContextChars, 'max-context-chars'),
     };
 }
 function mapPrContent(inputs) {
@@ -37379,7 +37412,7 @@ function mapPrContent(inputs) {
         apiKey: get(inputs, 'openai-api-key') ?? '',
         baseUrl: rawBaseUrl ? (0,config/* normalizeBaseUrl */.qT)(rawBaseUrl) : undefined,
         model: get(inputs, 'openai-model') ?? PR_CONTENT_DEFAULTS.openaiModel,
-        maxTokens: legacy_inputs_int(get(inputs, 'max-tokens'), PR_CONTENT_DEFAULTS.maxTokens),
+        maxTokens: legacy_inputs_int(get(inputs, 'max-tokens'), PR_CONTENT_DEFAULTS.maxTokens, 'max-tokens'),
         includeFileList: bool(get(inputs, 'include-file-list'), PR_CONTENT_DEFAULTS.includeFileList),
         customInstructions: get(inputs, 'custom-instructions'),
         templatePath: get(inputs, 'template-path') ?? PR_CONTENT_DEFAULTS.templatePath,
@@ -37866,7 +37899,7 @@ async function updatePrContent(octokit, owner, repo, prNumber, options) {
     });
     if (current.data.title === update.title &&
         current.data.body === description) {
-        lib_core.info('No changes needed - PR content is already optimal');
+        core.info('No changes needed - PR content is already optimal');
         return;
     }
     await octokit.rest.pulls.update({
@@ -37876,8 +37909,8 @@ async function updatePrContent(octokit, owner, repo, prNumber, options) {
         title: update.title,
         body: description,
     });
-    lib_core.info(`Updated PR title: "${update.title}"`);
-    lib_core.info(`Updated PR description: ${description.substring(0, 100)}...`);
+    core.info(`Updated PR title: "${update.title}"`);
+    core.info(`Updated PR description: ${description.substring(0, 100)}...`);
 }
 
 // EXTERNAL MODULE: external "node:fs"
@@ -37890,14 +37923,14 @@ function trackPhase(phase, detail, options) {
         return;
     const stepSummaryPath = process.env.GITHUB_STEP_SUMMARY;
     const line = `**[progress]** ${phase}: ${detail}\n`;
-    lib_core.info(line.trim());
+    core.info(line.trim());
     if (!stepSummaryPath)
         return;
     try {
         (0,external_node_fs_.appendFileSync)(stepSummaryPath, line, 'utf8');
     }
     catch (error) {
-        lib_core.warning(`[progress] write to $GITHUB_STEP_SUMMARY failed: ${error instanceof Error ? error.message : String(error)}`);
+        core.warning(`[progress] write to $GITHUB_STEP_SUMMARY failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
@@ -38017,6 +38050,45 @@ function dedupe_normalizeCommentId(finding) {
 
 // EXTERNAL MODULE: ./src/security/redaction/redactor.ts
 var redactor = __nccwpck_require__(8759);
+;// CONCATENATED MODULE: ./src/github/buffer.ts
+
+
+const BUFFER_PATH = process.env.AI_INLINE_BUFFER_PATH ?? '/tmp/ai-inline-buffer.jsonl';
+const TEST_PROBE_RE = /^(test comment|testing if|can i|does this work|checking if)/i;
+function isTestProbe(body) {
+    const trimmed = body.trim();
+    if (!trimmed)
+        return true;
+    return TEST_PROBE_RE.test(trimmed);
+}
+function appendToBuffer(findings) {
+    if (findings.length === 0)
+        return;
+    const lines = `${findings.map((f) => JSON.stringify(f)).join('\n')}\n`;
+    (0,external_node_fs_.appendFileSync)(BUFFER_PATH, lines, 'utf8');
+}
+function classifyFindings(findings) {
+    const neverPost = findings.filter((f) => f.confirmed === false);
+    const candidates = findings.filter((f) => f.confirmed !== false);
+    if (neverPost.length > 0) {
+        core.info(`[buffer] ${neverPost.length} with confirmed=false — not posting`);
+    }
+    if (candidates.length === 0)
+        return { real: [], probe: neverPost };
+    const real = [];
+    const probe = [...neverPost];
+    for (const f of candidates) {
+        const body = `${f.title} ${f.description}`.trim();
+        if (isTestProbe(body) || isTestProbe(f.title)) {
+            probe.push(f);
+        }
+        else {
+            real.push(f);
+        }
+    }
+    return { real, probe };
+}
+
 ;// CONCATENATED MODULE: ./src/github/comments.ts
 
 
@@ -38052,7 +38124,7 @@ const CATEGORY_LABEL = {
     compatibility: 'Compatibility',
 };
 /** Full inline-comment body for a finding, ending with its id marker. */
-function comments_buildFindingBody(finding) {
+function buildFindingBody(finding) {
     const safeFinding = {
         ...finding,
         title: mdSafe((0,redactor/* redactSecrets */.f)(finding.title)),
@@ -38373,150 +38445,6 @@ function footerComment(model) {
     return `<!-- Auto-generated by AI Code Review (https://github.com/niko0xdev/action-code-review) · model: ${safe(model)} · run: ${safe(runUrl)} -->`;
 }
 
-;// CONCATENATED MODULE: ./src/github/buffer.ts
-
-
-
-const BUFFER_PATH = process.env.AI_INLINE_BUFFER_PATH ?? '/tmp/ai-inline-buffer.jsonl';
-const TEST_PROBE_RE = /^(test comment|testing if|can i|does this work|checking if)/i;
-function isTestProbe(body) {
-    const trimmed = body.trim();
-    if (!trimmed)
-        return true;
-    return TEST_PROBE_RE.test(trimmed);
-}
-function appendToBuffer(findings) {
-    if (findings.length === 0)
-        return;
-    const lines = `${findings.map((f) => JSON.stringify(f)).join('\n')}\n`;
-    (0,external_node_fs_.appendFileSync)(BUFFER_PATH, lines, 'utf8');
-}
-function readBuffer() {
-    try {
-        const raw = readFileSync(BUFFER_PATH, 'utf8');
-        return raw
-            .split('\n')
-            .filter(Boolean)
-            .map((line) => JSON.parse(line));
-    }
-    catch {
-        return [];
-    }
-}
-function classifyFindings(findings) {
-    const neverPost = findings.filter((f) => f.confirmed === false);
-    const candidates = findings.filter((f) => f.confirmed !== false);
-    if (neverPost.length > 0) {
-        lib_core.info(`[buffer] ${neverPost.length} with confirmed=false — not posting`);
-    }
-    if (candidates.length === 0)
-        return { real: [], probe: neverPost };
-    const real = [];
-    const probe = [...neverPost];
-    for (const f of candidates) {
-        const body = `${f.title} ${f.description}`.trim();
-        if (isTestProbe(body) || isTestProbe(f.title)) {
-            probe.push(f);
-        }
-        else {
-            real.push(f);
-        }
-    }
-    return { real, probe };
-}
-async function classifyWithLlm(findings, provider) {
-    if (!provider)
-        return null;
-    if (findings.length === 0)
-        return [];
-    const prompt = `Classify each finding as REAL review vs TEST/PROBE (tool-check placeholder). TEST/PROBE is generic placeholder not specific to code. Respond ONLY JSON array booleans true=REAL false=TEST.\n\n${findings
-        .map((f, i) => `${i + 1}. ${JSON.stringify(`${f.title} — ${f.description}`)}`)
-        .join('\n')}`;
-    try {
-        const res = await provider.complete([{ role: 'user', content: prompt }], {
-            temperature: 0,
-            maxOutputTokens: 256,
-        });
-        const match = res.content.match(/\[[\s\S]*\]/);
-        if (!match)
-            return null;
-        const parsed = JSON.parse(match[0]);
-        if (!Array.isArray(parsed) ||
-            parsed.length !== findings.length ||
-            !parsed.every((v) => typeof v === 'boolean'))
-            return null;
-        return parsed;
-    }
-    catch {
-        return null;
-    }
-}
-async function flushBuffer(octokit, owner, repo, prNumber, headSha, provider) {
-    const buffered = readBuffer();
-    if (buffered.length === 0)
-        return { posted: 0, filtered: 0 };
-    const neverPost = buffered.filter((f) => f.confirmed === false);
-    const candidates = buffered.filter((f) => f.confirmed !== false);
-    if (candidates.length === 0) {
-        core.info(`[buffer] ${neverPost.length} confirmed=false — not posting`);
-        return { posted: 0, filtered: neverPost.length };
-    }
-    let verdicts = null;
-    if (provider) {
-        verdicts = await classifyWithLlm(candidates, provider);
-    }
-    let toPost;
-    let filtered;
-    if (verdicts === null) {
-        const { real, probe } = classifyFindings(candidates);
-        toPost = real;
-        filtered = [...neverPost, ...probe.filter((p) => !neverPost.includes(p))];
-        if (probe.length > 0 && verdicts === null) {
-            // heuristic path already accounted; filtered includes probes
-        }
-    }
-    else {
-        toPost = candidates.filter((_, i) => verdicts?.[i] === true);
-        filtered = [
-            ...neverPost,
-            ...candidates.filter((_, i) => verdicts?.[i] === false),
-        ];
-    }
-    if (filtered.length > 0) {
-        core.warning(`${filtered.length} buffered finding(s) classified as test/probe — NOT posted`);
-    }
-    let posted = 0;
-    for (const finding of toPost) {
-        try {
-            await octokit.rest.pulls.createReviewComment({
-                owner,
-                repo,
-                pull_number: prNumber,
-                body: buildFindingBody(finding),
-                commit_id: headSha,
-                path: finding.path,
-                line: finding.line,
-                side: 'RIGHT',
-            });
-            posted += 1;
-        }
-        catch (error) {
-            core.warning(`[buffer] failed ${finding.path}:${finding.line}: ${error instanceof Error ? error.message : String(error)}`);
-            try {
-                await octokit.rest.issues.createComment({
-                    owner,
-                    repo,
-                    issue_number: prNumber,
-                    body: `## Review for ${finding.path}\n\n**Line ${finding.line}:** ${buildFindingBody(finding)}`,
-                });
-                posted += 1;
-            }
-            catch { }
-        }
-    }
-    return { posted, filtered: filtered.length };
-}
-
 ;// CONCATENATED MODULE: ./src/github/permissions.ts
 
 function permissions_isBotActor(actor) {
@@ -38530,18 +38458,18 @@ async function hasWritePermission(octokit, owner, repo, actor) {
     const repos = octokit.rest?.repos;
     const method = repos?.getCollaboratorPermissionLevel;
     if (!method) {
-        lib_core.warning('[review] getCollaboratorPermissionLevel not available — assuming write permission');
+        core.warning('[review] getCollaboratorPermissionLevel not available — assuming write permission');
         return true;
     }
     try {
         const { data } = await method({ owner, repo, username: actor });
         const perm = data.permission;
-        lib_core.info(`[review] Permission for ${actor}: ${perm}`);
+        core.info(`[review] Permission for ${actor}: ${perm}`);
         return perm === 'admin' || perm === 'write';
     }
     catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        lib_core.warning(`[review] Permission check failed for ${actor}: ${msg}`);
+        core.warning(`[review] Permission check failed for ${actor}: ${msg}`);
         return false;
     }
 }
@@ -38566,7 +38494,7 @@ function buildReviewPayload(findings, headSha, options = {}) {
         path: finding.path,
         line: finding.line,
         side: 'RIGHT',
-        body: comments_buildFindingBody(finding),
+        body: buildFindingBody(finding),
     }));
     return {
         commit_id: headSha,
@@ -38588,12 +38516,12 @@ async function publishReview(octokit, params) {
             });
             if (current.data.head.sha !== headSha) {
                 result.reviewStatus = 'stale';
-                lib_core.warning(`[review] PR head changed during review (${headSha} -> ${current.data.head.sha}); skipped publishing stale findings.`);
+                core.warning(`[review] PR head changed during review (${headSha} -> ${current.data.head.sha}); skipped publishing stale findings.`);
                 return;
             }
         }
         catch (error) {
-            lib_core.warning(`[review] Could not recheck PR head; refusing to publish: ${error instanceof Error ? error.message : String(error)}`);
+            core.warning(`[review] Could not recheck PR head; refusing to publish: ${error instanceof Error ? error.message : String(error)}`);
             result.reviewStatus = 'stale';
             return;
         }
@@ -38602,7 +38530,7 @@ async function publishReview(octokit, params) {
     if (params.requireWritePermissions && params.actor) {
         hasWrite = await hasWritePermission(octokit, owner, repo, params.actor);
         if (!hasWrite) {
-            lib_core.warning(`[review] Actor ${params.actor} lacks write permission — skipping APPROVE/REQUEST_CHANGES escalation (review still posted).`);
+            core.warning(`[review] Actor ${params.actor} lacks write permission — skipping APPROVE/REQUEST_CHANGES escalation (review still posted).`);
         }
     }
     const existingIds = await fetchExistingCommentIds(octokit, owner, repo, prNumber);
@@ -38617,7 +38545,7 @@ async function publishReview(octokit, params) {
         catch { }
         const { real, probe } = classifyFindings(buffered);
         if (probe.length > 0) {
-            lib_core.warning(`[buffer] ${probe.length} finding(s) filtered as test/probe — NOT posted`);
+            core.warning(`[buffer] ${probe.length} finding(s) filtered as test/probe — NOT posted`);
         }
         findingsToPublish = real;
     }
@@ -38640,7 +38568,7 @@ async function publishReview(octokit, params) {
             });
         }
         catch (error) {
-            lib_core.warning(`Batch review failed: ${error instanceof Error ? error.message : String(error)}`);
+            core.warning(`Batch review failed: ${error instanceof Error ? error.message : String(error)}`);
             for (const comment of payload.comments) {
                 try {
                     await octokit.rest.pulls.createReviewComment({
@@ -38771,10 +38699,10 @@ async function resolveApproval(octokit, params, state) {
     catch (error) {
         const detail = redactDetail(error);
         if (isApprovalNotPermitted(error)) {
-            lib_core.warning(`[review] GitHub refused the approval review: ${detail} — enable "Allow GitHub Actions to create and approve pull requests" in repository Actions settings to allow it.`);
+            core.warning(`[review] GitHub refused the approval review: ${detail} — enable "Allow GitHub Actions to create and approve pull requests" in repository Actions settings to allow it.`);
             return { state: 'not-permitted', detail };
         }
-        lib_core.warning(`Approve review failed: ${detail}`);
+        core.warning(`Approve review failed: ${detail}`);
         return { state: 'failed', detail };
     }
 }
@@ -38812,7 +38740,7 @@ async function areAiThreadsResolved(octokit, _owner, _repo, prNumber) {
         // thread means nothing is left to resolve.
         const selfLogin = await resolveSelfLogin(octokit);
         if (!selfLogin)
-            lib_core.info('[review] cannot resolve own login (GET /user refused for GITHUB_TOKEN); attributing AI threads by marker on bot-authored comments only.');
+            core.info('[review] cannot resolve own login (GET /user refused for GITHUB_TOKEN); attributing AI threads by marker on bot-authored comments only.');
         const aiThreads = (threads ?? []).filter((thread) => (thread.comments ?? []).some((comment) => isOwnCommentBody(comment.body) &&
             isTrustedAuthor(comment.user?.login, selfLogin)));
         // `[].every(...)` is vacuously true; with no prior AI thread there is
@@ -38824,7 +38752,7 @@ async function areAiThreadsResolved(octokit, _owner, _repo, prNumber) {
             : 'unresolved';
     }
     catch (error) {
-        lib_core.warning(`[review] thread resolution check failed: ${error instanceof Error ? error.message : String(error)}`);
+        core.warning(`[review] thread resolution check failed: ${error instanceof Error ? error.message : String(error)}`);
         return 'unresolved';
     }
 }
@@ -38883,7 +38811,7 @@ async function findStickyComment(octokit, owner, repo, prNumber, marker) {
         // Posting a fresh summary is the safe outcome in that case.
         const selfLogin = await resolveSelfLogin(octokit);
         if (!selfLogin)
-            lib_core.info('[review] cannot resolve own login (GET /user refused for GITHUB_TOKEN); trusting the marker on bot-authored comments only.');
+            core.info('[review] cannot resolve own login (GET /user refused for GITHUB_TOKEN); trusting the marker on bot-authored comments only.');
         for (const comment of comments) {
             if (typeof comment.body !== 'string' || !comment.body.includes(marker))
                 continue;
@@ -38934,12 +38862,12 @@ async function fetchExistingCommentIds(octokit, owner, repo, prNumber) {
     }
     catch (error) {
         if (isPermissionError(error)) {
-            lib_core.info('Skipping duplicate check — missing pull-requests: write permission. ' +
+            core.info('Skipping duplicate check — missing pull-requests: write permission. ' +
                 'Add `permissions: { contents: read, pull-requests: write }` to the workflow, ' +
                 'or ensure the token has PR write access. For fork PRs, GITHUB_TOKEN is read-only.');
         }
         else {
-            lib_core.warning(`Failed to fetch existing review comments: ${error instanceof Error ? error.message : String(error)}`);
+            core.warning(`Failed to fetch existing review comments: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
     return ids;
@@ -39226,17 +39154,8 @@ function resolveReviewMode(raw) {
         return 'review';
     if (raw === 'auto' || raw === 'security' || raw === 'agent')
         return raw;
-    lib_core.warning(`Unknown mode "${raw}" — falling back to "review" (only "auto", "review", "security", "agent" are supported).`);
+    core.warning(`Unknown mode "${raw}" — falling back to "review" (only "auto", "review", "security", "agent" are supported).`);
     return 'review';
-}
-function isSupportedReviewEvent(eventName, action) {
-    if (!eventName)
-        return false;
-    if (!SUPPORTED_EVENTS.has(eventName))
-        return false;
-    if (!action)
-        return true;
-    return SUPPORTED_ACTIONS.has(action);
 }
 /**
  * Opt-in draft skip. Env-only because the V1 input surface is frozen
@@ -40449,7 +40368,7 @@ function validateFinding(finding, changedFiles, minConfidence) {
         return false;
     }
     if (typeof finding.confidence !== 'number' ||
-        finding.confidence < minConfidence) {
+        !(finding.confidence >= minConfidence)) {
         return false;
     }
     if (!file.patch) {
@@ -40695,7 +40614,7 @@ async function runVerifyPass(options) {
     }
     // Cost gate.
     const estimatedCostUsd = estimateCostUsd(options.inputTokenEstimate, options.outputTokenBudget, ratePer1K);
-    if (estimatedCostUsd > budgetUsd) {
+    if (!(estimatedCostUsd <= budgetUsd)) {
         return {
             findings: options.findings,
             verifiedCount: 0,
@@ -42750,7 +42669,7 @@ async function publishSecurityReview(octokit, params) {
             await publishOrUpdateStickyComment(octokit, owner, repo, prNumber, result.summaryMarkdown);
         }
         catch (error) {
-            lib_core.warning(`Failed to update sticky security summary comment: ${error instanceof Error ? error.message : String(error)}`);
+            core.warning(`Failed to update sticky security summary comment: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
     // 2. Publish Inline Review Comments
@@ -42780,7 +42699,7 @@ async function publishSecurityReview(octokit, params) {
                 });
             }
             catch (error) {
-                lib_core.warning(`Batch security review failed (${error instanceof Error ? error.message : String(error)}); falling back to individual comments`);
+                core.warning(`Batch security review failed (${error instanceof Error ? error.message : String(error)}); falling back to individual comments`);
                 for (const comment of comments) {
                     try {
                         await octokit.rest.pulls.createReviewComment({
@@ -42795,7 +42714,7 @@ async function publishSecurityReview(octokit, params) {
                         });
                     }
                     catch (individualError) {
-                        lib_core.warning(`Failed to post review comment on ${comment.path}:${comment.line}: ${individualError instanceof Error ? individualError.message : String(individualError)}`);
+                        core.warning(`Failed to post review comment on ${comment.path}:${comment.line}: ${individualError instanceof Error ? individualError.message : String(individualError)}`);
                     }
                 }
             }
@@ -42881,6 +42800,7 @@ var registry = __nccwpck_require__(3677);
 // EXTERNAL MODULE: ./src/security/skills/selector.ts
 var selector = __nccwpck_require__(9347);
 ;// CONCATENATED MODULE: ./src/cli.ts
+
 
 
 
@@ -43079,19 +42999,19 @@ function parseArgs(args) {
 }
 let agentDebugWritten = false;
 async function appendAgentDebugToSummary(runs) {
-    if (!lib_core.isDebug() || agentDebugWritten)
+    if (!core.isDebug() || agentDebugWritten)
         return;
     const section = (0,pi/* buildAgentDebugSection */.IM)(runs);
     if (!section)
         return;
-    lib_core.info(`[debug] agent runtime log: ${runs.length} run(s), ${section.length} chars`);
+    core.info(`[debug] agent runtime log: ${runs.length} run(s), ${section.length} chars`);
     try {
-        lib_core.summary.addRaw(`\n\n${section}\n`);
-        await lib_core.summary.write();
+        core.summary.addRaw(`\n\n${section}\n`);
+        await core.summary.write();
         agentDebugWritten = true;
     }
     catch (error) {
-        lib_core.warning(`[debug] failed to write agent log to summary: ${error instanceof Error ? error.message : String(error)}`);
+        core.warning(`[debug] failed to write agent log to summary: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 const DEFAULT_PR_CONTENT_MAX_TOKENS = 4096;
@@ -43109,7 +43029,7 @@ async function runPrContent(options) {
     const context = github.context;
     const prNumber = context.payload.pull_request?.number;
     if (!prNumber) {
-        lib_core.setFailed('This action only runs on pull requests');
+        core.setFailed('This action only runs on pull requests');
         return;
     }
     const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
@@ -43156,12 +43076,12 @@ async function runPrContent(options) {
         completion = await complete(budget);
     }
     catch (error) {
-        lib_core.warning(`First AI call failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=${budget}`);
+        core.warning(`First AI call failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=${budget}`);
         completion = await complete(budget);
     }
     if (!completion.content || completion.finishReason === 'length') {
         budget = escalateMaxTokens(budget);
-        lib_core.warning(`AI response truncated or empty; retrying with max_tokens=${budget}`);
+        core.warning(`AI response truncated or empty; retrying with max_tokens=${budget}`);
         completion = await complete(budget);
     }
     try {
@@ -43172,7 +43092,7 @@ async function runPrContent(options) {
     }
     catch (error) {
         budget = escalateMaxTokens(budget);
-        lib_core.warning(`First parse failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=${budget}`);
+        core.warning(`First parse failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=${budget}`);
         completion = await complete(budget);
         await updatePrContent(octokit, repoInfo.owner, repoInfo.repo, prNumber, {
             response: completion.content,
@@ -43192,9 +43112,9 @@ async function runPrContent(options) {
     })}
 - **Token usage:** ${completion.usage ? `${completion.usage.inputTokens} input / ${completion.usage.outputTokens} output` : 'n/a'}
 - **Status:** updated`;
-    lib_core.info(summary);
-    await lib_core.summary.addRaw(summary).write();
-    lib_core.setOutput('pr-content-summary', summary);
+    core.info(summary);
+    await core.summary.addRaw(summary).write();
+    core.setOutput('pr-content-summary', summary);
 }
 async function runSecurity(options, octokit, repoInfo, prNumber) {
     let changedFiles = [];
@@ -43232,62 +43152,62 @@ async function runSecurity(options, octokit, repoInfo, prNumber) {
             stickyComment: options.stickyComment,
         });
     }
-    lib_core.info(result.summaryMarkdown);
-    await lib_core.summary.addRaw(result.summaryMarkdown).write();
-    lib_core.setOutput('security_findings', JSON.stringify(result.findings));
-    lib_core.setOutput('security_findings_count', String(result.findings.length));
-    lib_core.setOutput('security_risk', result.conclusion.risk);
+    core.info(result.summaryMarkdown);
+    await core.summary.addRaw(result.summaryMarkdown).write();
+    core.setOutput('security_findings', JSON.stringify(result.findings));
+    core.setOutput('security_findings_count', String(result.findings.length));
+    core.setOutput('security_risk', result.conclusion.risk);
     if (result.sarifPath)
-        lib_core.setOutput('security_sarif_path', result.sarifPath);
+        core.setOutput('security_sarif_path', result.sarifPath);
     if (result.reportPath)
-        lib_core.setOutput('security_report_path', result.reportPath);
-    lib_core.setOutput('security_conclusion', JSON.stringify(result.conclusion));
-    lib_core.setOutput('review-summary', `${result.findings.length} security finding(s) validated (Risk: ${result.conclusion.risk})`);
+        core.setOutput('security_report_path', result.reportPath);
+    core.setOutput('security_conclusion', JSON.stringify(result.conclusion));
+    core.setOutput('review-summary', `${result.findings.length} security finding(s) validated (Risk: ${result.conclusion.risk})`);
     const failureMessage = securityFailureMessage(result.conclusion, options.failOn);
     if (failureMessage)
-        lib_core.setFailed(failureMessage);
+        core.setFailed(failureMessage);
 }
 async function main(argv) {
     try {
-        const mode = resolveReviewMode(lib_core.getInput('mode') || undefined);
+        const mode = resolveReviewMode(core.getInput('mode') || undefined);
         const eventName = process.env.GITHUB_EVENT_NAME;
         const eventAction = github.context.payload.action;
         const validation = validateReviewEvent(eventName, eventAction);
         if (!validation.supported) {
-            lib_core.warning(`[review] Unsupported event ${eventName ?? 'unknown'}${eventAction ? `/${eventAction}` : ''}: ${validation.reason} — skipping review.`);
+            core.warning(`[review] Unsupported event ${eventName ?? 'unknown'}${eventAction ? `/${eventAction}` : ''}: ${validation.reason} — skipping review.`);
             return;
         }
         const options = parseArgs(argv);
-        lib_core.info(`[review] initialized (action: ${options.action}, mode: ${mode})`);
+        core.info(`[review] initialized (action: ${options.action}, mode: ${mode})`);
         const actorForFilter = process.env.GITHUB_ACTOR ??
             github.context.payload.pull_request?.user?.login ??
             github.context.actor ??
             '';
         const actorCheck = isActorAllowed(actorForFilter, {
-            allowedBots: lib_core.getInput('allowed-bots'),
-            excludeActors: lib_core.getInput('exclude-actors'),
+            allowedBots: core.getInput('allowed-bots'),
+            excludeActors: core.getInput('exclude-actors'),
         });
         if (!actorCheck.allowed) {
-            lib_core.info(`[review] Skipping review: ${actorCheck.reason}`);
+            core.info(`[review] Skipping review: ${actorCheck.reason}`);
             return;
         }
         if (options.action === 'pr-content') {
             const contentOptions = mapPrContentInputs({
-                'github-token': lib_core.getInput('github-token'),
-                'openai-api-key': lib_core.getInput('openai-api-key'),
-                'openai-base-url': lib_core.getInput('openai-base-url'),
-                'openai-model': lib_core.getInput('openai-model'),
-                'max-tokens': lib_core.getInput('max-tokens'),
-                'include-file-list': lib_core.getInput('include-file-list'),
-                'custom-instructions': lib_core.getInput('custom-instructions'),
-                'template-path': lib_core.getInput('template-path'),
+                'github-token': core.getInput('github-token'),
+                'openai-api-key': core.getInput('openai-api-key'),
+                'openai-base-url': core.getInput('openai-base-url'),
+                'openai-model': core.getInput('openai-model'),
+                'max-tokens': core.getInput('max-tokens'),
+                'include-file-list': core.getInput('include-file-list'),
+                'custom-instructions': core.getInput('custom-instructions'),
+                'template-path': core.getInput('template-path'),
             });
             await runPrContent(contentOptions);
             return;
         }
         if (mode === 'security') {
-            const githubToken = lib_core.getInput('github-token') ||
-                lib_core.getInput('github_token') ||
+            const githubToken = core.getInput('github-token') ||
+                core.getInput('github_token') ||
                 process.env.GITHUB_TOKEN ||
                 '';
             const octokit = toPublisherOctokit(github.getOctokit(githubToken));
@@ -43298,73 +43218,72 @@ async function main(argv) {
             const prNumber = github.context.payload.pull_request?.number;
             const secOptions = mapSecurityInputs({
                 'github-token': githubToken,
-                'openai-api-key': lib_core.getInput('openai-api-key') || lib_core.getInput('api_key'),
-                'openai-base-url': lib_core.getInput('openai-base-url') || lib_core.getInput('base_url'),
-                'openai-model': lib_core.getInput('openai-model') || lib_core.getInput('model'),
+                'openai-api-key': core.getInput('openai-api-key') || core.getInput('api_key'),
+                'openai-base-url': core.getInput('openai-base-url') || core.getInput('base_url'),
+                'openai-model': core.getInput('openai-model') || core.getInput('model'),
                 mode: 'security',
-                security_profile: lib_core.getInput('security_profile') ||
-                    lib_core.getInput('security-profile'),
-                security_min_severity: lib_core.getInput('security_min_severity') ||
-                    lib_core.getInput('security-min-severity'),
-                security_fail_on: lib_core.getInput('security_fail_on') ||
-                    lib_core.getInput('security-fail-on'),
-                security_confirm_findings: lib_core.getInput('security_confirm_findings') ||
-                    lib_core.getInput('security-confirm-findings'),
-                security_inline_comments: lib_core.getInput('security_inline_comments') ||
-                    lib_core.getInput('security-inline-comments'),
-                security_sticky_comment: lib_core.getInput('security_sticky_comment') ||
-                    lib_core.getInput('security-sticky-comment'),
-                security_sarif: lib_core.getInput('security_sarif') || lib_core.getInput('security-sarif'),
-                security_max_findings: lib_core.getInput('security_max_findings') ||
-                    lib_core.getInput('security-max-findings'),
-                security_risk_threshold: lib_core.getInput('security_risk_threshold') ||
-                    lib_core.getInput('security-risk-threshold'),
-                'pi-args': lib_core.getInput('pi-args'),
-                'pi-binary-path': lib_core.getInput('pi-binary-path'),
-                'track-progress': lib_core.getInput('track-progress'),
+                security_profile: core.getInput('security_profile') ||
+                    core.getInput('security-profile'),
+                security_min_severity: core.getInput('security_min_severity') ||
+                    core.getInput('security-min-severity'),
+                security_fail_on: core.getInput('security_fail_on') ||
+                    core.getInput('security-fail-on'),
+                security_confirm_findings: core.getInput('security_confirm_findings') ||
+                    core.getInput('security-confirm-findings'),
+                security_inline_comments: core.getInput('security_inline_comments') ||
+                    core.getInput('security-inline-comments'),
+                security_sticky_comment: core.getInput('security_sticky_comment') ||
+                    core.getInput('security-sticky-comment'),
+                security_sarif: core.getInput('security_sarif') || core.getInput('security-sarif'),
+                security_max_findings: core.getInput('security_max_findings') ||
+                    core.getInput('security-max-findings'),
+                security_risk_threshold: core.getInput('security_risk_threshold') ||
+                    core.getInput('security-risk-threshold'),
+                'pi-args': core.getInput('pi-args'),
+                'pi-binary-path': core.getInput('pi-binary-path'),
+                'track-progress': core.getInput('track-progress'),
             });
             await runSecurity(secOptions, octokit, repoInfo, prNumber);
             return;
         }
         const context = github.context;
         if (!context.payload.pull_request) {
-            lib_core.setFailed('This action only runs on pull requests');
+            core.setFailed('This action only runs on pull requests');
             return;
         }
         const legacyOptions = mapPrReviewInputs({
-            'github-token': lib_core.getInput('github-token'),
-            'openai-api-key': lib_core.getInput('openai-api-key'),
-            'openai-base-url': lib_core.getInput('openai-base-url'),
-            'openai-model': lib_core.getInput('openai-model'),
-            'review-prompt': lib_core.getInput('review-prompt'),
-            'max-files': lib_core.getInput('max-files'),
-            'exclude-patterns': lib_core.getInput('exclude-patterns'),
-            'include-dir': lib_core.getInput('include-dir'),
-            'auto-approve-when-resolved': lib_core.getInput('auto-approve-when-resolved'),
-            'min-severity': lib_core.getInput('min-severity'),
-            'block-on-issues': lib_core.getInput('block-on-issues'),
-            'include-full-content': lib_core.getInput('include-full-content'),
-            'max-context-chars': lib_core.getInput('max-context-chars'),
+            'github-token': core.getInput('github-token'),
+            'openai-api-key': core.getInput('openai-api-key'),
+            'openai-base-url': core.getInput('openai-base-url'),
+            'openai-model': core.getInput('openai-model'),
+            'review-prompt': core.getInput('review-prompt'),
+            'max-files': core.getInput('max-files'),
+            'exclude-patterns': core.getInput('exclude-patterns'),
+            'include-dir': core.getInput('include-dir'),
+            'auto-approve-when-resolved': core.getInput('auto-approve-when-resolved'),
+            'min-severity': core.getInput('min-severity'),
+            'block-on-issues': core.getInput('block-on-issues'),
+            'include-full-content': core.getInput('include-full-content'),
+            'max-context-chars': core.getInput('max-context-chars'),
         });
         const llmConfig = resolveEngineConfig(legacyOptions);
         const octokit = toPublisherOctokit(github.getOctokit(legacyOptions.githubToken));
         const prNumber = context.payload.pull_request.number;
         const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
-        const trackEnabled = lib_core.getInput('track-progress') === 'true';
+        const trackEnabled = core.getInput('track-progress') === 'true';
         const reviewStarted = external_node_perf_hooks_.performance.now();
         trackPhase('fetch', `PR #${prNumber}`, { enabled: trackEnabled });
         const reviewContext = await fetchPrContext(octokit, repoInfo, prNumber);
         if (shouldSkipDraft(reviewContext.pullRequest.draft)) {
-            lib_core.info(`[review] PR #${prNumber} is a draft and AI_REVIEW_SKIP_DRAFTS=true — skipping review`);
-            lib_core.setOutput('review-summary', 'skipped: draft pull request');
+            core.info(`[review] PR #${prNumber} is a draft and AI_REVIEW_SKIP_DRAFTS=true — skipping review`);
+            core.setOutput('review-summary', 'skipped: draft pull request');
             return;
         }
         reviewContext.repositoryPath =
             process.env.GITHUB_WORKSPACE || process.cwd();
         const allPrFiles = reviewContext.diff.files;
         const filtered = applyLegacyFilters(allPrFiles.map((f) => f.filename), legacyOptions);
-        const maxFiles = Math.min(legacyOptions.maxFiles, Number.parseInt(process.env.AI_REVIEW_MAX_FILES ||
-            `${config/* REVIEW_OPTION_DEFAULTS */.Ag.aiReviewMaxFiles}`, 10));
+        const maxFiles = Math.min(legacyOptions.maxFiles, parsePositiveInt(process.env.AI_REVIEW_MAX_FILES, config/* REVIEW_OPTION_DEFAULTS */.Ag.aiReviewMaxFiles, { name: 'AI_REVIEW_MAX_FILES' }));
         // Captured before filtering so the summary can report
         // "N of M (X excluded by filter)" (src/github/comments.ts).
         const filesTotal = allPrFiles.length;
@@ -43372,7 +43291,8 @@ async function main(argv) {
         const filesSelected = reviewContext.diff.files.length;
         trackPhase('filter', `${reviewContext.diff.files.length} files after filter`, { enabled: trackEnabled });
         if (reviewContext.diff.files.length === 0) {
-            lib_core.info('[review] No files to review after filtering');
+            core.warning(`[review] No files to review after filtering (${filesTotal} changed, include-dir=${legacyOptions.includeDirs?.join(',') ?? '(none)'}, exclude-patterns=${legacyOptions.excludePatterns.join(',')})`);
+            core.setOutput('review-summary', 'skipped: no files to review');
             return;
         }
         const detected = resolveProfiles(reviewContext.repositoryPath, process.env.AI_REVIEW_PROFILE);
@@ -43409,13 +43329,13 @@ async function main(argv) {
                 })
                 : { findings: [], ran: [], skipped: [] };
             if (prelintResult.skipped.length > 0) {
-                lib_core.info(`[prelint] Skipped tools: ${prelintResult.skipped.join(', ')}`);
+                core.info(`[prelint] Skipped tools: ${prelintResult.skipped.join(', ')}`);
             }
             if (prelintResult.ran.length > 0) {
-                lib_core.info(`[prelint] Ran ${prelintResult.ran.join(', ')} — ${prelintResult.findings.length} findings`);
+                core.info(`[prelint] Ran ${prelintResult.ran.join(', ')} — ${prelintResult.findings.length} findings`);
             }
             trackPhase('harness', 'Pi review start', { enabled: trackEnabled });
-            const piBinaryRaw = lib_core.getInput('pi-binary-path');
+            const piBinaryRaw = core.getInput('pi-binary-path');
             let piBinaryPath;
             if (piBinaryRaw) {
                 try {
@@ -43424,7 +43344,7 @@ async function main(argv) {
                     piBinaryPath = piBinaryRaw;
                 }
                 catch {
-                    lib_core.warning(`[review] pi-binary-path ${piBinaryRaw} not executable — falling back to pi`);
+                    core.warning(`[review] pi-binary-path ${piBinaryRaw} not executable — falling back to pi`);
                 }
             }
             // ponytail: all security skills into default review (12 domains + validation gate); filter by domain when cost matters.
@@ -43440,7 +43360,7 @@ async function main(argv) {
                 .join('\n\n');
             harness = new pi/* PiHarness */._7({
                 binaryPath: piBinaryPath,
-                piArgs: lib_core.getInput('pi-args'),
+                piArgs: core.getInput('pi-args'),
                 timeoutMs: positiveTimeout(process.env.AI_REVIEW_PI_TIMEOUT_MS, 15 * 60_000),
                 maxOutputBytes: budgetOrFallback(process.env.AI_REVIEW_PI_MAX_OUTPUT_BYTES, pi/* DEFAULT_MAX_OUTPUT_BYTES */.n9),
                 maxToolCalls: budgetOrFallback(process.env.AI_REVIEW_PI_MAX_TOOL_CALLS, pi/* DEFAULT_MAX_TOOL_CALLS */.Ko),
@@ -43455,7 +43375,7 @@ async function main(argv) {
                 toolFindings: prelintResult.findings,
             });
             const result = await runReview(reviewContext, harness, {
-                minConfidence: Number.parseFloat(process.env.AI_REVIEW_MIN_CONFIDENCE || '0.8'),
+                minConfidence: parseBoundedFloat(process.env.AI_REVIEW_MIN_CONFIDENCE, 0.8, { name: 'AI_REVIEW_MIN_CONFIDENCE', min: 0, max: 1 }),
                 extraRules: reviewRules,
                 minSeverity: legacyOptions.minSeverity,
             });
@@ -43469,12 +43389,12 @@ async function main(argv) {
                         title: reviewContext.pullRequest.title,
                         body: reviewContext.pullRequest.body,
                         verify: async (prompt) => (await verifyProvider.complete([{ role: 'user', content: prompt }], { temperature: 0, maxOutputTokens: 2048 })).content,
-                        budgetUsd: Number.parseFloat(process.env.AI_REVIEW_VERIFY_BUDGET_USD || '0.5'),
+                        budgetUsd: parseBoundedFloat(process.env.AI_REVIEW_VERIFY_BUDGET_USD, 0.5, { name: 'AI_REVIEW_VERIFY_BUDGET_USD', min: 0 }),
                     });
                     trackPhase('harness', `Verify pass done: ${result.findings.length} findings`, { enabled: trackEnabled });
                 }
                 catch (error) {
-                    lib_core.warning(`[review] verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`);
+                    core.warning(`[review] verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`);
                 }
             }
             // Surface tool findings + prelint diagnostics in the result
@@ -43513,10 +43433,10 @@ async function main(argv) {
                     filesSelected,
                     blockOnIssues: legacyOptions.blockOnIssues,
                     minSeverity: legacyOptions.minSeverity,
-                    requireWritePermissions: lib_core.getInput('require-write-permissions') === 'true',
-                    stickySummary: lib_core.getInput('sticky-summary') !== 'false',
-                    bufferInlineComments: lib_core.getInput('buffer-inline-comments') !== 'false' &&
-                        lib_core.getInput('classify-inline-comments') !== 'false',
+                    requireWritePermissions: core.getInput('require-write-permissions') === 'true',
+                    stickySummary: core.getInput('sticky-summary') !== 'false',
+                    bufferInlineComments: core.getInput('buffer-inline-comments') !== 'false' &&
+                        core.getInput('classify-inline-comments') !== 'false',
                     autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
                     actor: process.env.GITHUB_ACTOR ??
                         github.context.payload.pull_request?.user?.login ??
@@ -43534,8 +43454,8 @@ async function main(argv) {
                     reviewedPaths: result.filesReviewed,
                     failedGroups: result.diagnostics?.failedGroups ?? 0,
                 }),
-            })), (serialized) => lib_core.setOutput('review-report', serialized));
-            await lib_core.summary
+            })), (serialized) => core.setOutput('review-report', serialized));
+            await core.summary
                 .addRaw(buildJobSummary({
                 model: llmConfig.model,
                 durationMs: external_node_perf_hooks_.performance.now() - reviewStarted,
@@ -43554,19 +43474,19 @@ async function main(argv) {
             if (dumpBudget && harness) {
                 const section = buildRawHarnessSection(harness.runs, dumpBudget);
                 if (section)
-                    await lib_core.summary.addRaw(section).write();
+                    await core.summary.addRaw(section).write();
             }
-            lib_core.setOutput('review-summary', `${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`);
+            core.setOutput('review-summary', `${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`);
             // A crashed group or an unanalyzed file used to leave the step green
             // while the summary looked like a clean review. Fail the step so the
             // run is visible; set AI_REVIEW_FAIL_ON_INCOMPLETE=false to keep the
             // old lenient behavior.
             const failure = incompleteReviewFailure({ result, filesSelected });
             if (failure && process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false') {
-                lib_core.setFailed(failure);
+                core.setFailed(failure);
             }
             else if (failure) {
-                lib_core.warning(failure);
+                core.warning(failure);
             }
         }
         finally {
@@ -43584,15 +43504,15 @@ async function main(argv) {
         }
     }
     catch (error) {
-        lib_core.setFailed(`Action failed: ${error instanceof Error ? error.message : String(error)}`);
+        core.setFailed(`Action failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 async function readPromptFileIfNeeded(repoPath) {
-    const file = lib_core.getInput('review-prompt-file');
+    const file = core.getInput('review-prompt-file');
     if (!file)
         return undefined;
     if (file.includes('\0')) {
-        lib_core.warning(`[review] review-prompt-file ${file} contains null byte — ignored`);
+        core.warning(`[review] review-prompt-file ${file} contains null byte — ignored`);
         return undefined;
     }
     try {
@@ -43600,37 +43520,52 @@ async function readPromptFileIfNeeded(repoPath) {
         const { isAbsolute, relative, resolve } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 6760, 23));
         // Repo-relative contract: must be inside the workspace root.
         if (isAbsolute(file)) {
-            lib_core.warning(`[review] review-prompt-file ${file} must be repo-relative — ignored`);
+            core.warning(`[review] review-prompt-file ${file} must be repo-relative — ignored`);
             return undefined;
         }
         const full = resolve(repoPath, file);
         if (full !== repoPath) {
             const rel = relative(repoPath, full);
             if (rel.startsWith('..') || isAbsolute(rel)) {
-                lib_core.warning(`[review] review-prompt-file ${file} escapes repository — ignored`);
+                core.warning(`[review] review-prompt-file ${file} escapes repository — ignored`);
                 return undefined;
             }
         }
         const stat = statSync(full);
         if (stat.size > 50 * 1024) {
-            lib_core.warning(`[review] review-prompt-file ${file} exceeds 50 KiB — ignored`);
+            core.warning(`[review] review-prompt-file ${file} exceeds 50 KiB — ignored`);
             return undefined;
         }
         const content = readFileSync(full, 'utf8');
         return content.trim() || undefined;
     }
     catch (error) {
-        lib_core.warning(`[review] review-prompt-file read failed: ${error instanceof Error ? error.message : String(error)}`);
+        core.warning(`[review] review-prompt-file read failed: ${error instanceof Error ? error.message : String(error)}`);
         return undefined;
     }
 }
+function normalizeIncludeDir(dir) {
+    return dir
+        .trim()
+        .replace(/\\/g, '/')
+        .replace(/^(\.\/)+/, '')
+        .replace(/\/+$/, '');
+}
 function applyLegacyFilters(filenames, options) {
-    const excludeRegexes = options.excludePatterns.map((pattern) => new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
+    const excludeRegexes = options.excludePatterns.map((pattern) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
+    const includeDirs = options.includeDirs
+        ?.map(normalizeIncludeDir)
+        .filter((dir) => dir !== '' && dir !== '.');
+    for (const dir of includeDirs ?? []) {
+        if (!filenames.some((f) => f === dir || f.startsWith(`${dir}/`))) {
+            core.warning(`[review] include-dir "${dir}" matches no changed files`);
+        }
+    }
     return filenames.filter((filename) => {
         if (excludeRegexes.some((regex) => regex.test(filename)))
             return false;
-        if (options.includeDirs?.length)
-            return options.includeDirs.some((dir) => filename.startsWith(`${dir}/`) || filename === dir);
+        if (includeDirs?.length)
+            return includeDirs.some((dir) => filename.startsWith(`${dir}/`) || filename === dir);
         return true;
     });
 }

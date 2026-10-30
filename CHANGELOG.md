@@ -29,6 +29,19 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Fixed
 
+- **An invalid numeric setting no longer silently disables a safety gate.**
+  `AI_REVIEW_MAX_FILES`, `AI_REVIEW_MIN_CONFIDENCE`, and
+  `AI_REVIEW_VERIFY_BUDGET_USD` (and the numeric action inputs such as
+  `max-files`) now share one parser: a non-numeric, negative, zero (where a
+  positive value is required), or out-of-range value logs a warning and falls
+  back to the default. Previously a typo in `AI_REVIEW_MAX_FILES` exited green
+  with "No files", and `NaN` switched off the confidence floor and the verify
+  cost gate. The confidence floor and cost gate also fail closed on `NaN`.
+- **`include-dir` accepts `./src`, `src/`, and Windows separators.** A filter
+  that matches no files now warns, and an empty selection sets
+  `review-summary` to `skipped: no files to review` instead of exiting with no
+  output. `?` in `exclude-patterns` is matched literally instead of throwing.
+
 - **A diff larger than `max-context-chars` no longer cuts mid-hunk or leaves a
   code fence open.** The prompt now truncates per file at hunk boundaries, so
   the final security instruction is never swallowed. Files that were cut off or

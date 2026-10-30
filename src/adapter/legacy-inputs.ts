@@ -5,6 +5,7 @@
  */
 
 import { normalizeBaseUrl } from '../llm/config.js';
+import { parsePositiveInt } from '../shared/numeric.js';
 
 export type LegacyAction = 'pr-review' | 'pr-content';
 
@@ -98,11 +99,12 @@ function bool(value: string | undefined, fallback: string): boolean {
 	return (value ?? fallback) === 'true';
 }
 
-function int(value: string | undefined, fallback: string): number {
-	const parsed = Number.parseInt(value ?? '', 10);
-	return Number.isFinite(parsed) && String(parsed) === (value ?? '').trim()
-		? parsed
-		: Number.parseInt(fallback, 10);
+function int(
+	value: string | undefined,
+	fallback: string,
+	name: string
+): number {
+	return parsePositiveInt(value, Number.parseInt(fallback, 10), { name });
 }
 
 function splitList(value: string | undefined): string[] {
@@ -219,7 +221,8 @@ export function mapSecurityInputs(inputs: LegacyInputs): SecurityEngineOptions {
 		maxFindings: int(
 			get(inputs, 'security_max_findings') ??
 				get(inputs, 'security-max-findings'),
-			SECURITY_DEFAULTS.maxFindings
+			SECURITY_DEFAULTS.maxFindings,
+			'security-max-findings'
 		),
 		riskThreshold: rawRiskThreshold,
 		piArgs: get(inputs, 'pi-args') ?? get(inputs, 'pi_args'),
@@ -240,7 +243,11 @@ function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 		baseUrl: rawBaseUrl ? normalizeBaseUrl(rawBaseUrl) : undefined,
 		model: get(inputs, 'openai-model') ?? PR_REVIEW_DEFAULTS.openaiModel,
 		reviewPrompt: get(inputs, 'review-prompt'),
-		maxFiles: int(get(inputs, 'max-files'), PR_REVIEW_DEFAULTS.maxFiles),
+		maxFiles: int(
+			get(inputs, 'max-files'),
+			PR_REVIEW_DEFAULTS.maxFiles,
+			'max-files'
+		),
 		excludePatterns: splitList(
 			get(inputs, 'exclude-patterns') ?? PR_REVIEW_DEFAULTS.excludePatterns
 		),
@@ -263,7 +270,8 @@ function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 		),
 		maxContextChars: int(
 			get(inputs, 'max-context-chars'),
-			PR_REVIEW_DEFAULTS.maxContextChars
+			PR_REVIEW_DEFAULTS.maxContextChars,
+			'max-context-chars'
 		),
 	};
 }
@@ -278,7 +286,11 @@ function mapPrContent(
 		apiKey: get(inputs, 'openai-api-key') ?? '',
 		baseUrl: rawBaseUrl ? normalizeBaseUrl(rawBaseUrl) : undefined,
 		model: get(inputs, 'openai-model') ?? PR_CONTENT_DEFAULTS.openaiModel,
-		maxTokens: int(get(inputs, 'max-tokens'), PR_CONTENT_DEFAULTS.maxTokens),
+		maxTokens: int(
+			get(inputs, 'max-tokens'),
+			PR_CONTENT_DEFAULTS.maxTokens,
+			'max-tokens'
+		),
 		includeFileList: bool(
 			get(inputs, 'include-file-list'),
 			PR_CONTENT_DEFAULTS.includeFileList

@@ -1,3 +1,4 @@
+import * as core from '@actions/core';
 import { describe, expect, it, vi } from 'vitest';
 import {
 	applyLegacyFilters,
@@ -44,6 +45,34 @@ describe('parseArgs', () => {
 			{ excludePatterns: ['src/*.ts'] }
 		);
 		expect(result).toEqual(['src/a.ts.bak', 'docs/a.ts']);
+	});
+
+	it('treats ? in exclude patterns literally instead of throwing', () => {
+		expect(
+			applyLegacyFilters(['a?.ts', 'ab.ts'], { excludePatterns: ['a?.ts'] })
+		).toEqual(['ab.ts']);
+	});
+
+	it.each(['./src', 'src/', './src/', 'src\\', '.\\src'])(
+		'normalises include-dir %s',
+		(dir) => {
+			expect(
+				applyLegacyFilters(['src/a.ts', 'docs/b.ts'], {
+					excludePatterns: [],
+					includeDirs: [dir],
+				})
+			).toEqual(['src/a.ts']);
+		}
+	);
+
+	it('warns when an include-dir matches no files', () => {
+		const warn = vi.spyOn(core, 'warning').mockImplementation(() => {});
+		applyLegacyFilters(['src/a.ts'], {
+			excludePatterns: [],
+			includeDirs: ['lib'],
+		});
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining('lib'));
+		warn.mockRestore();
 	});
 
 	it('compiles each exclude pattern once for all filenames', () => {

@@ -361,3 +361,20 @@ describe('runVerifyPass', () => {
 		expect(result.estimatedCostUsd).toBeCloseTo(0.004048, 6);
 	});
 });
+
+describe('runVerifyPass budget gate', () => {
+	it('skips (fails closed) when the budget is NaN', async () => {
+		const findings = [mkFinding({ severity: 'high' })];
+		const result = await runVerifyPass({
+			findings,
+			toolFindings: [],
+			context: ctx,
+			verify: async () => '{"findings":[]}',
+			inputTokenEstimate: 1_000_000,
+			outputTokenBudget: 1024,
+			budgetUsd: Number.NaN,
+		});
+		expect(result.skipped).toBe(true);
+		expect(result.skipReason).toContain('budget');
+	});
+});

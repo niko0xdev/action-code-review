@@ -156,7 +156,7 @@ export async function runVerifyPass(
 		options.outputTokenBudget,
 		ratePer1K
 	);
-	if (estimatedCostUsd > budgetUsd) {
+	if (!(estimatedCostUsd <= budgetUsd)) {
 		return {
 			findings: options.findings,
 			verifiedCount: 0,

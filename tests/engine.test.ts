@@ -47,6 +47,15 @@ describe('mapLegacyInputs (docs/v1-interface-contract.md)', () => {
 		expect(options.autoApproveWhenResolved).toBe(false);
 	});
 
+	it.each(['0', '-5', 'abc', '3.5'])(
+		'falls back to the default max-files for invalid value %s',
+		(value) => {
+			expect(
+				mapLegacyInputs('pr-review', { 'max-files': value }).maxFiles
+			).toBe(10);
+		}
+	);
+
 	it('maps pr-content inputs into its own shape', () => {
 		const options = mapLegacyInputs('pr-content', {
 			'max-tokens': '500',

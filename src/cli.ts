@@ -61,6 +61,7 @@ import { publishSecurityReview } from './security/reporters/security-publisher.j
 import { CURATED_SECURITY_SKILLS } from './security/skills/registry.js';
 import { renderSkillsForPrompt } from './security/skills/selector.js';
 import type { SecurityContext } from './security/types.js';
+import { parseBoundedFloat, parsePositiveInt } from './shared/numeric.js';
 import { profilesWithSkills } from './skills/registry.js';
 
 function positiveTimeout(value: string | undefined, fallback: number): number {
@@ -621,10 +622,10 @@ export async function main(argv: string[]): Promise<void> {
 		);
 		const maxFiles = Math.min(
 			legacyOptions.maxFiles,
-			Number.parseInt(
-				process.env.AI_REVIEW_MAX_FILES ||
-					`${REVIEW_OPTION_DEFAULTS.aiReviewMaxFiles}`,
-				10
+			parsePositiveInt(
+				process.env.AI_REVIEW_MAX_FILES,
+				REVIEW_OPTION_DEFAULTS.aiReviewMaxFiles,
+				{ name: 'AI_REVIEW_MAX_FILES' }
 			)
 		);
 		// Captured before filtering so the summary can report
@@ -643,7 +644,10 @@ export async function main(argv: string[]): Promise<void> {
 			{ enabled: trackEnabled }
 		);
 		if (reviewContext.diff.files.length === 0) {
-			core.info('[review] No files to review after filtering');
+			core.warning(
+				`[review] No files to review after filtering (${filesTotal} changed, include-dir=${legacyOptions.includeDirs?.join(',') ?? '(none)'}, exclude-patterns=${legacyOptions.excludePatterns.join(',')})`
+			);
+			core.setOutput('review-summary', 'skipped: no files to review');
 			return;
 		}
 
@@ -756,8 +760,10 @@ export async function main(argv: string[]): Promise<void> {
 				toolFindings: prelintResult.findings,
 			});
 			const result = await runReview(reviewContext, harness, {
-				minConfidence: Number.parseFloat(
-					process.env.AI_REVIEW_MIN_CONFIDENCE || '0.8'
+				minConfidence: parseBoundedFloat(
+					process.env.AI_REVIEW_MIN_CONFIDENCE,
+					0.8,
+					{ name: 'AI_REVIEW_MIN_CONFIDENCE', min: 0, max: 1 }
 				),
 				extraRules: reviewRules,
 				minSeverity: legacyOptions.minSeverity,
@@ -778,8 +784,10 @@ export async function main(argv: string[]): Promise<void> {
 									{ temperature: 0, maxOutputTokens: 2048 }
 								)
 							).content,
-						budgetUsd: Number.parseFloat(
-							process.env.AI_REVIEW_VERIFY_BUDGET_USD || '0.5'
+						budgetUsd: parseBoundedFloat(
+							process.env.AI_REVIEW_VERIFY_BUDGET_USD,
+							0.5,
+							{ name: 'AI_REVIEW_VERIFY_BUDGET_USD', min: 0 }
 						),
 					});
 					trackPhase(
@@ -972,6 +980,14 @@ async function readPromptFileIfNeeded(
 	}
 }
 
+export function normalizeIncludeDir(dir: string): string {
+	return dir
+		.trim()
+		.replace(/\\/g, '/')
+		.replace(/^(\.\/)+/, '')
+		.replace(/\/+$/, '');
+}
+
 export function applyLegacyFilters(
 	filenames: string[],
 	options: { excludePatterns: string[]; includeDirs?: string[] }
@@ -979,13 +995,21 @@ export function applyLegacyFilters(
 	const excludeRegexes = options.excludePatterns.map(
 		(pattern) =>
 			new RegExp(
-				`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`
+				`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`
 			)
 	);
+	const includeDirs = options.includeDirs
+		?.map(normalizeIncludeDir)
+		.filter((dir) => dir !== '' && dir !== '.');
+	for (const dir of includeDirs ?? []) {
+		if (!filenames.some((f) => f === dir || f.startsWith(`${dir}/`))) {
+			core.warning(`[review] include-dir "${dir}" matches no changed files`);
+		}
+	}
 	return filenames.filter((filename) => {
 		if (excludeRegexes.some((regex) => regex.test(filename))) return false;
-		if (options.includeDirs?.length)
-			return options.includeDirs.some(
+		if (includeDirs?.length)
+			return includeDirs.some(
 				(dir) => filename.startsWith(`${dir}/`) || filename === dir
 			);
 		return true;
