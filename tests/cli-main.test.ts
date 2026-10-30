@@ -51,7 +51,8 @@ vi.mock('../src/adapter/runtime.js', () => ({
 }));
 
 vi.mock('../src/harness/pi.js', async (importOriginal) => {
-	const original = await importOriginal<typeof import('../src/harness/pi.js')>();
+	const original =
+		await importOriginal<typeof import('../src/harness/pi.js')>();
 	class FakeHarness {
 		runs = [];
 	}
@@ -249,10 +250,7 @@ describe('main: top-level flows', () => {
 			filesExcluded: 0,
 			filesSelected: 1,
 		});
-		expect(setOutput).toHaveBeenCalledWith(
-			'review-report',
-			expect.any(String)
-		);
+		expect(setOutput).toHaveBeenCalledWith('review-report', expect.any(String));
 		expect(setOutput).toHaveBeenCalledWith(
 			'review-summary',
 			'1 files reviewed, 0 issues found'
