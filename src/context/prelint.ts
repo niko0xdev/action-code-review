@@ -18,9 +18,11 @@
 import { spawn } from 'node:child_process';
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
+import * as core from '@actions/core';
 import {
 	MAX_ANALYSER_OUTPUT_BYTES,
 	buildAnalyserEnv,
+	killAnalyser,
 	safeTargetFiles,
 } from '../security/analyser-process.js';
 import type { ChangedFile } from '../types/context.js';
@@ -154,10 +156,9 @@ function spawnCollect(
 	return new Promise((resolve, reject) => {
 		const child = spawn(cmd, args, {
 			cwd: options.cwd,
-			timeout: options.timeoutMs,
 			env: buildAnalyserEnv(),
 			stdio: ['ignore', 'pipe', 'pipe'],
-			killSignal: 'SIGKILL',
+			detached: process.platform !== 'win32',
 		});
 		let stdout = '';
 		let stderr = '';
@@ -170,7 +171,7 @@ function spawnCollect(
 			cb();
 		};
 		const timer = setTimeout(() => {
-			child.kill('SIGKILL');
+			killAnalyser(child);
 			finish(() =>
 				reject(new Error(`${cmd} timed out after ${options.timeoutMs}ms`))
 			);
@@ -178,7 +179,7 @@ function spawnCollect(
 		const overCap = (size: number) => {
 			if (size <= MAX_ANALYSER_OUTPUT_BYTES) return false;
 			clearTimeout(timer);
-			child.kill('SIGKILL');
+			killAnalyser(child);
 			finish(() =>
 				reject(
 					new Error(
@@ -202,6 +203,19 @@ function spawnCollect(
 		});
 		child.on('close', (code) => {
 			clearTimeout(timer);
+			// Every supported linter prints its JSON report even when it exits
+			// non-zero because it found issues. Non-zero with no stdout means the
+			// tool itself failed, which must not read as a clean run.
+			if (code && !stdout.trim()) {
+				finish(() =>
+					reject(
+						new Error(
+							`${cmd} exited ${code} with no output: ${stderr.trim().slice(0, 200)}`
+						)
+					)
+				);
+				return;
+			}
 			finish(() => resolve({ stdout, stderr, code: code ?? 0 }));
 		});
 	});
@@ -630,6 +644,7 @@ export async function runPrelint(
 			ran.push(tool.id);
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
+			core.warning(`Prelint tool ${tool.id} failed and was skipped: ${reason}`);
 			skipped.push(`${tool.id} (${reason})`);
 		}
 	}

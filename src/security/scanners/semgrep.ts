@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import {
 	MAX_ANALYSER_OUTPUT_BYTES,
 	buildAnalyserEnv,
+	killAnalyser,
 	safeTargetFiles,
 } from '../analyser-process.js';
 import { computeFindingFingerprint } from '../findings/fingerprint.js';
@@ -121,11 +122,7 @@ export async function runSemgrepScanner(
 		const timeout = setTimeout(() => {
 			if (!settled) {
 				settled = true;
-				try {
-					proc.kill('SIGKILL');
-				} catch {
-					// Ignore
-				}
+				killAnalyser(proc);
 				resolve({
 					execution: {
 						name: 'semgrep',
@@ -143,6 +140,7 @@ export async function runSemgrepScanner(
 		const proc = spawn('semgrep', args, {
 			cwd: repositoryPath,
 			env: buildAnalyserEnv({ SEMGREP_SEND_METRICS: 'off' }),
+			detached: process.platform !== 'win32',
 		});
 
 		let stdoutBytes = 0;
@@ -152,7 +150,7 @@ export async function runSemgrepScanner(
 				if (settled) return;
 				settled = true;
 				clearTimeout(timeout);
-				proc.kill('SIGKILL');
+				killAnalyser(proc);
 				resolve({
 					execution: {
 						name: 'semgrep',

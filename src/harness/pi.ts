@@ -165,9 +165,11 @@ export function buildPiArgs(
 }
 export function buildPiEnv(
 	configDir: string,
-	apiKey?: string
+	apiKey?: string,
+	extraEnv: Record<string, string> = {}
 ): NodeJS.ProcessEnv {
 	return {
+		...extraEnv,
 		PATH: process.env.PATH,
 		HOME: process.env.HOME,
 		LANG: process.env.LANG,
@@ -754,6 +756,8 @@ export interface RunPiParams {
 	cwd: string;
 	configDir: string;
 	apiKey?: string;
+	/** Extra allowlisted variables, such as a non-OpenAI provider key. */
+	extraEnv?: Record<string, string>;
 	prompt: string;
 	timeoutMs: number;
 	maxOutputBytes?: number;
@@ -764,7 +768,7 @@ export function runPi(params: RunPiParams): Promise<PiRunLog> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(params.binaryPath, params.args, {
 			cwd: params.cwd,
-			env: buildPiEnv(params.configDir, params.apiKey),
+			env: buildPiEnv(params.configDir, params.apiKey, params.extraEnv),
 			stdio: ['pipe', 'pipe', 'pipe'],
 			detached: process.platform !== 'win32',
 		});
