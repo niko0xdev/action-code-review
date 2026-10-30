@@ -29,6 +29,22 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Fixed
 
+- **A re-run keeps `REQUEST_CHANGES` while blocking findings are already
+  commented.** The blocking decision (and the approval gate) now covers every
+  valid finding, not only the new ones. When nothing new needs posting, a
+  body-only review carries the event. If the batch review fails and comments
+  fall back to one-by-one posting, the review event is still submitted. The
+  sticky summary lists all valid findings and notes how many were already
+  commented, without re-posting them.
+- **LLM calls retry only transient failures.** The OpenAI-compatible transport
+  makes up to three attempts for 408, 429, 500, 502, 503, 504, and connection
+  resets, with exponential backoff, jitter, and a capped `Retry-After`
+  (non-negative integer seconds or an HTTP date, never shorter than the
+  backoff). Request timeouts, unparseable 200 responses, and other 4xx
+  responses such as 400 or 401 fail immediately. The
+  blanket immediate retry in the PR-content flow is removed so retries are not
+  multiplied. Error messages never contain the API key.
+
 - **An invalid numeric setting no longer silently disables a safety gate.**
   `AI_REVIEW_MAX_FILES`, `AI_REVIEW_MIN_CONFIDENCE`, and
   `AI_REVIEW_VERIFY_BUDGET_USD` (and the numeric action inputs such as

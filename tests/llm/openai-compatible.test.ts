@@ -201,3 +201,158 @@ describe('extractJsonBlock', () => {
 		expect(extractJsonBlock('no structured data here')).toBeNull();
 	});
 });
+
+describe('OpenAiCompatibleProvider retry', () => {
+	const OK = () =>
+		jsonResponse({
+			choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+		});
+
+	function make(fetchImpl: unknown, sleep = vi.fn(async () => {})) {
+		const provider = new OpenAiCompatibleProvider(
+			CONFIG,
+			undefined,
+			fetchImpl as typeof fetch,
+			5000,
+			{ sleep, random: () => 0.5 }
+		);
+		return { provider, sleep };
+	}
+
+	it('retries a 429, honours retry-after seconds, then succeeds', async () => {
+		const fetchImpl = vi
+			.fn()
+			.mockResolvedValueOnce(
+				new Response('slow down', {
+					status: 429,
+					headers: { 'retry-after': '2' },
+				})
+			)
+			.mockResolvedValueOnce(OK());
+		const { provider, sleep } = make(fetchImpl);
+		const out = await provider.complete([{ role: 'user', content: 'hi' }]);
+		expect(out.content).toBe('ok');
+		expect(fetchImpl).toHaveBeenCalledTimes(2);
+		expect(sleep).toHaveBeenCalledWith(2000);
+	});
+
+	it('honours an HTTP-date retry-after and caps it', async () => {
+		const date = new Date(Date.now() + 3_600_000).toUTCString();
+		const fetchImpl = vi
+			.fn()
+			.mockResolvedValueOnce(
+				new Response('', { status: 503, headers: { 'retry-after': date } })
+			)
+			.mockResolvedValueOnce(OK());
+		const { provider, sleep } = make(fetchImpl);
+		await provider.complete([{ role: 'user', content: 'hi' }]);
+		const delay = (sleep.mock.calls[0] as unknown as [number])[0];
+		expect(delay).toBeGreaterThanOrEqual(1000);
+		expect(delay).toBeLessThanOrEqual(30_000);
+	});
+
+	it('does not retry a 401', async () => {
+		const fetchImpl = vi
+			.fn()
+			.mockResolvedValue(new Response('bad key', { status: 401 }));
+		const { provider, sleep } = make(fetchImpl);
+		await expect(
+			provider.complete([{ role: 'user', content: 'hi' }])
+		).rejects.toMatchObject({ status: 401 });
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
+	});
+
+	it('retries a 503 up to three attempts then fails', async () => {
+		const fetchImpl = vi.fn(async () => new Response('down', { status: 503 }));
+		const { provider, sleep } = make(fetchImpl);
+		await expect(
+			provider.complete([{ role: 'user', content: 'hi' }])
+		).rejects.toMatchObject({ status: 503 });
+		expect(fetchImpl).toHaveBeenCalledTimes(3);
+		expect(sleep).toHaveBeenCalledTimes(2);
+	});
+
+	it('retries a network reset', async () => {
+		const fetchImpl = vi
+			.fn()
+			.mockRejectedValueOnce(new TypeError('fetch failed'))
+			.mockResolvedValueOnce(OK());
+		const { provider } = make(fetchImpl);
+		const out = await provider.complete([{ role: 'user', content: 'hi' }]);
+		expect(out.content).toBe('ok');
+		expect(fetchImpl).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not retry a 400', async () => {
+		const fetchImpl = vi.fn(async () => new Response('bad', { status: 400 }));
+		const { provider, sleep } = make(fetchImpl);
+		await expect(
+			provider.complete([{ role: 'user', content: 'hi' }])
+		).rejects.toMatchObject({ status: 400 });
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
+	});
+
+	it('does not retry a request timeout', async () => {
+		const fetchImpl = vi.fn(
+			(_url: string, init: RequestInit) =>
+				new Promise((_resolve, reject) => {
+					init.signal?.addEventListener('abort', () =>
+						reject(new Error('This operation was aborted'))
+					);
+				})
+		);
+		const sleep = vi.fn(async () => {});
+		const provider = new OpenAiCompatibleProvider(
+			CONFIG,
+			undefined,
+			fetchImpl as unknown as typeof fetch,
+			20,
+			{ sleep }
+		);
+		await expect(
+			provider.complete([{ role: 'user', content: 'hi' }])
+		).rejects.toThrow(/aborted/);
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
+	});
+
+	it('does not retry a 200 with an unparseable body', async () => {
+		const fetchImpl = vi.fn(
+			async () => new Response('<html>', { status: 200 })
+		);
+		const { provider, sleep } = make(fetchImpl);
+		await expect(
+			provider.complete([{ role: 'user', content: 'hi' }])
+		).rejects.toThrow();
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
+	});
+
+	it.each(['-5', '0', 'abc', '1.5'])(
+		'never shortens backoff for Retry-After %s',
+		async (value) => {
+			const fetchImpl = vi
+				.fn()
+				.mockResolvedValueOnce(
+					new Response('', { status: 429, headers: { 'retry-after': value } })
+				)
+				.mockResolvedValueOnce(OK());
+			const { provider, sleep } = make(fetchImpl);
+			await provider.complete([{ role: 'user', content: 'hi' }]);
+			// random() = 0.5 gives a 1000 ms floor on the first attempt.
+			expect(sleep).toHaveBeenCalledWith(1000);
+		}
+	);
+
+	it('never leaks the API key in error messages', async () => {
+		const fetchImpl = vi.fn(
+			async () => new Response(`key ${CONFIG.apiKey} rejected`, { status: 400 })
+		);
+		const { provider } = make(fetchImpl);
+		await expect(
+			provider.complete([{ role: 'user', content: 'hi' }])
+		).rejects.toThrow(/^(?!.*sk-test-key)/s);
+	});
+});

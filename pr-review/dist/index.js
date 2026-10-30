@@ -34006,9 +34006,13 @@ const DEFAULT_CAPABILITIES = {
 };
 class LlmError extends Error {
     status;
-    constructor(message, status) {
+    retryAfterMs;
+    constructor(message, status, 
+    /** Server-requested delay before retrying, from `Retry-After`. */
+    retryAfterMs) {
         super(message);
         this.status = status;
+        this.retryAfterMs = retryAfterMs;
         this.name = 'LlmError';
     }
 }
@@ -34016,16 +34020,49 @@ class LlmError extends Error {
 ;// CONCATENATED MODULE: ./src/llm/openai-compatible.ts
 
 
+const MAX_ATTEMPTS = 3;
+const BASE_DELAY_MS = 1000;
+const MAX_DELAY_MS = 30_000;
+const TRANSIENT_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Errors from a failed connection (not a timeout, not a bad body). */
+const CONNECTION_ERRORS = new WeakSet();
+/**
+ * Transient: listed HTTP statuses and connection resets. Request timeouts and
+ * unparseable 200 bodies are not retried: a timeout would multiply the
+ * wait (workflow limits), and a bad body means the paid call already ran.
+ */
+function isTransient(error) {
+    if (!(error instanceof LlmError))
+        return false;
+    if (error.status === undefined)
+        return CONNECTION_ERRORS.has(error);
+    return TRANSIENT_STATUS.has(error.status);
+}
+/** `Retry-After` as non-negative integer seconds or an HTTP date; else undefined. */
+function parseRetryAfter(value) {
+    const text = value?.trim();
+    if (!text)
+        return undefined;
+    if (/^\d+$/.test(text))
+        return Number(text) * 1000;
+    if (!/[a-z]/i.test(text))
+        return undefined;
+    const at = Date.parse(text);
+    return Number.isNaN(at) ? undefined : Math.max(0, at - Date.now());
+}
 class OpenAiCompatibleProvider {
     config;
     capabilities;
     fetchImpl;
     timeoutMs;
-    constructor(config, capabilities = DEFAULT_CAPABILITIES, fetchImpl = globalThis.fetch, timeoutMs = (0,llm_config/* timeoutFromEnv */.RV)()) {
+    retry;
+    constructor(config, capabilities = DEFAULT_CAPABILITIES, fetchImpl = globalThis.fetch, timeoutMs = (0,llm_config/* timeoutFromEnv */.RV)(), retry = {}) {
         this.config = config;
         this.capabilities = capabilities;
         this.fetchImpl = fetchImpl;
         this.timeoutMs = timeoutMs;
+        this.retry = retry;
     }
     async complete(messages, options) {
         const url = `${this.config.baseUrl}/chat/completions`;
@@ -34035,21 +34072,52 @@ class OpenAiCompatibleProvider {
             temperature: options?.temperature ?? 0.2,
             [this.capabilities.maxTokensField]: options?.maxOutputTokens ?? llm_config/* DEFAULT_MAX_OUTPUT_TOKENS */.ig,
         };
+        const maxAttempts = this.retry.maxAttempts ?? MAX_ATTEMPTS;
+        const sleep = this.retry.sleep ?? defaultSleep;
+        const random = this.retry.random ?? Math.random;
+        for (let attempt = 1;; attempt++) {
+            try {
+                return await this.attempt(url, body);
+            }
+            catch (error) {
+                if (attempt >= maxAttempts || !isTransient(error))
+                    throw error;
+                // Retry-After can lengthen the wait, never shorten it below backoff.
+                const floor = Math.round(BASE_DELAY_MS * 2 ** (attempt - 1) * (0.5 + random()));
+                const delay = Math.max(floor, error.retryAfterMs ?? 0);
+                await sleep(Math.min(delay, MAX_DELAY_MS));
+            }
+        }
+    }
+    /** One HTTP attempt with its own deadline, covering body parsing too. */
+    async attempt(url, body) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+        const redact = (text) => scrubSecrets(this.config.apiKey
+            ? text.replaceAll(this.config.apiKey, '[redacted]')
+            : text);
         try {
-            const response = await this.fetchImpl(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${this.config.apiKey}`,
-                },
-                body: JSON.stringify(body),
-                signal: controller.signal,
-            });
+            let response;
+            try {
+                response = await this.fetchImpl(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${this.config.apiKey}`,
+                    },
+                    body: JSON.stringify(body),
+                    signal: controller.signal,
+                });
+            }
+            catch (error) {
+                const failure = new LlmError(`LLM request failed: ${redact(error instanceof Error ? error.message : String(error))}`);
+                if (!controller.signal.aborted)
+                    CONNECTION_ERRORS.add(failure);
+                throw failure;
+            }
             if (!response.ok) {
-                const detail = (await safeErrorDetail(response)).replaceAll(this.config.apiKey, '[redacted]');
-                throw new LlmError(`LLM endpoint returned ${response.status}: ${detail}`, response.status);
+                const detail = redact(await safeErrorDetail(response));
+                throw new LlmError(`LLM endpoint returned ${response.status}: ${detail}`, response.status, parseRetryAfter(response.headers.get('retry-after')));
             }
             // Keep the same deadline through response body parsing. A server can
             // send headers and then stall indefinitely on a large JSON body.
@@ -34069,7 +34137,7 @@ class OpenAiCompatibleProvider {
         catch (error) {
             if (error instanceof LlmError)
                 throw error;
-            throw new LlmError(`LLM request failed: ${error instanceof Error ? error.message : String(error)}`);
+            throw new LlmError(`LLM request failed: ${redact(error instanceof Error ? error.message : String(error))}`);
         }
         finally {
             clearTimeout(timer);
@@ -38559,11 +38627,14 @@ async function publishReview(octokit, params) {
         }
     }
     const existingIds = await fetchExistingCommentIds(octokit, owner, repo, prNumber);
-    const findings = result.findings.filter((finding) => !existingIds.has(dedupe_normalizeCommentId(finding)));
-    const hasBlockingFinding = findings.some((finding) => finding.severity !== 'low');
-    let findingsToPublish = findings;
+    // The blocking decision covers every valid finding, including those already
+    // commented on a previous run: a re-run must not silently drop the
+    // REQUEST_CHANGES state just because nothing new needs posting.
+    const freshFindings = result.findings.filter((finding) => !existingIds.has(dedupe_normalizeCommentId(finding)));
+    let findingsToPublish = freshFindings;
+    let validFindings = result.findings;
     if (params.bufferInlineComments) {
-        const buffered = findings.map((f) => ({ ...f, ts: new Date().toISOString() }));
+        const buffered = freshFindings.map((f) => ({ ...f, ts: new Date().toISOString() }));
         try {
             appendToBuffer(buffered);
         }
@@ -38573,23 +38644,30 @@ async function publishReview(octokit, params) {
             core.warning(`[buffer] ${probe.length} finding(s) filtered as test/probe — NOT posted`);
         }
         findingsToPublish = real;
+        const probeIds = new Set(probe.map((f) => dedupe_normalizeCommentId(f)));
+        validFindings = result.findings.filter((f) => !probeIds.has(dedupe_normalizeCommentId(f)));
     }
-    if (findingsToPublish.length > 0) {
-        // Honor the frozen block-on-issues contract: when the caller turns
-        // blocking off, findings are posted as plain COMMENTs instead of
-        // REQUEST_CHANGES (docs/v1-interface-contract.md).
-        const shouldBlock = params.blockOnIssues !== false && hasBlockingFinding;
+    const hasBlockingFinding = validFindings.some((finding) => finding.severity !== 'low');
+    // Honor the frozen block-on-issues contract: when the caller turns
+    // blocking off, findings are posted as plain COMMENTs instead of
+    // REQUEST_CHANGES (docs/v1-interface-contract.md).
+    const shouldBlock = params.blockOnIssues !== false && hasBlockingFinding;
+    if (findingsToPublish.length > 0 || shouldBlock) {
         const payload = buildReviewPayload(findingsToPublish, headSha, {
             blockOnIssues: shouldBlock,
         });
+        const event = shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT';
+        // GitHub requires a body when a review carries no inline comments.
+        const eventOnlyBody = 'Blocking findings remain open on this pull request. See the summary comment for details.';
         try {
             await octokit.rest.pulls.createReview({
                 owner,
                 repo,
                 pull_number: prNumber,
                 commit_id: payload.commit_id,
-                event: shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT',
+                event,
                 comments: payload.comments,
+                ...(payload.comments.length === 0 ? { body: eventOnlyBody } : {}),
             });
         }
         catch (error) {
@@ -38616,6 +38694,23 @@ async function publishReview(octokit, params) {
                     });
                 }
             }
+            // The review event must survive the per-comment fallback.
+            if (shouldBlock) {
+                try {
+                    await octokit.rest.pulls.createReview({
+                        owner,
+                        repo,
+                        pull_number: prNumber,
+                        commit_id: headSha,
+                        event,
+                        comments: [],
+                        body: eventOnlyBody,
+                    });
+                }
+                catch (eventError) {
+                    core.warning(`Could not submit ${event} review after fallback: ${redactDetail(eventError)}`);
+                }
+            }
         }
     }
     // Resolve the approval before rendering anything: the summary must report
@@ -38625,13 +38720,17 @@ async function publishReview(octokit, params) {
         hasWrite,
         hasBlockingFinding,
     });
+    const alreadyCommented = validFindings.length - findingsToPublish.length;
+    const alreadyCommentedNote = alreadyCommented > 0
+        ? `\n\n> ${alreadyCommented} finding(s) already commented on earlier runs; not posted again.`
+        : '';
     const marker = stickySummaryMarker(owner, repo, prNumber);
     const summaryBody = `${buildSummaryBody({
         risk: result.risk,
         counts: result.counts,
         filesReviewed: result.filesReviewed,
         summary: result.summary,
-        findings,
+        findings: validFindings,
         model: params.model,
         durationMs: params.durationMs,
         filesTotal: params.filesTotal,
@@ -38643,7 +38742,7 @@ async function publishReview(octokit, params) {
         ruleCoverage: result.ruleCoverage,
         reviewStatus: result.reviewStatus,
         approval: result.approval,
-    })}\n\n${marker}`;
+    })}${alreadyCommentedNote}\n\n${marker}`;
     if (params.stickySummary) {
         const existing = await findStickyComment(octokit, owner, repo, prNumber, marker);
         if (existing) {
@@ -43107,14 +43206,8 @@ async function runPrContent(options) {
     ];
     const complete = (maxOutputTokens) => provider.complete(messages, { temperature: 0.3, maxOutputTokens });
     let budget = options.maxTokens || DEFAULT_PR_CONTENT_MAX_TOKENS;
-    let completion;
-    try {
-        completion = await complete(budget);
-    }
-    catch (error) {
-        core.warning(`First AI call failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=${budget}`);
-        completion = await complete(budget);
-    }
+    // Transient failures (429/5xx/network) are retried inside the provider.
+    let completion = await complete(budget);
     if (!completion.content || completion.finishReason === 'length') {
         budget = escalateMaxTokens(budget);
         core.warning(`AI response truncated or empty; retrying with max_tokens=${budget}`);
