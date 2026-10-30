@@ -37,9 +37,11 @@ Questions) lives in `docs/v3-decisions.md`.
   sticky summary lists all valid findings and notes how many were already
   commented, without re-posting them.
 - **LLM calls retry only transient failures.** The OpenAI-compatible transport
-  makes up to three attempts for 408, 429, 500, 502, 503, 504, network resets,
-  and timeouts, with exponential backoff, jitter, and a capped `Retry-After`
-  (seconds or HTTP date). Other 4xx responses such as 401 fail immediately. The
+  makes up to three attempts for 408, 429, 500, 502, 503, 504, and connection
+  resets, with exponential backoff, jitter, and a capped `Retry-After`
+  (non-negative integer seconds or an HTTP date, never shorter than the
+  backoff). Request timeouts, unparseable 200 responses, and other 4xx
+  responses such as 400 or 401 fail immediately. The
   blanket immediate retry in the PR-content flow is removed so retries are not
   multiplied. Error messages never contain the API key.
 

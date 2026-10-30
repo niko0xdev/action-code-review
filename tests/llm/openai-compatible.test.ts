@@ -247,7 +247,7 @@ describe('OpenAiCompatibleProvider retry', () => {
 		const { provider, sleep } = make(fetchImpl);
 		await provider.complete([{ role: 'user', content: 'hi' }]);
 		const delay = (sleep.mock.calls[0] as unknown as [number])[0];
-		expect(delay).toBeGreaterThan(0);
+		expect(delay).toBeGreaterThanOrEqual(1000);
 		expect(delay).toBeLessThanOrEqual(30_000);
 	});
 
@@ -283,6 +283,68 @@ describe('OpenAiCompatibleProvider retry', () => {
 		expect(out.content).toBe('ok');
 		expect(fetchImpl).toHaveBeenCalledTimes(2);
 	});
+
+	it('does not retry a 400', async () => {
+		const fetchImpl = vi.fn(async () => new Response('bad', { status: 400 }));
+		const { provider, sleep } = make(fetchImpl);
+		await expect(
+			provider.complete([{ role: 'user', content: 'hi' }])
+		).rejects.toMatchObject({ status: 400 });
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
+	});
+
+	it('does not retry a request timeout', async () => {
+		const fetchImpl = vi.fn(
+			(_url: string, init: RequestInit) =>
+				new Promise((_resolve, reject) => {
+					init.signal?.addEventListener('abort', () =>
+						reject(new Error('This operation was aborted'))
+					);
+				})
+		);
+		const sleep = vi.fn(async () => {});
+		const provider = new OpenAiCompatibleProvider(
+			CONFIG,
+			undefined,
+			fetchImpl as unknown as typeof fetch,
+			20,
+			{ sleep }
+		);
+		await expect(
+			provider.complete([{ role: 'user', content: 'hi' }])
+		).rejects.toThrow(/aborted/);
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
+	});
+
+	it('does not retry a 200 with an unparseable body', async () => {
+		const fetchImpl = vi.fn(
+			async () => new Response('<html>', { status: 200 })
+		);
+		const { provider, sleep } = make(fetchImpl);
+		await expect(
+			provider.complete([{ role: 'user', content: 'hi' }])
+		).rejects.toThrow();
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+		expect(sleep).not.toHaveBeenCalled();
+	});
+
+	it.each(['-5', '0', 'abc', '1.5'])(
+		'never shortens backoff for Retry-After %s',
+		async (value) => {
+			const fetchImpl = vi
+				.fn()
+				.mockResolvedValueOnce(
+					new Response('', { status: 429, headers: { 'retry-after': value } })
+				)
+				.mockResolvedValueOnce(OK());
+			const { provider, sleep } = make(fetchImpl);
+			await provider.complete([{ role: 'user', content: 'hi' }]);
+			// random() = 0.5 gives a 1000 ms floor on the first attempt.
+			expect(sleep).toHaveBeenCalledWith(1000);
+		}
+	);
 
 	it('never leaks the API key in error messages', async () => {
 		const fetchImpl = vi.fn(

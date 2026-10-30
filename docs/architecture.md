@@ -195,7 +195,7 @@ Numeric variables are validated by `src/shared/numeric.ts`: an invalid value log
 | `AI_REVIEW_PI_MAX_TOOL_CALLS` | `60` | tool-execution ceiling; a runaway tool loop is stopped with an attributable error (`0` disables) |
 | `AI_REVIEW_PI_MAX_ASSISTANT_BYTES` | `524288` | streamed assistant-text ceiling; a provider that loops instead of answering is stopped with an attributable error (`0` disables) |
 | `AI_REVIEW_PI_REPAIR_ATTEMPTS` | `1` | extra harness calls that ask the model to convert its own unparseable answer into the required JSON |
-| `AI_REVIEW_LLM_TIMEOUT_MS` | `600000` | OpenAI-compatible per-attempt request timeout; transient failures (408, 429, 5xx, network) get up to 3 attempts with backoff and `Retry-After` |
+| `AI_REVIEW_LLM_TIMEOUT_MS` | `600000` | OpenAI-compatible per-attempt request timeout; 408, 429, 5xx, and connection resets get up to 3 attempts with backoff and `Retry-After` (never retried: request timeouts, other 4xx, unparseable 200 bodies) |
 | `AI_REVIEW_VERIFY_PASS` | `false` | second LLM pass over high/critical findings (`'true'` to enable; drops hallucinations, records stats in diagnostics) |
 | `AI_REVIEW_VERIFY_BUDGET_USD` | `0.50` | cost ceiling for the verify pass (0 or more) |
 | `AI_REVIEW_DEBUG_HARNESS` | unset | `true`/`1` or a byte budget: append redacted, truncated raw harness output to the step summary |

@@ -45,18 +45,27 @@ const TRANSIENT_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 const defaultSleep = (ms: number) =>
 	new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Transient: listed HTTP statuses, or no status at all (network reset, timeout). */
+/** Errors from a failed connection (not a timeout, not a bad body). */
+const CONNECTION_ERRORS = new WeakSet<LlmError>();
+
+/**
+ * Transient: listed HTTP statuses and connection resets. Request timeouts and
+ * unparseable 200 bodies are not retried: a timeout would multiply the
+ * wait (workflow limits), and a bad body means the paid call already ran.
+ */
 function isTransient(error: unknown): boolean {
 	if (!(error instanceof LlmError)) return false;
-	return error.status === undefined || TRANSIENT_STATUS.has(error.status);
+	if (error.status === undefined) return CONNECTION_ERRORS.has(error);
+	return TRANSIENT_STATUS.has(error.status);
 }
 
-/** `Retry-After` as delay-seconds or an HTTP date; undefined when absent or invalid. */
+/** `Retry-After` as non-negative integer seconds or an HTTP date; else undefined. */
 function parseRetryAfter(value: string | null): number | undefined {
-	if (!value) return undefined;
-	const seconds = Number(value);
-	if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
-	const at = Date.parse(value);
+	const text = value?.trim();
+	if (!text) return undefined;
+	if (/^\d+$/.test(text)) return Number(text) * 1000;
+	if (!/[a-z]/i.test(text)) return undefined;
+	const at = Date.parse(text);
 	return Number.isNaN(at) ? undefined : Math.max(0, at - Date.now());
 }
 
@@ -90,9 +99,11 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 				return await this.attempt(url, body);
 			} catch (error) {
 				if (attempt >= maxAttempts || !isTransient(error)) throw error;
-				const delay =
-					(error as LlmError).retryAfterMs ??
-					Math.round(BASE_DELAY_MS * 2 ** (attempt - 1) * (0.5 + random()));
+				// Retry-After can lengthen the wait, never shorten it below backoff.
+				const floor = Math.round(
+					BASE_DELAY_MS * 2 ** (attempt - 1) * (0.5 + random())
+				);
+				const delay = Math.max(floor, (error as LlmError).retryAfterMs ?? 0);
 				await sleep(Math.min(delay, MAX_DELAY_MS));
 			}
 		}
@@ -113,15 +124,24 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 			);
 
 		try {
-			const response = await this.fetchImpl(url, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${this.config.apiKey}`,
-				},
-				body: JSON.stringify(body),
-				signal: controller.signal,
-			});
+			let response: Response;
+			try {
+				response = await this.fetchImpl(url, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${this.config.apiKey}`,
+					},
+					body: JSON.stringify(body),
+					signal: controller.signal,
+				});
+			} catch (error) {
+				const failure = new LlmError(
+					`LLM request failed: ${redact(error instanceof Error ? error.message : String(error))}`
+				);
+				if (!controller.signal.aborted) CONNECTION_ERRORS.add(failure);
+				throw failure;
+			}
 			if (!response.ok) {
 				const detail = redact(await safeErrorDetail(response));
 				throw new LlmError(
