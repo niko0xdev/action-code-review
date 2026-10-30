@@ -3,24 +3,28 @@ name: AI PR Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  workflow_dispatch:
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   review:
     runs-on: ubuntu-latest
     name: AI Code Review
+    timeout-minutes: 30
 
     permissions:
       contents: read
       pull-requests: write
-      
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-      
+          persist-credentials: false
+
       - name: Run AI Code Review
         uses: ./pr-review
         with:
