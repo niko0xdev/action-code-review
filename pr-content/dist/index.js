@@ -37358,6 +37358,22 @@ function parseBoundedFloat(raw, fallback, { name, min = 0, max = Number.POSITIVE
     }
     return value;
 }
+/**
+ * Parse an enum input against its allowed values. Unset or blank returns the
+ * fallback silently; an unknown value warns and returns the fallback, so a
+ * typo can never silently disable a gate.
+ */
+function parseEnum(raw, allowed, fallback, name) {
+    const text = raw?.trim();
+    if (!text)
+        return fallback;
+    const lower = text.toLowerCase();
+    const match = allowed.find((value) => value === lower);
+    if (match)
+        return match;
+    core.warning(`${name}="${text}" is not one of ${allowed.join(', ')} – using default ${fallback}`);
+    return fallback;
+}
 
 ;// CONCATENATED MODULE: ./src/adapter/legacy-inputs.ts
 /**
@@ -37432,20 +37448,14 @@ function mapPrContentInputs(inputs) {
 /** Typed wrapper for security mode inputs. Spec reference: §4. */
 function mapSecurityInputs(inputs) {
     const rawBaseUrl = get(inputs, 'openai-base-url') || get(inputs, 'base_url');
-    const rawMode = (get(inputs, 'mode') ?? SECURITY_DEFAULTS.mode);
-    const rawProfile = (get(inputs, 'security_profile') ??
-        get(inputs, 'security-profile') ??
-        SECURITY_DEFAULTS.profile);
-    const rawMinSev = (get(inputs, 'security_min_severity') ??
+    const rawMode = parseEnum(get(inputs, 'mode'), ['auto', 'review', 'security', 'agent'], SECURITY_DEFAULTS.mode, 'mode');
+    const rawProfile = parseEnum(get(inputs, 'security_profile') ?? get(inputs, 'security-profile'), ['diff', 'lite', 'balanced', 'deep', 'confirm'], SECURITY_DEFAULTS.profile, 'security-profile');
+    const rawMinSev = parseEnum(get(inputs, 'security_min_severity') ??
         get(inputs, 'security-min-severity') ??
-        get(inputs, 'min-severity') ??
-        SECURITY_DEFAULTS.minSeverity);
-    const rawFailOn = (get(inputs, 'security_fail_on') ??
-        get(inputs, 'security-fail-on') ??
-        SECURITY_DEFAULTS.failOn);
-    const rawRiskThreshold = (get(inputs, 'security_risk_threshold') ??
-        get(inputs, 'security-risk-threshold') ??
-        SECURITY_DEFAULTS.riskThreshold);
+        get(inputs, 'min-severity'), ['critical', 'high', 'medium', 'low', 'info'], SECURITY_DEFAULTS.minSeverity, 'security-min-severity');
+    const rawFailOn = parseEnum(get(inputs, 'security_fail_on') ?? get(inputs, 'security-fail-on'), ['critical', 'high', 'medium', 'low', 'info', 'none'], SECURITY_DEFAULTS.failOn, 'security-fail-on');
+    const rawRiskThreshold = parseEnum(get(inputs, 'security_risk_threshold') ??
+        get(inputs, 'security-risk-threshold'), ['low', 'medium', 'high', 'critical_surface'], SECURITY_DEFAULTS.riskThreshold, 'security-risk-threshold');
     return {
         githubToken: get(inputs, 'github-token') ?? get(inputs, 'github_token') ?? '',
         apiKey: get(inputs, 'openai-api-key') ??
@@ -39862,6 +39872,169 @@ function buildRawHarnessSection(runs, maxChars) {
     return `<details><summary>Raw harness output (debug)${truncated ? ' _(truncated)_' : ''}</summary>\n\n\`\`\`\n${body}\n\`\`\`\n\n</details>`;
 }
 
+// EXTERNAL MODULE: external "node:child_process"
+var external_node_child_process_ = __nccwpck_require__(1421);
+// EXTERNAL MODULE: external "node:util"
+var external_node_util_ = __nccwpck_require__(7975);
+;// CONCATENATED MODULE: ./src/review/prompt-file.ts
+
+
+
+
+
+
+const run = (0,external_node_util_.promisify)(external_node_child_process_.execFile);
+const MAX_BYTES = 50 * 1024;
+function warn(file, why) {
+    core.warning(`[review] review-prompt-file ${file} ${why} – ignored`);
+    return undefined;
+}
+async function readFromGit(repoPath, baseSha, rel) {
+    const git = (args, maxBuffer) => run('git', ['-C', repoPath, ...args], {
+        env: { PATH: process.env.PATH, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0' },
+        maxBuffer,
+        timeout: 10_000,
+    });
+    let listing;
+    try {
+        listing = (await git(['ls-tree', baseSha, '--', rel], 4096)).stdout;
+    }
+    catch {
+        return { kind: 'unavailable' };
+    }
+    if (!listing.trim())
+        return { kind: 'absent' };
+    // Only regular blobs: a symlink blob would yield its target path as text.
+    if (!/^100(644|755) blob /.test(listing)) {
+        return { kind: 'ignore', why: 'is not a regular file at the base ref' };
+    }
+    try {
+        const blob = await git(['cat-file', 'blob', `${baseSha}:${rel}`], MAX_BYTES);
+        return { kind: 'content', text: blob.stdout };
+    }
+    catch (error) {
+        const code = error.code;
+        return code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+            ? { kind: 'ignore', why: 'exceeds 50 KiB at the base ref' }
+            : { kind: 'unavailable' };
+    }
+}
+async function readFromApi(fetchBase, baseSha, rel) {
+    let data;
+    try {
+        data = await fetchBase(rel, baseSha);
+    }
+    catch {
+        return { kind: 'unavailable' };
+    }
+    if (!data)
+        return { kind: 'absent' };
+    if (Array.isArray(data) || data.type !== 'file') {
+        return { kind: 'ignore', why: 'is not a regular file at the base ref' };
+    }
+    if (data.size > MAX_BYTES) {
+        return { kind: 'ignore', why: 'exceeds 50 KiB at the base ref' };
+    }
+    if (data.encoding !== 'base64' || typeof data.content !== 'string') {
+        return { kind: 'unavailable' };
+    }
+    return {
+        kind: 'content',
+        text: Buffer.from(data.content, 'base64').toString('utf8'),
+    };
+}
+/** `a/b/c.md` -> [`a`, `a/b`, `a/b/c.md`]. */
+function withAncestors(posixPath) {
+    const parts = posixPath.split('/');
+    return parts.map((_, i) => parts.slice(0, i + 1).join('/'));
+}
+/** True when any path component between root and `rel` is a symlink. */
+async function hasSymlinkComponent(root, rel) {
+    let current = root;
+    for (const part of rel.split(external_node_path_.sep)) {
+        current = (0,external_node_path_.resolve)(current, part);
+        if ((await (0,promises_.lstat)(current)).isSymbolicLink())
+            return true;
+    }
+    return false;
+}
+/**
+ * Load `review-prompt-file` for the trusted rules slot. The file is
+ * PR-controlled, so the base-branch copy wins: a PR cannot steer the reviewer by
+ * editing it. A base entry that exists but is not a regular blob, or is too
+ * large, means the file is ignored. Only when no base copy can be obtained (the
+ * path is new, or the base object cannot be read) is the checkout copy used, and
+ * only if the changed-file list is complete, nothing on the path is a symlink,
+ * and neither the path nor any ancestor is touched by the PR (compared
+ * case-insensitively). Only regular files up to 50 KiB are read.
+ */
+async function loadReviewPromptFile(opts) {
+    const { repoPath, file, baseSha, changedPaths, filesTruncated } = opts;
+    if (!file)
+        return undefined;
+    if (file.includes('\0'))
+        return warn(file, 'contains null byte');
+    if ((0,external_node_path_.isAbsolute)(file))
+        return warn(file, 'must be repo-relative');
+    const rel = (0,external_node_path_.relative)(repoPath, (0,external_node_path_.resolve)(repoPath, file));
+    if (!rel || rel.startsWith('..') || (0,external_node_path_.isAbsolute)(rel)) {
+        return warn(file, 'escapes repository');
+    }
+    const posixRel = rel.split(external_node_path_.sep).join('/');
+    try {
+        if (baseSha && /^[0-9a-f]{40,64}$/i.test(baseSha)) {
+            let base = await readFromGit(repoPath, baseSha, posixRel);
+            if (base.kind === 'unavailable' && opts.fetchBase) {
+                base = await readFromApi(opts.fetchBase, baseSha, posixRel);
+            }
+            if (base.kind === 'content')
+                return base.text.trim() || undefined;
+            if (base.kind === 'ignore')
+                return warn(file, base.why);
+        }
+        if (filesTruncated) {
+            return warn(file, 'has no base copy and the changed-file list is truncated');
+        }
+        const full = (0,external_node_path_.resolve)(repoPath, file);
+        if (await hasSymlinkComponent(repoPath, rel)) {
+            return warn(file, 'passes through a symlink and has no base copy');
+        }
+        const [root, real] = await Promise.all([
+            (0,promises_.realpath)(repoPath),
+            (0,promises_.realpath)(full),
+        ]);
+        const inside = (0,external_node_path_.relative)(root, real);
+        if (!inside || inside.startsWith('..') || (0,external_node_path_.isAbsolute)(inside)) {
+            return warn(file, 'escapes repository');
+        }
+        const touched = new Set([...changedPaths].flatMap((p) => [p, p.toLowerCase()]));
+        const candidates = [
+            ...withAncestors(posixRel),
+            ...withAncestors(inside.split(external_node_path_.sep).join('/')),
+        ];
+        if (candidates.some((p) => touched.has(p) || touched.has(p.toLowerCase()))) {
+            return warn(file, 'is modified by this pull request and has no base copy');
+        }
+        // Open the resolved path once and inspect the handle, not the path.
+        const handle = await (0,promises_.open)(real, external_node_fs_.constants.O_RDONLY | external_node_fs_.constants.O_NOFOLLOW);
+        try {
+            const info = await handle.stat();
+            if (!info.isFile())
+                return warn(file, 'is not a regular file');
+            if (info.size > MAX_BYTES)
+                return warn(file, 'exceeds 50 KiB');
+            return (await handle.readFile('utf8')).trim() || undefined;
+        }
+        finally {
+            await handle.close();
+        }
+    }
+    catch (error) {
+        core.warning(`[review] review-prompt-file read failed: ${error instanceof Error ? error.message : String(error)}`);
+        return undefined;
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/review/report.ts
 /**
  * Machine-readable review report (`review-report` action output).
@@ -42048,8 +42221,6 @@ function scanSecretsInDiff(changedFiles) {
     return findings;
 }
 
-// EXTERNAL MODULE: external "node:child_process"
-var external_node_child_process_ = __nccwpck_require__(1421);
 // EXTERNAL MODULE: external "node:string_decoder"
 var external_node_string_decoder_ = __nccwpck_require__(6193);
 // EXTERNAL MODULE: ./src/security/analyser-process.ts
@@ -42624,39 +42795,50 @@ async function runSecurityWorkflow(context, options) {
         engineStatus = 'failed';
     }
     const allCandidates = [...scannerCandidates, ...engineCandidates];
+    // fail-on is judged on every validated finding, before the min-severity gate
+    // and the max-findings cap, so a fail-on below min-severity still triggers.
+    // It runs first because the gate stamps finding statuses; the published
+    // gate below must have the last word.
+    const failSeverity = options.failOn !== 'none' &&
+        SEVERITY_RANKS[options.failOn] < SEVERITY_RANKS[options.minSeverity]
+        ? options.failOn
+        : options.minSeverity;
+    let failPool = applyQualityGate(allCandidates, context, failSeverity, 'medium', Number.POSITIVE_INFINITY).validated;
     // 5. Initial Quality Gate filtering
     const gated = applyQualityGate(allCandidates, context, options.minSeverity, 'medium', options.maxFindings);
     let validatedFindings = gated.validated;
     const rejectedFindings = gated.rejected;
     // 6. Independent Confirmation Pass if enabled and high-risk findings exist
+    let confirmFailed = false;
     if (options.confirmFindings &&
         (riskClassification.level === 'high' ||
             riskClassification.level === 'critical_surface')) {
         try {
             // Scanner findings with confirmed confidence don't need re-confirmation
-            const llmHighCandidates = validatedFindings.filter((f) => (f.severity === 'critical' || f.severity === 'high') &&
-                f.confidence !== 'confirmed');
+            const needsConfirm = (f) => (f.severity === 'critical' || f.severity === 'high') &&
+                f.confidence !== 'confirmed';
+            const llmHighCandidates = failPool.filter(needsConfirm);
             if (llmHighCandidates.length > 0) {
                 const confirmedHigh = await engine.confirm(context, llmHighCandidates);
                 const confirmedIds = new Set(confirmedHigh.map((f) => f.id));
-                validatedFindings = validatedFindings.filter((f) => {
-                    if ((f.severity === 'critical' || f.severity === 'high') &&
-                        f.confidence !== 'confirmed') {
-                        return confirmedIds.has(f.id);
-                    }
-                    return true;
-                });
+                const keep = (f) => !needsConfirm(f) || confirmedIds.has(f.id);
+                validatedFindings = validatedFindings.filter(keep);
+                failPool = failPool.filter(keep);
             }
         }
         catch {
-            // Maintain validatedFindings if confirmation pass errors
+            // Unconfirmed high findings stay published, but the run is incomplete.
+            confirmFailed = true;
         }
     }
     // 7. Derive overall risk
     const overallRisk = deriveOverallRisk(validatedFindings);
     // 8. Evaluate fail-on threshold
-    const failThresholdReached = isFailThresholdReached(validatedFindings, options.failOn);
+    const failThresholdReached = isFailThresholdReached(failPool, options.failOn);
     // 9. Build Conclusion
+    const incomplete = engineStatus === 'failed' ||
+        confirmFailed ||
+        scannerExecutions.some((s) => s.status === 'failed');
     const conclusion = {
         risk: overallRisk,
         publishedFindings: validatedFindings.length,
@@ -42666,8 +42848,7 @@ async function runSecurityWorkflow(context, options) {
         scanners: scannerExecutions,
         domains: riskClassification.domains,
         engineStatus,
-        incomplete: engineStatus === 'failed' ||
-            scannerExecutions.some((s) => s.status === 'failed'),
+        incomplete,
     };
     // 10. Generate Summaries & Reports
     const summaryMarkdown = buildStickySecuritySummary({
@@ -42677,8 +42858,7 @@ async function runSecurityWorkflow(context, options) {
         findings: validatedFindings,
         scanners: scannerExecutions,
         domains: riskClassification.domains,
-        incomplete: engineStatus === 'failed' ||
-            scannerExecutions.some((s) => s.status === 'failed'),
+        incomplete,
         model: options.model,
         durationMs: Date.now() - startTime,
     });
@@ -42704,7 +42884,8 @@ async function runSecurityWorkflow(context, options) {
             await (0,promises_.writeFile)(sarifPath, sarifJson, 'utf8');
         }
         catch {
-            // Non-blocking if disk write fails
+            // Non-blocking, but never advertise a file that was not written.
+            sarifPath = undefined;
         }
     }
     if (options.profile !== 'diff') {
@@ -42935,6 +43116,7 @@ var registry = __nccwpck_require__(3677);
 // EXTERNAL MODULE: ./src/security/skills/selector.ts
 var selector = __nccwpck_require__(9347);
 ;// CONCATENATED MODULE: ./src/cli.ts
+
 
 
 
@@ -43478,7 +43660,25 @@ async function main(argv) {
             }
             // ponytail: all security skills into default review (12 domains + validation gate); filter by domain when cost matters.
             const allSecurityPrompt = (0,selector/* renderSkillsForPrompt */.a)(registry/* CURATED_SECURITY_SKILLS */.J);
-            const promptFile = await readPromptFileIfNeeded(reviewContext.repositoryPath);
+            const promptFile = await loadReviewPromptFile({
+                repoPath: reviewContext.repositoryPath,
+                file: core.getInput('review-prompt-file'),
+                baseSha: reviewContext.pullRequest.baseSha,
+                filesTruncated: reviewContext.diff.filesTruncated,
+                fetchBase: async (path, ref) => {
+                    try {
+                        const res = await github.getOctokit(legacyOptions.githubToken)
+                            .rest.repos.getContent({ ...repoInfo, path, ref });
+                        return res.data;
+                    }
+                    catch (error) {
+                        if (error.status === 404)
+                            return undefined;
+                        throw error;
+                    }
+                },
+                changedPaths: new Set(allPrFiles.flatMap((f) => f.previousFilename ? [f.filename, f.previousFilename] : [f.filename])),
+            });
             const reviewRules = [
                 promptFile,
                 allSecurityPrompt,
@@ -43634,43 +43834,6 @@ async function main(argv) {
     }
     catch (error) {
         core.setFailed(`Action failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-}
-async function readPromptFileIfNeeded(repoPath) {
-    const file = core.getInput('review-prompt-file');
-    if (!file)
-        return undefined;
-    if (file.includes('\0')) {
-        core.warning(`[review] review-prompt-file ${file} contains null byte — ignored`);
-        return undefined;
-    }
-    try {
-        const { readFileSync, statSync } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 3024, 23));
-        const { isAbsolute, relative, resolve } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 6760, 23));
-        // Repo-relative contract: must be inside the workspace root.
-        if (isAbsolute(file)) {
-            core.warning(`[review] review-prompt-file ${file} must be repo-relative — ignored`);
-            return undefined;
-        }
-        const full = resolve(repoPath, file);
-        if (full !== repoPath) {
-            const rel = relative(repoPath, full);
-            if (rel.startsWith('..') || isAbsolute(rel)) {
-                core.warning(`[review] review-prompt-file ${file} escapes repository — ignored`);
-                return undefined;
-            }
-        }
-        const stat = statSync(full);
-        if (stat.size > 50 * 1024) {
-            core.warning(`[review] review-prompt-file ${file} exceeds 50 KiB — ignored`);
-            return undefined;
-        }
-        const content = readFileSync(full, 'utf8');
-        return content.trim() || undefined;
-    }
-    catch (error) {
-        core.warning(`[review] review-prompt-file read failed: ${error instanceof Error ? error.message : String(error)}`);
-        return undefined;
     }
 }
 function normalizeIncludeDir(dir) {

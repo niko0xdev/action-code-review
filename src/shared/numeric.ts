@@ -41,3 +41,25 @@ export function parseBoundedFloat(
 	}
 	return value;
 }
+
+/**
+ * Parse an enum input against its allowed values. Unset or blank returns the
+ * fallback silently; an unknown value warns and returns the fallback, so a
+ * typo can never silently disable a gate.
+ */
+export function parseEnum<T extends string>(
+	raw: string | undefined,
+	allowed: readonly T[],
+	fallback: T,
+	name: string
+): T {
+	const text = raw?.trim();
+	if (!text) return fallback;
+	const lower = text.toLowerCase();
+	const match = allowed.find((value) => value === lower);
+	if (match) return match;
+	core.warning(
+		`${name}="${text}" is not one of ${allowed.join(', ')} – using default ${fallback}`
+	);
+	return fallback;
+}

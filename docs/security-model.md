@@ -36,6 +36,33 @@
   1. Read-only defaults for analysis.
   2. Actor authorization filter (`allowed-bots`, `exclude-actors`, collaborator permission check) before escalating review approvals.
 
+### 2.5 PR-Controlled Rules File (`review-prompt-file`)
+
+The file named by `review-prompt-file` is injected into the trusted rules slot,
+so whoever controls it controls the reviewer. Trust model:
+
+- **Base ref wins.** The content is read from the git object at the pull
+  request base SHA (`git ls-tree` and `git cat-file` through `execFile` with a
+  validated SHA, `--` before the path, and a minimal environment), never from
+  the PR head checkout, so editing the file in the PR has no effect.
+- **Base entry that is not a regular file.** A symlink, submodule, directory,
+  or a blob over 50 KiB at the base ref means the file is ignored. It never
+  falls back to the checkout.
+- **Shallow checkouts.** When the base object is missing locally (the default
+  `fetch-depth: 1`), the base copy is fetched with the GitHub contents API at the
+  base SHA using the action token (files only, 50 KiB cap).
+- **No base copy at all.** If neither source answers, or the file is new, the
+  checkout copy is read only when all of these hold: the changed-file list is
+  complete (it is not truncated at the listing cap), no component of the path is
+  a symlink, and neither the path, its resolved path, nor any ancestor directory
+  is changed by the PR (compared case-insensitively). Otherwise the file is
+  ignored with a warning. The file is opened once with `O_NOFOLLOW` and checked
+  on the handle.
+- **Containment.** The path must be repo-relative; it is resolved with
+  `realpath` and must stay inside the real workspace root, so a symlink cannot
+  read outside it. Only regular files are accepted (a symlink committed on the
+  base ref is rejected), capped at 50 KiB.
+
 ---
 
 ## 3. Logical Plane Separation

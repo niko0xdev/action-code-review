@@ -5,7 +5,7 @@
  */
 
 import { normalizeBaseUrl } from '../llm/config.js';
-import { parsePositiveInt } from '../shared/numeric.js';
+import { parseEnum, parsePositiveInt } from '../shared/numeric.js';
 
 export type LegacyAction = 'pr-review' | 'pr-content';
 
@@ -142,44 +142,39 @@ export function mapPrContentInputs(
 /** Typed wrapper for security mode inputs. Spec reference: §4. */
 export function mapSecurityInputs(inputs: LegacyInputs): SecurityEngineOptions {
 	const rawBaseUrl = get(inputs, 'openai-base-url') || get(inputs, 'base_url');
-	const rawMode = (get(inputs, 'mode') ?? SECURITY_DEFAULTS.mode) as
-		| 'auto'
-		| 'review'
-		| 'security'
-		| 'agent';
-	const rawProfile = (get(inputs, 'security_profile') ??
-		get(inputs, 'security-profile') ??
-		SECURITY_DEFAULTS.profile) as
-		| 'diff'
-		| 'lite'
-		| 'balanced'
-		| 'deep'
-		| 'confirm';
-	const rawMinSev = (get(inputs, 'security_min_severity') ??
-		get(inputs, 'security-min-severity') ??
-		get(inputs, 'min-severity') ??
-		SECURITY_DEFAULTS.minSeverity) as
-		| 'critical'
-		| 'high'
-		| 'medium'
-		| 'low'
-		| 'info';
-	const rawFailOn = (get(inputs, 'security_fail_on') ??
-		get(inputs, 'security-fail-on') ??
-		SECURITY_DEFAULTS.failOn) as
-		| 'critical'
-		| 'high'
-		| 'medium'
-		| 'low'
-		| 'info'
-		| 'none';
-	const rawRiskThreshold = (get(inputs, 'security_risk_threshold') ??
-		get(inputs, 'security-risk-threshold') ??
-		SECURITY_DEFAULTS.riskThreshold) as
-		| 'low'
-		| 'medium'
-		| 'high'
-		| 'critical_surface';
+	const rawMode = parseEnum(
+		get(inputs, 'mode'),
+		['auto', 'review', 'security', 'agent'] as const,
+		SECURITY_DEFAULTS.mode,
+		'mode'
+	);
+	const rawProfile = parseEnum(
+		get(inputs, 'security_profile') ?? get(inputs, 'security-profile'),
+		['diff', 'lite', 'balanced', 'deep', 'confirm'] as const,
+		SECURITY_DEFAULTS.profile,
+		'security-profile'
+	);
+	const rawMinSev = parseEnum(
+		get(inputs, 'security_min_severity') ??
+			get(inputs, 'security-min-severity') ??
+			get(inputs, 'min-severity'),
+		['critical', 'high', 'medium', 'low', 'info'] as const,
+		SECURITY_DEFAULTS.minSeverity,
+		'security-min-severity'
+	);
+	const rawFailOn = parseEnum(
+		get(inputs, 'security_fail_on') ?? get(inputs, 'security-fail-on'),
+		['critical', 'high', 'medium', 'low', 'info', 'none'] as const,
+		SECURITY_DEFAULTS.failOn,
+		'security-fail-on'
+	);
+	const rawRiskThreshold = parseEnum(
+		get(inputs, 'security_risk_threshold') ??
+			get(inputs, 'security-risk-threshold'),
+		['low', 'medium', 'high', 'critical_surface'] as const,
+		SECURITY_DEFAULTS.riskThreshold,
+		'security-risk-threshold'
+	);
 
 	return {
 		githubToken:

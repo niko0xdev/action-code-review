@@ -73,6 +73,23 @@ export async function runSecurityWorkflow(
 
 	const allCandidates = [...scannerCandidates, ...engineCandidates];
 
+	// fail-on is judged on every validated finding, before the min-severity gate
+	// and the max-findings cap, so a fail-on below min-severity still triggers.
+	// It runs first because the gate stamps finding statuses; the published
+	// gate below must have the last word.
+	const failSeverity =
+		options.failOn !== 'none' &&
+		SEVERITY_RANKS[options.failOn] < SEVERITY_RANKS[options.minSeverity]
+			? options.failOn
+			: options.minSeverity;
+	let failPool = applyQualityGate(
+		allCandidates,
+		context,
+		failSeverity,
+		'medium',
+		Number.POSITIVE_INFINITY
+	).validated;
+
 	// 5. Initial Quality Gate filtering
 	const gated = applyQualityGate(
 		allCandidates,
@@ -86,6 +103,7 @@ export async function runSecurityWorkflow(
 	const rejectedFindings = gated.rejected;
 
 	// 6. Independent Confirmation Pass if enabled and high-risk findings exist
+	let confirmFailed = false;
 	if (
 		options.confirmFindings &&
 		(riskClassification.level === 'high' ||
@@ -93,27 +111,21 @@ export async function runSecurityWorkflow(
 	) {
 		try {
 			// Scanner findings with confirmed confidence don't need re-confirmation
-			const llmHighCandidates = validatedFindings.filter(
-				(f) =>
-					(f.severity === 'critical' || f.severity === 'high') &&
-					f.confidence !== 'confirmed'
-			);
+			const needsConfirm = (f: SecurityFinding) =>
+				(f.severity === 'critical' || f.severity === 'high') &&
+				f.confidence !== 'confirmed';
+			const llmHighCandidates = failPool.filter(needsConfirm);
 			if (llmHighCandidates.length > 0) {
 				const confirmedHigh = await engine.confirm(context, llmHighCandidates);
 				const confirmedIds = new Set(confirmedHigh.map((f) => f.id));
-
-				validatedFindings = validatedFindings.filter((f) => {
-					if (
-						(f.severity === 'critical' || f.severity === 'high') &&
-						f.confidence !== 'confirmed'
-					) {
-						return confirmedIds.has(f.id);
-					}
-					return true;
-				});
+				const keep = (f: SecurityFinding) =>
+					!needsConfirm(f) || confirmedIds.has(f.id);
+				validatedFindings = validatedFindings.filter(keep);
+				failPool = failPool.filter(keep);
 			}
 		} catch {
-			// Maintain validatedFindings if confirmation pass errors
+			// Unconfirmed high findings stay published, but the run is incomplete.
+			confirmFailed = true;
 		}
 	}
 
@@ -121,12 +133,13 @@ export async function runSecurityWorkflow(
 	const overallRisk: RiskLevel = deriveOverallRisk(validatedFindings);
 
 	// 8. Evaluate fail-on threshold
-	const failThresholdReached = isFailThresholdReached(
-		validatedFindings,
-		options.failOn
-	);
+	const failThresholdReached = isFailThresholdReached(failPool, options.failOn);
 
 	// 9. Build Conclusion
+	const incomplete =
+		engineStatus === 'failed' ||
+		confirmFailed ||
+		scannerExecutions.some((s) => s.status === 'failed');
 	const conclusion: SecurityConclusion = {
 		risk: overallRisk,
 		publishedFindings: validatedFindings.length,
@@ -136,9 +149,7 @@ export async function runSecurityWorkflow(
 		scanners: scannerExecutions,
 		domains: riskClassification.domains,
 		engineStatus,
-		incomplete:
-			engineStatus === 'failed' ||
-			scannerExecutions.some((s) => s.status === 'failed'),
+		incomplete,
 	};
 
 	// 10. Generate Summaries & Reports
@@ -149,9 +160,7 @@ export async function runSecurityWorkflow(
 		findings: validatedFindings,
 		scanners: scannerExecutions,
 		domains: riskClassification.domains,
-		incomplete:
-			engineStatus === 'failed' ||
-			scannerExecutions.some((s) => s.status === 'failed'),
+		incomplete,
 		model: options.model,
 		durationMs: Date.now() - startTime,
 	});
@@ -180,7 +189,8 @@ export async function runSecurityWorkflow(
 			await mkdir(outputDir, { recursive: true });
 			await writeFile(sarifPath, sarifJson, 'utf8');
 		} catch {
-			// Non-blocking if disk write fails
+			// Non-blocking, but never advertise a file that was not written.
+			sarifPath = undefined;
 		}
 	}
 

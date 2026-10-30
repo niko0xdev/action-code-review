@@ -70,7 +70,7 @@ fails closed; it is never silently downgraded to a diff-only review.
 | `security-confirm-findings` | Run validation pass on eligible high-risk findings | `true` |
 | `security-inline-comments` | Publish validated findings as inline PR comments | `true` |
 | `security-sticky-comment` | Publish/update single security summary comment | `true` |
-| `security-sarif` | Generate SARIF v2.1.0 output (`nim-security.sarif`) | `true` |
+| `security-sarif` | Generate SARIF v2.1.0 output (`nim-security.sarif`; `security_sarif_path` is empty if the write failed) | `true` |
 | `security-max-findings` | Maximum findings to publish to PR | `20` |
 | `security-risk-threshold` | Risk threshold for escalating analysis | `high` |
 
@@ -210,6 +210,21 @@ target list reports `skipped`. Error reasons are bounded to 200 characters. A
 `SECURITY REVIEW INCOMPLETE` notice to the sticky summary, so a partial scan is
 never presented as a clean pass. The action also fails when the final security
 conclusion is incomplete, even when no finding reaches `security-fail-on`.
+
+Input validation and gating notes:
+
+- `mode`, `security-profile`, `security-min-severity`, `security-fail-on`, and
+  `security-risk-threshold` are validated against their allowed values. An
+  unknown value logs a warning and uses the documented default.
+- `security-fail-on` is evaluated against every validated finding, before the
+  `security-min-severity` publish gate and the `security-max-findings` cap, so a
+  `fail-on` below `min-severity` still fails the run even though those findings
+  are not published.
+- A failed confirmation pass (`security-confirm-findings`) marks the conclusion
+  `incomplete`: unconfirmed high findings remain published, the summary carries
+  the incomplete notice, and the action fails.
+- The SARIF file name `nim-security.sarif` is unchanged to avoid breaking
+  existing upload steps; consume `security_sarif_path` instead of hard-coding it.
 
 WATCH: Semgrep CLI exit-code semantics may vary by version (findings-present
 vs findings-absent exits); re-verify the nonzero-exit rule against the pinned
