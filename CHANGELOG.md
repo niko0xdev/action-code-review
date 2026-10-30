@@ -44,7 +44,22 @@ Questions) lives in `docs/v3-decisions.md`.
   responses such as 400 or 401 fail immediately. The
   blanket immediate retry in the PR-content flow is removed so retries are not
   multiplied. Error messages never contain the API key.
-
+- **`review-prompt-file` is read from the pull request base ref and cannot
+  escape the workspace.** The file feeds the trusted rules slot, so a PR could
+  edit it to steer the reviewer, and a symlink inside the workspace could read
+  outside it. The content now comes from the base SHA (regular blobs only, via
+  git or, on shallow checkouts, the contents API). A base symlink, directory, or
+  oversized blob means the file is ignored. If no base copy exists, the checkout
+  copy is used only when the changed-file list is complete, the path has no
+  symlink component, and the PR touches neither the path nor an ancestor
+  (case-insensitive); otherwise it is ignored with a warning.
+- **Security mode gating.** A failed confirmation pass now marks the review
+  incomplete instead of silently publishing unconfirmed high findings;
+  `security_sarif_path` is empty when the SARIF write fails; `security-fail-on`
+  is judged on all validated findings so it works below `security-min-severity`
+  and before the `security-max-findings` cap; invalid `mode`,
+  `security-profile`, `security-min-severity`, `security-fail-on`, and
+  `security-risk-threshold` values warn and fall back to the default.
 - **An invalid numeric setting no longer silently disables a safety gate.**
   `AI_REVIEW_MAX_FILES`, `AI_REVIEW_MIN_CONFIDENCE`, and
   `AI_REVIEW_VERIFY_BUDGET_USD` (and the numeric action inputs such as
