@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import {
 	MAX_ANALYSER_OUTPUT_BYTES,
 	buildAnalyserEnv,
@@ -143,6 +144,8 @@ export async function runSemgrepScanner(
 			detached: process.platform !== 'win32',
 		});
 
+		const stdoutDecoder = new StringDecoder('utf8');
+		const stderrDecoder = new StringDecoder('utf8');
 		let stdoutBytes = 0;
 		proc.stdout?.on('data', (d: Buffer) => {
 			stdoutBytes += d.length;
@@ -163,10 +166,10 @@ export async function runSemgrepScanner(
 				});
 				return;
 			}
-			stdout += d.toString();
+			stdout += stdoutDecoder.write(d);
 		});
 		proc.stderr?.on('data', (d) => {
-			if (stderr.length < 64 * 1024) stderr += d.toString();
+			if (stderr.length < 64 * 1024) stderr += stderrDecoder.write(d);
 		});
 
 		proc.on('error', (err) => {
@@ -207,6 +210,8 @@ export async function runSemgrepScanner(
 			if (settled) return;
 			settled = true;
 			clearTimeout(timeout);
+			stdout += stdoutDecoder.end();
+			stderr += stderrDecoder.end();
 
 			const abnormal = code !== 0 || signal !== null;
 			const stderrHint = stderr.trim().slice(0, 100);

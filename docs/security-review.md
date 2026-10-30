@@ -227,9 +227,17 @@ in the diff from `package.json`, `package-lock.json`, `pnpm-lock.yaml`,
 (`https://api.osv.dev/v1/querybatch`, no token required) for known
 vulnerabilities. Findings carry the CVE/GHSA identifier, CVSS-derived severity,
 a fixed-version remediation hint when the OSV record provides one, and a link
-to the OSV advisory page. Network failure degrades to `skipped`, never to a
-run failure; an empty added-dependency list or `OSV_SCAN_DISABLED=1` also
-reports `skipped`. At most 50 packages are queried per run.
+to the OSV advisory page. Only the npm, PyPI, and Go
+ecosystems are covered. Added dependencies are queried in batches of up to 50
+(at most 3 batches in flight) and results are merged by index, up to a hard cap
+of 500 dependencies per run. `next_page_token` pagination of a single result is
+not followed (existing gap). An empty added-dependency list or
+`OSV_SCAN_DISABLED=1` reports `skipped`. A batch that errors (network failure or
+a non-2xx response) or dependencies beyond the 500 cap report `failed` with the
+number of failed batches or unqueried dependencies; findings from everything
+that was checked are still published, and `failed` marks the security review
+incomplete so it never reads as clean. Adding more than 50 dependencies, such as
+a lockfile bump, stays `success` as long as every batch completes.
 
 ---
 

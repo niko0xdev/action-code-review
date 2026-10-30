@@ -7,7 +7,9 @@ import type {
 
 const OSV_BATCH_URL = 'https://api.osv.dev/v1/querybatch';
 const OSV_REQUEST_TIMEOUT_MS = 20_000;
-const MAX_QUERIES_PER_RUN = 50;
+const MAX_QUERIES_PER_BATCH = 50;
+const MAX_BATCHES_IN_FLIGHT = 3;
+const MAX_DEPENDENCIES_PER_RUN = 500;
 
 interface AddedDependency {
 	name: string;
@@ -241,7 +243,8 @@ function toFinding(dep: AddedDependency, vuln: OsvVuln): SecurityFinding {
 
 /**
  * Queries OSV.dev for known vulnerabilities in newly added dependencies.
- * Network failures degrade to a skipped execution, never a run failure.
+ * Network and API errors are reported as `failed` so an unchecked run never
+ * reads as clean; the scan never throws.
  */
 export async function runOsvDependencyScan(
 	changedFiles: Array<{ filename: string; patch?: string }>
@@ -261,10 +264,9 @@ export async function runOsvDependencyScan(
 		};
 	}
 
-	const deps = extractAddedDependencies(changedFiles).slice(
-		0,
-		MAX_QUERIES_PER_RUN
-	);
+	const allDeps = extractAddedDependencies(changedFiles);
+	const deps = allDeps.slice(0, MAX_DEPENDENCIES_PER_RUN);
+	const unqueried = allDeps.length - deps.length;
 	if (deps.length === 0) {
 		return {
 			execution: {
@@ -278,77 +280,82 @@ export async function runOsvDependencyScan(
 		};
 	}
 
-	let payload: { results?: Array<{ vulns?: OsvVuln[] }> };
-	try {
-		const res = await fetch(OSV_BATCH_URL, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				queries: deps.map((d) => ({
-					package: { name: d.name, ecosystem: d.ecosystem },
-					version: d.version,
-				})),
-			}),
-			signal: AbortSignal.timeout(OSV_REQUEST_TIMEOUT_MS),
-		});
-		if (!res.ok) {
-			return {
-				execution: {
-					name: 'osv-dependency-cve',
-					status: 'failed',
-					reason: `OSV.dev returned HTTP ${res.status}`.slice(0, 200),
-					findings: 0,
-					durationMs: Date.now() - start,
-				},
-				findings: [],
-			};
-		}
-		payload = (await res.json()) as typeof payload;
-	} catch (err) {
-		return {
-			execution: {
-				name: 'osv-dependency-cve',
-				status: 'skipped',
-				reason:
-					`OSV.dev unreachable (offline or blocked egress): ${err instanceof Error ? err.message : String(err)}`.slice(
-						0,
-						200
-					),
-				findings: 0,
-				durationMs: Date.now() - start,
-			},
-			findings: [],
-		};
-	}
-
-	if (!payload || !Array.isArray(payload.results)) {
-		return {
-			execution: {
-				name: 'osv-dependency-cve',
-				status: 'failed',
-				reason: 'OSV.dev response missing results array',
-				findings: 0,
-				durationMs: Date.now() - start,
-			},
-			findings: [],
-		};
+	const batches: AddedDependency[][] = [];
+	for (let i = 0; i < deps.length; i += MAX_QUERIES_PER_BATCH) {
+		batches.push(deps.slice(i, i + MAX_QUERIES_PER_BATCH));
 	}
 
 	const findings: SecurityFinding[] = [];
-	payload.results.forEach((result, i) => {
-		const dep = deps[i];
-		for (const vuln of result?.vulns ?? []) {
-			if (typeof vuln?.id === 'string') findings.push(toFinding(dep, vuln));
+	const errors: string[] = [];
+	let next = 0;
+	const worker = async () => {
+		while (next < batches.length) {
+			const batch = batches[next++];
+			try {
+				const found = await queryBatch(batch);
+				findings.push(...found);
+			} catch (err) {
+				errors.push(err instanceof Error ? err.message : String(err));
+			}
 		}
-	});
+	};
+	await Promise.all(
+		Array.from(
+			{ length: Math.min(MAX_BATCHES_IN_FLIGHT, batches.length) },
+			worker
+		)
+	);
+
+	// A batch that never ran, or dependencies past the cap, must not read as a
+	// clean CVE check, so either one reports `failed` (findings still publish).
+	const reasons: string[] = [];
+	if (unqueried > 0)
+		reasons.push(
+			`only the first ${MAX_DEPENDENCIES_PER_RUN} of ${allDeps.length} added dependencies were checked; ${unqueried} not queried`
+		);
+	if (errors.length > 0)
+		reasons.push(
+			`${errors.length} of ${batches.length} OSV.dev batches failed (offline or blocked egress?): ${errors[0].slice(0, 120)}`
+		);
 
 	return {
 		execution: {
 			name: 'osv-dependency-cve',
-			status: 'success',
+			status: reasons.length > 0 ? 'failed' : 'success',
+			...(reasons.length > 0 && { reason: reasons.join('; ') }),
 			findings: findings.length,
 			durationMs: Date.now() - start,
 		},
 		findings,
 	};
+}
+
+/** Queries one batch and maps results back to dependencies by index. Throws on any error. */
+async function queryBatch(deps: AddedDependency[]): Promise<SecurityFinding[]> {
+	const res = await fetch(OSV_BATCH_URL, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			queries: deps.map((d) => ({
+				package: { name: d.name, ecosystem: d.ecosystem },
+				version: d.version,
+			})),
+		}),
+		signal: AbortSignal.timeout(OSV_REQUEST_TIMEOUT_MS),
+	});
+	if (!res.ok) throw new Error(`OSV.dev returned HTTP ${res.status}`);
+	const payload = (await res.json()) as {
+		results?: Array<{ vulns?: OsvVuln[] }>;
+	};
+	if (!payload || !Array.isArray(payload.results))
+		throw new Error('OSV.dev response missing results array');
+	const found: SecurityFinding[] = [];
+	payload.results.forEach((result, i) => {
+		const dep = deps[i];
+		if (!dep) return;
+		for (const vuln of result?.vulns ?? []) {
+			if (typeof vuln?.id === 'string') found.push(toFinding(dep, vuln));
+		}
+	});
+	return found;
 }
