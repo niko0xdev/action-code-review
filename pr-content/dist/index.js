@@ -37637,8 +37637,13 @@ async function resolveApproval(octokit, params, state) {
             state: 'not-requested',
             detail: 'findings below min-severity were dropped',
         };
-    const resolved = await areAiThreadsResolved(octokit, params.owner, params.repo, params.prNumber);
-    if (!resolved)
+    const threads = await areAiThreadsResolved(octokit, params.owner, params.repo, params.prNumber);
+    if (threads === 'none')
+        return {
+            state: 'skipped-unresolved-threads',
+            detail: 'no prior AI thread',
+        };
+    if (threads !== 'resolved')
         return { state: 'skipped-unresolved-threads' };
     try {
         await octokit.rest.pulls.createReview({
@@ -37680,7 +37685,7 @@ function reviewFailed(result) {
 async function areAiThreadsResolved(octokit, _owner, _repo, prNumber) {
     const listThreads = octokit.rest.pulls.listThreads;
     if (!listThreads)
-        return false;
+        return 'unresolved';
     try {
         const threads = await listThreads({
             owner: _owner,
@@ -37700,12 +37705,15 @@ async function areAiThreadsResolved(octokit, _owner, _repo, prNumber) {
             isTrustedAuthor(comment.user?.login, selfLogin)));
         // `[].every(...)` is vacuously true; with no prior AI thread there is
         // nothing a human resolved, so never present that as an approval.
-        return (aiThreads.length > 0 &&
-            aiThreads.every((thread) => thread.resolved === true));
+        if (aiThreads.length === 0)
+            return 'none';
+        return aiThreads.every((thread) => thread.resolved === true)
+            ? 'resolved'
+            : 'unresolved';
     }
     catch (error) {
         lib_core.warning(`[review] thread resolution check failed: ${error instanceof Error ? error.message : String(error)}`);
-        return false;
+        return 'unresolved';
     }
 }
 /**

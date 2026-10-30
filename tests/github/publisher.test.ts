@@ -821,7 +821,10 @@ describe('approval outcome reporting', () => {
 			result,
 			autoApproveWhenResolved: true,
 		});
-		expect(result.approval?.state).toBe('skipped-unresolved-threads');
+		expect(result.approval).toEqual({
+			state: 'skipped-unresolved-threads',
+			detail: 'no prior AI thread',
+		});
 		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
 	});
 

@@ -293,7 +293,7 @@ Enable automatic approval after all AI-generated review threads have been marked
     auto-approve-when-resolved: true
 ```
 
-The action checks review threads authored by the authenticated token and submits an approval review when at least one such thread exists and none remain unresolved. It never approves an incomplete review, a pull request with no earlier AI threads, or a run where `min-severity` dropped findings. The default is `false`.
+The action checks review threads authored by the authenticated token and submits an approval review when at least one such thread exists and none remain unresolved. It never approves an incomplete review, a pull request with no earlier AI threads, or a run where `min-severity` dropped findings. The default is `false`. On a first run, a clean pull request that never received an AI thread is therefore not auto-approved.
 
 > **Repository setting required.** GitHub refuses `APPROVE` reviews from
 > `GITHUB_TOKEN` until you enable

@@ -77,7 +77,7 @@ None declared.
 | `max-files` | false | `'10'` |
 | `exclude-patterns` | false | `'*.md,*.txt'` |
 | `include-dir` | false | — (no default) |
-| `auto-approve-when-resolved` | false | `'true'` |
+| `auto-approve-when-resolved` | false | `'false'` |
 | `min-severity` | false | `'critical'` |
 | `block-on-issues` | false | `'true'` |
 | `include-full-content` | false | `'false'` |
@@ -157,10 +157,10 @@ breaking shape change.
   list. `status` is `reviewed`, `excluded`, or `not-analyzed`. Excluded entries
   use one reason: `configured-filter`, `missing-patch`, `default-ignore`, or
   `max-files`. A selected but unreviewed file uses `review-group-failed` when
-  any review group failed, otherwise `review-incomplete` (this includes files cut off or omitted because
-  the diff exceeded `max-context-chars`; truncation happens per file at hunk
-  boundaries). Entries contain only
-  the repository-relative path and status/reason, never the patch or file
+  any review group failed, otherwise `review-incomplete` (this includes files
+  cut off or omitted because the diff exceeded `max-context-chars`; truncation
+  happens per file at hunk boundaries). Entries contain only the
+  repository-relative path and status/reason, never the patch or file
   contents. Existing string redaction also applies to these paths. The ledger
   is capped at 128 Ki UTF-16 characters; `fileDetailsTruncated` and
   `filesOmitted` report any entries omitted at that limit. This is separate
