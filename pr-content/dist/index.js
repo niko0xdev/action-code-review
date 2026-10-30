@@ -37395,10 +37395,12 @@ const SECURITY_DEFAULTS = {
     maxFindings: '20',
     riskThreshold: 'high',
 };
+/** Default `exclude-patterns`, split; exported so callers can tell it from a user choice. */
+const DEFAULT_EXCLUDE_PATTERNS = ['*.md', '*.txt'];
 const PR_REVIEW_DEFAULTS = {
     openaiModel: 'gpt-4',
     maxFiles: '10',
-    excludePatterns: '*.md,*.txt',
+    excludePatterns: DEFAULT_EXCLUDE_PATTERNS.join(','),
     autoApproveWhenResolved: 'false',
     minSeverity: 'critical',
     blockOnIssues: 'true',
@@ -38662,7 +38664,13 @@ async function publishReview(octokit, params) {
     // blocking off, findings are posted as plain COMMENTs instead of
     // REQUEST_CHANGES (docs/v1-interface-contract.md).
     const shouldBlock = params.blockOnIssues !== false && hasBlockingFinding;
-    if (findingsToPublish.length > 0 || shouldBlock) {
+    // A re-run with nothing new to post must not add another body-only
+    // REQUEST_CHANGES to the timeline when the bot's latest review already
+    // requests changes on this exact head.
+    const alreadyBlockingOnHead = findingsToPublish.length === 0 &&
+        shouldBlock &&
+        (await hasCurrentBlockingReview(octokit, owner, repo, prNumber, headSha));
+    if ((findingsToPublish.length > 0 || shouldBlock) && !alreadyBlockingOnHead) {
         const payload = buildReviewPayload(findingsToPublish, headSha, {
             blockOnIssues: shouldBlock,
         });
@@ -38955,6 +38963,30 @@ async function findStickyComment(octokit, owner, repo, prNumber, marker) {
     }
     catch { }
     return null;
+}
+/**
+ * True when this action's latest submitted review is CHANGES_REQUESTED and
+ * was made on `headSha`. Any lookup failure returns false so the event is
+ * still submitted (the safe direction).
+ */
+async function hasCurrentBlockingReview(octokit, owner, repo, prNumber, headSha) {
+    if (!octokit.rest.pulls.listReviews)
+        return false;
+    try {
+        const reviews = await listAll(octokit.rest.pulls.listReviews, {
+            owner,
+            repo,
+            pull_number: prNumber,
+        });
+        const selfLogin = await resolveSelfLogin(octokit);
+        const own = reviews.filter((review) => review.state !== 'PENDING' &&
+            isTrustedAuthor(review.user?.login, selfLogin));
+        const latest = own[own.length - 1];
+        return (latest?.state === 'CHANGES_REQUESTED' && latest.commit_id === headSha);
+    }
+    catch {
+        return false;
+    }
 }
 async function listAll(method, args) {
     if (!method)
@@ -43594,7 +43626,8 @@ async function main(argv) {
             process.env.GITHUB_WORKSPACE || process.cwd();
         const allPrFiles = reviewContext.diff.files;
         const filtered = applyLegacyFilters(allPrFiles.map((f) => f.filename), legacyOptions);
-        const maxFiles = Math.min(legacyOptions.maxFiles, parsePositiveInt(process.env.AI_REVIEW_MAX_FILES, config/* REVIEW_OPTION_DEFAULTS */.Ag.aiReviewMaxFiles, { name: 'AI_REVIEW_MAX_FILES' }));
+        const envLimits = readReviewEnvLimits(process.env);
+        const maxFiles = Math.min(legacyOptions.maxFiles, envLimits.maxFiles);
         // Captured before filtering so the summary can report
         // "N of M (X excluded by filter)" (src/github/comments.ts).
         const filesTotal = allPrFiles.length;
@@ -43602,7 +43635,16 @@ async function main(argv) {
         const filesSelected = reviewContext.diff.files.length;
         trackPhase('filter', `${reviewContext.diff.files.length} files after filter`, { enabled: trackEnabled });
         if (reviewContext.diff.files.length === 0) {
-            core.warning(`[review] No files to review after filtering (${filesTotal} changed, include-dir=${legacyOptions.includeDirs?.join(',') ?? '(none)'}, exclude-patterns=${legacyOptions.excludePatterns.join(',')})`);
+            const emptyMessage = `[review] No files to review after filtering (${filesTotal} changed, include-dir=${legacyOptions.includeDirs?.join(',') ?? '(none)'}, exclude-patterns=${legacyOptions.excludePatterns.join(',')})`;
+            if (classifyEmptySelection({
+                filesTotal,
+                filteredCount: filtered.length,
+                includeDirs: legacyOptions.includeDirs,
+                excludePatterns: legacyOptions.excludePatterns,
+            }) === 'warning')
+                core.warning(emptyMessage);
+            else
+                core.notice(emptyMessage);
             core.setOutput('review-summary', 'skipped: no files to review');
             return;
         }
@@ -43704,7 +43746,7 @@ async function main(argv) {
                 toolFindings: prelintResult.findings,
             });
             const result = await runReview(reviewContext, harness, {
-                minConfidence: parseBoundedFloat(process.env.AI_REVIEW_MIN_CONFIDENCE, 0.8, { name: 'AI_REVIEW_MIN_CONFIDENCE', min: 0, max: 1 }),
+                minConfidence: envLimits.minConfidence,
                 extraRules: reviewRules,
                 minSeverity: legacyOptions.minSeverity,
             });
@@ -43718,7 +43760,7 @@ async function main(argv) {
                         title: reviewContext.pullRequest.title,
                         body: reviewContext.pullRequest.body,
                         verify: async (prompt) => (await verifyProvider.complete([{ role: 'user', content: prompt }], { temperature: 0, maxOutputTokens: 2048 })).content,
-                        budgetUsd: parseBoundedFloat(process.env.AI_REVIEW_VERIFY_BUDGET_USD, 0.5, { name: 'AI_REVIEW_VERIFY_BUDGET_USD', min: 0 }),
+                        budgetUsd: envLimits.verifyBudgetUsd,
                     });
                     trackPhase('harness', `Verify pass done: ${result.findings.length} findings`, { enabled: trackEnabled });
                 }
@@ -43841,13 +43883,53 @@ function normalizeIncludeDir(dir) {
         .trim()
         .replace(/\\/g, '/')
         .replace(/^(\.\/)+/, '')
+        .replace(/^\/+/, '')
         .replace(/\/+$/, '');
+}
+/**
+ * Numeric env ceilings read by `main()`. Invalid values warn and fall back,
+ * so a typo can never switch a safety limit off.
+ */
+function readReviewEnvLimits(env) {
+    return {
+        maxFiles: parsePositiveInt(env.AI_REVIEW_MAX_FILES, config/* REVIEW_OPTION_DEFAULTS */.Ag.aiReviewMaxFiles, { name: 'AI_REVIEW_MAX_FILES' }),
+        minConfidence: parseBoundedFloat(env.AI_REVIEW_MIN_CONFIDENCE, 0.8, {
+            name: 'AI_REVIEW_MIN_CONFIDENCE',
+            min: 0,
+            max: 1,
+        }),
+        verifyBudgetUsd: parseBoundedFloat(env.AI_REVIEW_VERIFY_BUDGET_USD, 0.5, {
+            name: 'AI_REVIEW_VERIFY_BUDGET_USD',
+            min: 0,
+        }),
+    };
+}
+/**
+ * An empty selection is only worth a warning when a filter the user set
+ * (include-dir, or exclude patterns other than the default) removed every
+ * changed file. Lockfile-only, docs-only, and patch-less PRs are legitimate.
+ */
+function classifyEmptySelection(args) {
+    if (args.filesTotal === 0 || args.filteredCount > 0)
+        return 'notice';
+    if (args.includeDirs?.length)
+        return 'warning';
+    const isDefault = args.excludePatterns.join(',') === DEFAULT_EXCLUDE_PATTERNS.join(',');
+    return isDefault ? 'notice' : 'warning';
 }
 function applyLegacyFilters(filenames, options) {
     const excludeRegexes = options.excludePatterns.map((pattern) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
-    const includeDirs = options.includeDirs
+    const requestedDirs = options.includeDirs
         ?.map(normalizeIncludeDir)
         .filter((dir) => dir !== '' && dir !== '.');
+    // A `..` segment can never match a repository path: keep the include
+    // filter active (matching nothing) rather than widening it to every file.
+    const includeDirs = requestedDirs?.filter((dir) => {
+        if (!dir.split('/').includes('..'))
+            return true;
+        core.warning(`[review] include-dir "${dir}" contains ".." and is ignored (matches no files)`);
+        return false;
+    });
     for (const dir of includeDirs ?? []) {
         if (!filenames.some((f) => f === dir || f.startsWith(`${dir}/`))) {
             core.warning(`[review] include-dir "${dir}" matches no changed files`);
@@ -43856,8 +43938,8 @@ function applyLegacyFilters(filenames, options) {
     return filenames.filter((filename) => {
         if (excludeRegexes.some((regex) => regex.test(filename)))
             return false;
-        if (includeDirs?.length)
-            return includeDirs.some((dir) => filename.startsWith(`${dir}/`) || filename === dir);
+        if (requestedDirs?.length)
+            return (includeDirs ?? []).some((dir) => filename.startsWith(`${dir}/`) || filename === dir);
         return true;
     });
 }

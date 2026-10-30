@@ -29,6 +29,19 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Fixed
 
+- **Re-runs no longer add a `REQUEST_CHANGES` review per run.** When
+  nothing new needs posting and the action's latest review is already
+  `CHANGES_REQUESTED` on the current head commit, the body-only review is
+  skipped. A new head, a dismissed, `COMMENTED`, or approved earlier review, or
+  new inline comments still submit. Approval gating is unchanged.
+- **An empty file selection is a notice, not a warning,** unless an
+  `include-dir` or non-default `exclude-patterns` removed every file.
+  `include-dir` now drops a leading `/`, and entries with `..` match nothing and
+  warn instead of widening the filter.
+- **The Pi install step pins the version exactly.** The `pi --version` guard no
+  longer matches `0.73.10`. The unused `buildInstallStepScript` helper is
+  removed and the install test reads the real action file; a new test checks
+  that every lockfile entry has an integrity hash and an npm registry URL.
 - **A re-run keeps `REQUEST_CHANGES` while blocking findings are already
   commented.** The blocking decision (and the approval gate) now covers every
   valid finding, not only the new ones. When nothing new needs posting, a

@@ -237,7 +237,14 @@ Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic alrea
    counts surface in the diagnostics block.
 5. **Review decision on re-runs** — `REQUEST_CHANGES` is decided from every
    valid finding, including ones already commented, and is submitted separately
-   from the inline comments so it survives the per-comment fallback.
+   from the inline comments so it survives the per-comment fallback. When
+   nothing new needs posting and the action's latest review is already
+   `CHANGES_REQUESTED` on the same head commit, the body-only event is not
+   submitted again (one timeline entry per head, not per run); a new head, a
+   dismissed, `COMMENTED`, or approved earlier review, or any new inline
+   comment still submits. An empty file selection is a notice, except when an
+   `include-dir` or a non-default `exclude-patterns` removed every file, which
+   warns. `include-dir` strips a leading `/` and ignores entries with `..`.
 6. **Harness reliability** — a malformed harness answer is retried once with a
    conversion prompt (`AI_REVIEW_PI_REPAIR_ATTEMPTS`), a runaway tool loop is
    stopped by `AI_REVIEW_PI_MAX_TOOL_CALLS`, and the output budget is now 8 MiB

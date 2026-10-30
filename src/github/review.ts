@@ -32,6 +32,8 @@ function isPermissionError(error: unknown): boolean {
 
 interface ReviewRecord {
 	id: number;
+	state?: string | null;
+	commit_id?: string | null;
 	user?: { login?: string } | null;
 }
 interface ReviewCommentRecord {
@@ -245,7 +247,14 @@ export async function publishReview(
 	// blocking off, findings are posted as plain COMMENTs instead of
 	// REQUEST_CHANGES (docs/v1-interface-contract.md).
 	const shouldBlock = params.blockOnIssues !== false && hasBlockingFinding;
-	if (findingsToPublish.length > 0 || shouldBlock) {
+	// A re-run with nothing new to post must not add another body-only
+	// REQUEST_CHANGES to the timeline when the bot's latest review already
+	// requests changes on this exact head.
+	const alreadyBlockingOnHead =
+		findingsToPublish.length === 0 &&
+		shouldBlock &&
+		(await hasCurrentBlockingReview(octokit, owner, repo, prNumber, headSha));
+	if ((findingsToPublish.length > 0 || shouldBlock) && !alreadyBlockingOnHead) {
 		const payload = buildReviewPayload(findingsToPublish, headSha, {
 			blockOnIssues: shouldBlock,
 		});
@@ -597,6 +606,40 @@ async function findStickyComment(
 		}
 	} catch {}
 	return null;
+}
+
+/**
+ * True when this action's latest submitted review is CHANGES_REQUESTED and
+ * was made on `headSha`. Any lookup failure returns false so the event is
+ * still submitted (the safe direction).
+ */
+async function hasCurrentBlockingReview(
+	octokit: PublisherOctokit,
+	owner: string,
+	repo: string,
+	prNumber: number,
+	headSha: string
+): Promise<boolean> {
+	if (!octokit.rest.pulls.listReviews) return false;
+	try {
+		const reviews = await listAll(octokit.rest.pulls.listReviews, {
+			owner,
+			repo,
+			pull_number: prNumber,
+		});
+		const selfLogin = await resolveSelfLogin(octokit);
+		const own = reviews.filter(
+			(review) =>
+				review.state !== 'PENDING' &&
+				isTrustedAuthor(review.user?.login, selfLogin)
+		);
+		const latest = own[own.length - 1];
+		return (
+			latest?.state === 'CHANGES_REQUESTED' && latest.commit_id === headSha
+		);
+	} catch {
+		return false;
+	}
 }
 
 async function listAll<T>(

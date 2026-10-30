@@ -4,6 +4,7 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { resolveEngineConfig } from './adapter/engine-config.js';
 import {
+	DEFAULT_EXCLUDE_PATTERNS,
 	type PrContentEngineOptions,
 	type PrReviewEngineOptions,
 	type SecurityEngineOptions,
@@ -615,14 +616,8 @@ export async function main(argv: string[]): Promise<void> {
 			allPrFiles.map((f) => f.filename),
 			legacyOptions
 		);
-		const maxFiles = Math.min(
-			legacyOptions.maxFiles,
-			parsePositiveInt(
-				process.env.AI_REVIEW_MAX_FILES,
-				REVIEW_OPTION_DEFAULTS.aiReviewMaxFiles,
-				{ name: 'AI_REVIEW_MAX_FILES' }
-			)
-		);
+		const envLimits = readReviewEnvLimits(process.env);
+		const maxFiles = Math.min(legacyOptions.maxFiles, envLimits.maxFiles);
 		// Captured before filtering so the summary can report
 		// "N of M (X excluded by filter)" (src/github/comments.ts).
 		const filesTotal = allPrFiles.length;
@@ -639,9 +634,17 @@ export async function main(argv: string[]): Promise<void> {
 			{ enabled: trackEnabled }
 		);
 		if (reviewContext.diff.files.length === 0) {
-			core.warning(
-				`[review] No files to review after filtering (${filesTotal} changed, include-dir=${legacyOptions.includeDirs?.join(',') ?? '(none)'}, exclude-patterns=${legacyOptions.excludePatterns.join(',')})`
-			);
+			const emptyMessage = `[review] No files to review after filtering (${filesTotal} changed, include-dir=${legacyOptions.includeDirs?.join(',') ?? '(none)'}, exclude-patterns=${legacyOptions.excludePatterns.join(',')})`;
+			if (
+				classifyEmptySelection({
+					filesTotal,
+					filteredCount: filtered.length,
+					includeDirs: legacyOptions.includeDirs,
+					excludePatterns: legacyOptions.excludePatterns,
+				}) === 'warning'
+			)
+				core.warning(emptyMessage);
+			else core.notice(emptyMessage);
 			core.setOutput('review-summary', 'skipped: no files to review');
 			return;
 		}
@@ -774,11 +777,7 @@ export async function main(argv: string[]): Promise<void> {
 				toolFindings: prelintResult.findings,
 			});
 			const result = await runReview(reviewContext, harness, {
-				minConfidence: parseBoundedFloat(
-					process.env.AI_REVIEW_MIN_CONFIDENCE,
-					0.8,
-					{ name: 'AI_REVIEW_MIN_CONFIDENCE', min: 0, max: 1 }
-				),
+				minConfidence: envLimits.minConfidence,
 				extraRules: reviewRules,
 				minSeverity: legacyOptions.minSeverity,
 			});
@@ -798,11 +797,7 @@ export async function main(argv: string[]): Promise<void> {
 									{ temperature: 0, maxOutputTokens: 2048 }
 								)
 							).content,
-						budgetUsd: parseBoundedFloat(
-							process.env.AI_REVIEW_VERIFY_BUDGET_USD,
-							0.5,
-							{ name: 'AI_REVIEW_VERIFY_BUDGET_USD', min: 0 }
-						),
+						budgetUsd: envLimits.verifyBudgetUsd,
 					});
 					trackPhase(
 						'harness',
@@ -951,7 +946,53 @@ export function normalizeIncludeDir(dir: string): string {
 		.trim()
 		.replace(/\\/g, '/')
 		.replace(/^(\.\/)+/, '')
+		.replace(/^\/+/, '')
 		.replace(/\/+$/, '');
+}
+
+/**
+ * Numeric env ceilings read by `main()`. Invalid values warn and fall back,
+ * so a typo can never switch a safety limit off.
+ */
+export function readReviewEnvLimits(env: NodeJS.ProcessEnv): {
+	maxFiles: number;
+	minConfidence: number;
+	verifyBudgetUsd: number;
+} {
+	return {
+		maxFiles: parsePositiveInt(
+			env.AI_REVIEW_MAX_FILES,
+			REVIEW_OPTION_DEFAULTS.aiReviewMaxFiles,
+			{ name: 'AI_REVIEW_MAX_FILES' }
+		),
+		minConfidence: parseBoundedFloat(env.AI_REVIEW_MIN_CONFIDENCE, 0.8, {
+			name: 'AI_REVIEW_MIN_CONFIDENCE',
+			min: 0,
+			max: 1,
+		}),
+		verifyBudgetUsd: parseBoundedFloat(env.AI_REVIEW_VERIFY_BUDGET_USD, 0.5, {
+			name: 'AI_REVIEW_VERIFY_BUDGET_USD',
+			min: 0,
+		}),
+	};
+}
+
+/**
+ * An empty selection is only worth a warning when a filter the user set
+ * (include-dir, or exclude patterns other than the default) removed every
+ * changed file. Lockfile-only, docs-only, and patch-less PRs are legitimate.
+ */
+export function classifyEmptySelection(args: {
+	filesTotal: number;
+	filteredCount: number;
+	includeDirs?: string[];
+	excludePatterns: string[];
+}): 'notice' | 'warning' {
+	if (args.filesTotal === 0 || args.filteredCount > 0) return 'notice';
+	if (args.includeDirs?.length) return 'warning';
+	const isDefault =
+		args.excludePatterns.join(',') === DEFAULT_EXCLUDE_PATTERNS.join(',');
+	return isDefault ? 'notice' : 'warning';
 }
 
 export function applyLegacyFilters(
@@ -964,9 +1005,18 @@ export function applyLegacyFilters(
 				`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`
 			)
 	);
-	const includeDirs = options.includeDirs
+	const requestedDirs = options.includeDirs
 		?.map(normalizeIncludeDir)
 		.filter((dir) => dir !== '' && dir !== '.');
+	// A `..` segment can never match a repository path: keep the include
+	// filter active (matching nothing) rather than widening it to every file.
+	const includeDirs = requestedDirs?.filter((dir) => {
+		if (!dir.split('/').includes('..')) return true;
+		core.warning(
+			`[review] include-dir "${dir}" contains ".." and is ignored (matches no files)`
+		);
+		return false;
+	});
 	for (const dir of includeDirs ?? []) {
 		if (!filenames.some((f) => f === dir || f.startsWith(`${dir}/`))) {
 			core.warning(`[review] include-dir "${dir}" matches no changed files`);
@@ -974,8 +1024,8 @@ export function applyLegacyFilters(
 	}
 	return filenames.filter((filename) => {
 		if (excludeRegexes.some((regex) => regex.test(filename))) return false;
-		if (includeDirs?.length)
-			return includeDirs.some(
+		if (requestedDirs?.length)
+			return (includeDirs ?? []).some(
 				(dir) => filename.startsWith(`${dir}/`) || filename === dir
 			);
 		return true;

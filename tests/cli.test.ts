@@ -2,9 +2,12 @@ import * as core from '@actions/core';
 import { describe, expect, it, vi } from 'vitest';
 import {
 	applyLegacyFilters,
+	classifyEmptySelection,
 	escalateMaxTokens,
 	main,
+	normalizeIncludeDir,
 	parseArgs,
+	readReviewEnvLimits,
 } from '../src/cli.js';
 
 import {
@@ -99,6 +102,123 @@ describe('parseArgs', () => {
 			'utf8'
 		);
 		expect(action).toContain("author: 'niko0xdev'");
+	});
+});
+
+describe('include-dir hardening', () => {
+	it('strips leading slashes', () => {
+		expect(normalizeIncludeDir('/src')).toBe('src');
+		expect(normalizeIncludeDir('//src/')).toBe('src');
+		expect(
+			applyLegacyFilters(['src/a.ts', 'docs/b.ts'], {
+				excludePatterns: [],
+				includeDirs: ['/src'],
+			})
+		).toEqual(['src/a.ts']);
+	});
+
+	it.each(['../src', 'src/../docs', '/..'])(
+		'treats %s as non-matching and warns',
+		(dir) => {
+			const warn = vi.spyOn(core, 'warning').mockImplementation(() => {});
+			expect(
+				applyLegacyFilters(['src/a.ts', 'docs/b.ts', 'a.ts'], {
+					excludePatterns: [],
+					includeDirs: [dir],
+				})
+			).toEqual([]);
+			expect(warn).toHaveBeenCalledWith(expect.stringContaining('..'));
+			warn.mockRestore();
+		}
+	);
+
+	it('still honours valid include-dirs next to an invalid one', () => {
+		const warn = vi.spyOn(core, 'warning').mockImplementation(() => {});
+		expect(
+			applyLegacyFilters(['src/a.ts', 'docs/b.ts'], {
+				excludePatterns: [],
+				includeDirs: ['../x', 'src'],
+			})
+		).toEqual(['src/a.ts']);
+		warn.mockRestore();
+	});
+});
+
+describe('classifyEmptySelection', () => {
+	const base = {
+		filesTotal: 1,
+		filteredCount: 1,
+		excludePatterns: ['*.md', '*.txt'],
+	};
+
+	it('is a notice for a legitimate empty selection such as a lockfile-only PR', () => {
+		expect(classifyEmptySelection(base)).toBe('notice');
+	});
+
+	it('is a notice for a docs-only PR hidden by the default exclude patterns', () => {
+		expect(classifyEmptySelection({ ...base, filteredCount: 0 })).toBe(
+			'notice'
+		);
+	});
+
+	it('warns when an include-dir matched nothing', () => {
+		expect(
+			classifyEmptySelection({
+				...base,
+				filteredCount: 0,
+				includeDirs: ['lib'],
+			})
+		).toBe('warning');
+	});
+
+	it('warns when custom exclude patterns removed every file', () => {
+		expect(
+			classifyEmptySelection({
+				...base,
+				filteredCount: 0,
+				excludePatterns: ['src/*'],
+			})
+		).toBe('warning');
+	});
+});
+
+describe('readReviewEnvLimits', () => {
+	it('uses defaults when unset', () => {
+		const limits = readReviewEnvLimits({});
+		expect(limits.maxFiles).toBe(100);
+		expect(limits.minConfidence).toBe(0.8);
+		expect(limits.verifyBudgetUsd).toBe(0.5);
+	});
+
+	it('reads valid values', () => {
+		expect(
+			readReviewEnvLimits({
+				AI_REVIEW_MAX_FILES: '25',
+				AI_REVIEW_MIN_CONFIDENCE: '0.5',
+				AI_REVIEW_VERIFY_BUDGET_USD: '1.25',
+			})
+		).toEqual({ maxFiles: 25, minConfidence: 0.5, verifyBudgetUsd: 1.25 });
+	});
+
+	it('warns and falls back for invalid values', () => {
+		const warn = vi.spyOn(core, 'warning').mockImplementation(() => {});
+		const limits = readReviewEnvLimits({
+			AI_REVIEW_MAX_FILES: 'lots',
+			AI_REVIEW_MIN_CONFIDENCE: '1.5',
+			AI_REVIEW_VERIFY_BUDGET_USD: '-1',
+		});
+		expect(limits).toEqual({
+			maxFiles: 100,
+			minConfidence: 0.8,
+			verifyBudgetUsd: 0.5,
+		});
+		for (const name of [
+			'AI_REVIEW_MAX_FILES',
+			'AI_REVIEW_MIN_CONFIDENCE',
+			'AI_REVIEW_VERIFY_BUDGET_USD',
+		])
+			expect(warn).toHaveBeenCalledWith(expect.stringContaining(name));
+		warn.mockRestore();
 	});
 });
 
