@@ -41798,15 +41798,15 @@ async function runOsvDependencyScan(changedFiles) {
     // A batch that never ran, or dependencies past the cap, must not read as a
     // clean CVE check, so either one reports `failed` (findings still publish).
     const reasons = [];
-    if (errors.length > 0)
-        reasons.push(`${errors.length} of ${batches.length} OSV.dev batches failed (offline or blocked egress?): ${errors[0]}`);
     if (unqueried > 0)
         reasons.push(`only the first ${MAX_DEPENDENCIES_PER_RUN} of ${allDeps.length} added dependencies were checked; ${unqueried} not queried`);
+    if (errors.length > 0)
+        reasons.push(`${errors.length} of ${batches.length} OSV.dev batches failed (offline or blocked egress?): ${errors[0].slice(0, 120)}`);
     return {
         execution: {
             name: 'osv-dependency-cve',
             status: reasons.length > 0 ? 'failed' : 'success',
-            ...(reasons.length > 0 && { reason: reasons.join('; ').slice(0, 300) }),
+            ...(reasons.length > 0 && { reason: reasons.join('; ') }),
             findings: findings.length,
             durationMs: Date.now() - start,
         },
