@@ -1,0 +1,8 @@
+{
+	"name": "pi-runtime",
+	"private": true,
+	"description": "Lock-pinned install of the Pi coding agent used by pr-review",
+	"dependencies": {
+		"@mariozechner/pi-coding-agent": "0.73.1"
+	}
+}

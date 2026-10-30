@@ -3,7 +3,6 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
-import { PI_PACKAGE_PIN } from '../src/adapter/pi-install.js';
 
 /**
  * Self-review: this repository eats its own cooking. These tests parse
@@ -76,24 +75,23 @@ describe.each([
 		expect(parsed.runs.using).toBe('composite');
 	});
 
-	it('has at least two steps: Pi install + node entry', () => {
+	it('has at least two steps: Node setup + node entry', () => {
 		expect(parsed.runs.steps?.length).toBeGreaterThanOrEqual(2);
 	});
 
-	it('guards the Pi install idempotently with the pinned package', () => {
-		const installStep = parsed.runs.steps?.find((step) =>
-			step.run?.includes('pi-coding-agent')
-		);
-		expect(installStep, 'install step exists').toBeDefined();
-		expect(installStep?.shell).toBe('bash');
-		expect(installStep?.run).toContain('command -v pi');
-		expect(installStep?.run).toContain(
-			`@mariozechner/pi-coding-agent@${PI_PACKAGE_PIN}`
-		);
-		expect(installStep?.run).toContain(
-			'--no-audit --no-fund --ignore-scripts --silent'
-		);
-	});
+	it.skipIf(action !== 'pr-review')(
+		'guards the Pi install idempotently from the lockfile',
+		() => {
+			const installStep = parsed.runs.steps?.find((step) =>
+				step.run?.includes('pi-runtime')
+			);
+			expect(installStep, 'install step exists').toBeDefined();
+			expect(installStep?.shell).toBe('bash');
+			expect(installStep?.run).toContain('command -v pi');
+			expect(installStep?.run).toContain('npm ci');
+			expect(installStep?.run).toContain('--ignore-scripts');
+		}
+	);
 
 	it('forwards every V1 input via env using the getInput convention', () => {
 		const runStep = parsed.runs.steps?.find((step) =>
