@@ -26,7 +26,7 @@ export function validateFinding(
 	}
 	if (
 		typeof finding.confidence !== 'number' ||
-		finding.confidence < minConfidence
+		!(finding.confidence >= minConfidence)
 	) {
 		return false;
 	}

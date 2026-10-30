@@ -87,7 +87,7 @@ None declared.
 
 | Output | Description |
 |--------|-------------|
-| `review-summary` | e.g. `"12 files reviewed, 3 issues found"` |
+| `review-summary` | e.g. `"12 files reviewed, 3 issues found"`, or `"skipped: no files to review"` when filters leave nothing to review |
 | `review-report` | Additive machine-readable JSON report (see below) |
 
 #### `review-report` (additive)
