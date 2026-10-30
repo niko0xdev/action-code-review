@@ -1,10 +1,10 @@
 # AI Code Review GitHub Action
 
-A GitHub Action that uses OpenAI to review pull requests and suggest improvements. This action analyzes code changes in PRs and provides automated feedback on code quality, security, performance, and best practices.
+A GitHub Action that uses an OpenAI-compatible endpoint to review pull requests and suggest improvements. This action analyzes code changes in PRs and provides automated feedback on code quality, security, performance, and best practices.
 
 ## Features
 
-- 🤖 **AI-Powered Review**: Uses OpenAI models (GPT-4 by default) for intelligent code analysis
+- 🤖 **AI-Powered Review**: Uses OpenAI-compatible models (GPT-4 by default) for intelligent code analysis
 - 📝 **Line-Specific Comments**: Adds comments directly on relevant lines of code
 - 📊 **Review Summary**: Provides an overall summary of the code review
 - 🔧 **Configurable**: Customize the review prompt, model, and file filters
@@ -43,7 +43,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Run AI Code Review
-        uses: ./
+        uses: niko0xdev/action-code-review/pr-review@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -231,7 +231,7 @@ You can customize the review focus to highlight specific aspects:
 
 ```yaml
 - name: Run AI Code Review
-  uses: niko0xdev/action-code-review@v1
+  uses: niko0xdev/action-code-review/pr-review@main
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -250,7 +250,7 @@ Exclude specific file patterns from review:
 
 ```yaml
 - name: Run AI Code Review
-  uses: niko0xdev/action-code-review@v1
+  uses: niko0xdev/action-code-review/pr-review@main
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -261,7 +261,7 @@ Include only specific directories in review:
 
 ```yaml
 - name: Run AI Code Review
-  uses: niko0xdev/action-code-review@v1
+  uses: niko0xdev/action-code-review/pr-review@main
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -272,7 +272,7 @@ You can combine `include-dir` with `exclude-patterns` for more precise control:
 
 ```yaml
 - name: Run AI Code Review
-  uses: niko0xdev/action-code-review@v1
+  uses: niko0xdev/action-code-review/pr-review@main
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -286,7 +286,7 @@ Enable automatic approval after all AI-generated review threads have been marked
 
 ```yaml
 - name: Run AI Code Review
-  uses: niko0xdev/action-code-review@v1
+  uses: niko0xdev/action-code-review/pr-review@main
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -340,7 +340,7 @@ By default, the action will block PR merge when issues at or above the `min-seve
 
 ```yaml
 - name: Run AI Code Review
-  uses: niko0xdev/action-code-review@v1
+  uses: niko0xdev/action-code-review/pr-review@main
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -352,7 +352,7 @@ To disable blocking and only post comments:
 
 ```yaml
 - name: Run AI Code Review
-  uses: niko0xdev/action-code-review@v1
+  uses: niko0xdev/action-code-review/pr-review@main
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}

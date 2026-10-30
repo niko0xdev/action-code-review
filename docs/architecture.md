@@ -85,20 +85,23 @@ publishReview      — one createReview (REQUEST_CHANGES or COMMENT)
 
 ## Pi runtime provisioning
 
-The actions ship as **composite actions**: `actions/setup-node@v4` provisions
-Node.js 24 before a bash pre-step installs the Pi coding agent. Consumer
-repositories never install or reference either runtime themselves.
+The actions ship as **composite actions**: `actions/setup-node` (pinned to a
+full commit SHA, v4.4.0) provisions Node.js 24. `pr-review` then runs a bash
+pre-step that installs the Pi coding agent; `pr-content` never spawns Pi (it
+calls the OpenAI-compatible provider directly), so it has no install step.
+Consumer repositories never install or reference either runtime themselves.
 
 ```yaml
 - name: Setup Node.js
-  uses: actions/setup-node@v4
+  uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
   with:
     node-version: '24'
 - name: Setup harness loop
   shell: bash
   run: |
     if ! command -v pi >/dev/null 2>&1; then
-      npm install -g @mariozechner/pi-coding-agent@0.73.1 --no-audit --no-fund --silent
+      npm ci --prefix "$GITHUB_ACTION_PATH/pi-runtime" --ignore-scripts --no-audit --no-fund --silent
+      echo "$GITHUB_ACTION_PATH/pi-runtime/node_modules/.bin" >> "$GITHUB_PATH"
     fi
 ```
 
@@ -112,9 +115,14 @@ Properties:
   save ~30s per job).
 - **Pinned Node runtime** — setup-node pins major version 24 so npm always
   exists on runners where no Node runtime is preinstalled.
-- **Pinned version** — `0.73.1` is embedded in both action.yml files and
-  mirrored in `src/adapter/pi-install.ts` (`PI_PACKAGE_PIN`, asserted
-  by `tests/runtime-install.test.ts`). Bump both together.
+- **Reproducible install** — `pr-review/pi-runtime/` holds a `package.json`
+  and committed `package-lock.json`; `npm ci --ignore-scripts` installs the
+  full transitive tree with integrity hashes, so nothing floats. The version
+  `0.73.1` is mirrored in `src/adapter/pi-install.ts` (`PI_PACKAGE_PIN`) and
+  asserted against the manifest and lockfile by
+  `tests/runtime-install.test.ts`. To bump, edit `package.json`, run
+  `npm install --package-lock-only --ignore-scripts` in that directory, and
+  update `PI_PACKAGE_PIN`.
 - **Clean logs** — `--no-audit --no-fund --silent`.
 - **Zero public-interface change** — every input/output in both
   action.yml files stays byte-identical; the composite step forwards all
