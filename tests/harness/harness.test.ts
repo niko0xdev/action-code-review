@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	buildReviewPrompt,
+	buildReviewPromptWithCoverage,
 	parseHarnessFindings,
 } from '../../src/harness/harness.js';
 import type { ReviewContext } from '../../src/types/context.js';
@@ -39,6 +40,75 @@ function makeContext(overrides?: Partial<ReviewContext>): ReviewContext {
 		...overrides,
 	};
 }
+
+function bigPatch(hunks: number): string {
+	return Array.from(
+		{ length: hunks },
+		(_, i) => `@@ -${i * 10},3 +${i * 10},4 @@\n-old${i}\n+new${i}`
+	).join('\n');
+}
+
+function multiFileContext(count: number, hunks: number): ReviewContext {
+	const base = makeContext();
+	return {
+		...base,
+		diff: {
+			...base.diff,
+			files: Array.from({ length: count }, (_, i) => ({
+				filename: `src/f${i}.ts`,
+				status: 'modified' as const,
+				additions: 1,
+				deletions: 1,
+				changes: 2,
+				patch: bigPatch(hunks),
+			})),
+		},
+	};
+}
+
+describe('buildReviewPrompt truncation', () => {
+	const final = 'FINAL SECURITY CHECK';
+
+	it('includes every file when the budget is large', () => {
+		const { includedFiles } = buildReviewPromptWithCoverage(
+			multiFileContext(3, 2),
+			undefined,
+			{ maxContextChars: 100_000 }
+		);
+		expect(includedFiles).toEqual(['src/f0.ts', 'src/f1.ts', 'src/f2.ts']);
+	});
+
+	it('cuts at hunk boundaries, keeps fences balanced, and reports cut files', () => {
+		const { prompt, includedFiles } = buildReviewPromptWithCoverage(
+			multiFileContext(3, 6),
+			undefined,
+			{ maxContextChars: 380 }
+		);
+		const fences = prompt.match(/^```/gm) ?? [];
+		expect(fences.length % 2).toBe(0);
+		expect(prompt).toContain(final);
+		expect(prompt).toContain('[TRUNCATED:');
+		// Every hunk header present in the prompt is complete (ends its +new line).
+		for (const header of prompt.match(/^@@ .*$/gm) ?? [])
+			expect(header).toMatch(/^@@ -\d+,3 \+\d+,4 @@$/);
+		expect(includedFiles.length).toBeLessThan(3);
+		expect(includedFiles).not.toContain('src/f2.ts');
+	});
+
+	it('marks files that do not fit at all as omitted and never swallows the final check', () => {
+		const { prompt, includedFiles } = buildReviewPromptWithCoverage(
+			multiFileContext(5, 3),
+			undefined,
+			{ maxContextChars: 150 }
+		);
+		expect(prompt).toContain(final);
+		expect(prompt.indexOf(final)).toBeGreaterThan(
+			prompt.lastIndexOf('```diff')
+		);
+		expect((prompt.match(/^```/gm) ?? []).length % 2).toBe(0);
+		expect(includedFiles.length).toBeLessThan(5);
+	});
+});
 
 describe('buildReviewPrompt', () => {
 	it('includes PR metadata, changed files, and profiles', () => {

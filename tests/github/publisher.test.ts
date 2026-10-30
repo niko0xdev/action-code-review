@@ -506,6 +506,18 @@ describe('publishReview', () => {
 });
 
 describe('approval outcome reporting', () => {
+	function resolvedAiThread(login = 'bot') {
+		return {
+			resolved: true,
+			comments: [
+				{
+					user: { login },
+					body: '<!-- ai-review-id:aaaaaaaaaaaa -->',
+				},
+			],
+		};
+	}
+
 	function cleanResult(): ReviewResult {
 		return {
 			findings: [],
@@ -659,7 +671,9 @@ describe('approval outcome reporting', () => {
 				status: 403,
 			});
 		});
-		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		octokit.rest.pulls.listThreads = vi.fn(async () => [
+			resolvedAiThread('github-actions[bot]'),
+		]);
 		const result = cleanResult();
 		await publishReview(octokit as never, {
 			owner: 'acme',
@@ -703,6 +717,7 @@ describe('approval outcome reporting', () => {
 		// someone else's unresolved thread cannot masquerade as this action's.
 		const octokit = octokitWithApproval(async () => ({ data: {} }));
 		octokit.rest.pulls.listThreads = vi.fn(async () => [
+			resolvedAiThread(),
 			{
 				resolved: false,
 				comments: [
@@ -734,7 +749,7 @@ describe('approval outcome reporting', () => {
 			order.push('createReview:APPROVE');
 			return { data: {} };
 		});
-		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		octokit.rest.pulls.listThreads = vi.fn(async () => [resolvedAiThread()]);
 		octokit.rest.issues.createComment = vi.fn(async () => {
 			order.push('createComment:summary');
 			return { data: {} };
@@ -752,7 +767,7 @@ describe('approval outcome reporting', () => {
 
 	it('reports a submitted approval in the posted summary', async () => {
 		const octokit = octokitWithApproval(async () => ({ data: {} }));
-		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		octokit.rest.pulls.listThreads = vi.fn(async () => [resolvedAiThread()]);
 		await publishReview(octokit as never, {
 			owner: 'acme',
 			repo: 'widget',
@@ -776,7 +791,7 @@ describe('approval outcome reporting', () => {
 				{ status: 422 }
 			);
 		});
-		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		octokit.rest.pulls.listThreads = vi.fn(async () => [resolvedAiThread()]);
 		await publishReview(octokit as never, {
 			owner: 'acme',
 			repo: 'widget',
@@ -794,9 +809,44 @@ describe('approval outcome reporting', () => {
 		);
 	});
 
+	it('never approves when no AI-authored thread exists (vacuous truth)', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		octokit.rest.pulls.listThreads = vi.fn(async () => []);
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval?.state).toBe('skipped-unresolved-threads');
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('withholds approval when min-severity dropped findings', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		const result = {
+			...cleanResult(),
+			diagnostics: { findingsDroppedBySeverity: 2 },
+		};
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval?.state).toBe('not-requested');
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
 	it('ignores human threads when deciding AI thread resolution', async () => {
 		const octokit = octokitWithApproval(async () => ({ data: {} }));
 		octokit.rest.pulls.listThreads = vi.fn(async () => [
+			resolvedAiThread(),
 			{
 				resolved: false,
 				comments: [{ user: { login: 'human' }, body: 'nit' }],
@@ -896,12 +946,13 @@ describe('approval outcome reporting', () => {
 
 		it('does not trust the marker in a human-authored thread', async () => {
 			// A user login never gains the [bot] suffix, so a pasted marker in
-			// an unresolved human thread cannot block or unlock approval.
+			// an unresolved human thread cannot unlock approval: no AI thread
+			// exists, so approval is withheld.
 			const { state } = await approvalFor(
 				{ __typename: 'User', login: 'github-actions' },
 				false
 			);
-			expect(state).toBe('approved');
+			expect(state).toBe('skipped-unresolved-threads');
 		});
 	});
 

@@ -66,7 +66,7 @@ jobs:
 | `max-files` | Maximum number of files to review | No | `10` |
 | `exclude-patterns` | Comma-separated list of file patterns to exclude | No | `*.md,*.txt` |
 | `include-dir` | Comma-separated list of directory paths to include in review | No | - |
-| `auto-approve-when-resolved` | Approve the pull request once all AI-created review threads are resolved | No | `true` |
+| `auto-approve-when-resolved` | Approve the pull request once all AI-created review threads are resolved | No | `false` |
 | `min-severity` | Minimum severity level for comments (low, high, critical) | No | `critical` |
 | `block-on-issues` | Block PR merge when issues at or above min-severity are found | No | `true` |
 
@@ -293,7 +293,7 @@ Enable automatic approval after all AI-generated review threads have been marked
     auto-approve-when-resolved: true
 ```
 
-The action checks review threads authored by the authenticated token and submits an approval review when none of those threads remain unresolved.
+The action checks review threads authored by the authenticated token and submits an approval review when at least one such thread exists and none remain unresolved. It never approves an incomplete review, a pull request with no earlier AI threads, or a run where `min-severity` dropped findings. The default is `false`.
 
 > **Repository setting required.** GitHub refuses `APPROVE` reviews from
 > `GITHUB_TOKEN` until you enable
