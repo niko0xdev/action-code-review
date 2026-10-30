@@ -48,6 +48,7 @@ import {
 	incompleteReviewFailure,
 	rawHarnessDumpEnabled,
 } from './review/execution.js';
+import { loadReviewPromptFile } from './review/prompt-file.js';
 import {
 	buildReviewReport,
 	serializeReviewReport,
@@ -710,9 +711,16 @@ export async function main(argv: string[]): Promise<void> {
 			}
 			// ponytail: all security skills into default review (12 domains + validation gate); filter by domain when cost matters.
 			const allSecurityPrompt = renderSkillsForPrompt(CURATED_SECURITY_SKILLS);
-			const promptFile = await readPromptFileIfNeeded(
-				reviewContext.repositoryPath
-			);
+			const promptFile = await loadReviewPromptFile({
+				repoPath: reviewContext.repositoryPath,
+				file: core.getInput('review-prompt-file'),
+				baseSha: reviewContext.pullRequest.baseSha,
+				changedPaths: new Set(
+					allPrFiles.flatMap((f) =>
+						f.previousFilename ? [f.filename, f.previousFilename] : [f.filename]
+					)
+				),
+			});
 			const reviewRules = [
 				promptFile,
 				allSecurityPrompt,
@@ -922,54 +930,6 @@ export async function main(argv: string[]): Promise<void> {
 		core.setFailed(
 			`Action failed: ${error instanceof Error ? error.message : String(error)}`
 		);
-	}
-}
-
-async function readPromptFileIfNeeded(
-	repoPath: string
-): Promise<string | undefined> {
-	const file = core.getInput('review-prompt-file');
-	if (!file) return undefined;
-	if (file.includes('\0')) {
-		core.warning(
-			`[review] review-prompt-file ${file} contains null byte — ignored`
-		);
-		return undefined;
-	}
-	try {
-		const { readFileSync, statSync } = await import('node:fs');
-		const { isAbsolute, relative, resolve } = await import('node:path');
-		// Repo-relative contract: must be inside the workspace root.
-		if (isAbsolute(file)) {
-			core.warning(
-				`[review] review-prompt-file ${file} must be repo-relative — ignored`
-			);
-			return undefined;
-		}
-		const full = resolve(repoPath, file);
-		if (full !== repoPath) {
-			const rel = relative(repoPath, full);
-			if (rel.startsWith('..') || isAbsolute(rel)) {
-				core.warning(
-					`[review] review-prompt-file ${file} escapes repository — ignored`
-				);
-				return undefined;
-			}
-		}
-		const stat = statSync(full);
-		if (stat.size > 50 * 1024) {
-			core.warning(
-				`[review] review-prompt-file ${file} exceeds 50 KiB — ignored`
-			);
-			return undefined;
-		}
-		const content = readFileSync(full, 'utf8');
-		return content.trim() || undefined;
-	} catch (error) {
-		core.warning(
-			`[review] review-prompt-file read failed: ${error instanceof Error ? error.message : String(error)}`
-		);
-		return undefined;
 	}
 }
 

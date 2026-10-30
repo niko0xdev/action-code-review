@@ -31,6 +31,7 @@ jobs:
           # openai-base-url: https://api.openai.com/v1
           # openai-model: gpt-4o
           # review-prompt: Focus on security vulns and missing tests.
+          # review-prompt-file: .github/review-rules.md  # read from the base branch
           # max-files: 10
           # exclude-patterns: '*.md,*.json,*.lock'
 ```
@@ -39,6 +40,14 @@ Pin `uses:` to a released tag once published (example `@v1`).
 Full input list: [`pr-review/action.yml`](pr-review/action.yml),
 [`pr-content/action.yml`](pr-content/action.yml). Frozen behavior:
 [`docs/v1-interface-contract.md`](docs/v1-interface-contract.md).
+
+`review-prompt-file` must be a repo-relative regular file inside the workspace
+(symlinks are resolved and may not leave it, 50 KiB cap). Because the file feeds
+the trusted rules slot, the copy on the pull request's **base** commit is used,
+so a PR cannot steer the reviewer by editing it. If the base copy is unavailable
+(for example a shallow checkout) the file is read from the checkout only when
+the PR does not change it; otherwise it is ignored with a warning. See
+[`docs/security-model.md`](docs/security-model.md).
 
 ## What it does
 

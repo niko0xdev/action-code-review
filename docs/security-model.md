@@ -36,6 +36,23 @@
   1. Read-only defaults for analysis.
   2. Actor authorization filter (`allowed-bots`, `exclude-actors`, collaborator permission check) before escalating review approvals.
 
+### 2.5 PR-Controlled Rules File (`review-prompt-file`)
+
+The file named by `review-prompt-file` is injected into the trusted rules slot,
+so whoever controls it controls the reviewer. Trust model:
+
+- **Base ref wins.** The content is read from the git object at the pull
+  request base SHA (`git ls-tree` and `git cat-file` through `execFile` with a
+  validated SHA, `--` before the path, and a minimal environment), never from
+  the PR head checkout, so editing the file in the PR has no effect.
+- **No base copy.** If the base object is unavailable (shallow clone) or the
+  file is new, the checkout copy is read only when the PR does not modify that
+  path (head equals base). Otherwise the file is ignored with a warning.
+- **Containment.** The path must be repo-relative; it is resolved with
+  `realpath` and must stay inside the real workspace root, so a symlink cannot
+  read outside it. Only regular files are accepted (a symlink committed on the
+  base ref is rejected), capped at 50 KiB.
+
 ---
 
 ## 3. Logical Plane Separation
