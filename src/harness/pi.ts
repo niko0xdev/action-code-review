@@ -165,9 +165,11 @@ export function buildPiArgs(
 }
 export function buildPiEnv(
 	configDir: string,
-	apiKey?: string
+	apiKey?: string,
+	extraEnv: Record<string, string> = {}
 ): NodeJS.ProcessEnv {
 	return {
+		...extraEnv,
 		PATH: process.env.PATH,
 		HOME: process.env.HOME,
 		LANG: process.env.LANG,
@@ -743,28 +745,30 @@ export class PiHarness implements ReviewHarness {
 		return toReviewResult(output, includedFiles);
 	}
 }
-async function resolveRuntimeConfigDir(): Promise<string> {
+export async function resolveRuntimeConfigDir(): Promise<string> {
 	const configDir = process.env.PI_CODING_AGENT_DIR;
 	if (configDir) return configDir;
 	return mkdtemp(join(tmpdir(), 'acr-pi-test-'));
 }
-interface RunPiParams {
+export interface RunPiParams {
 	binaryPath: string;
 	args: string[];
 	cwd: string;
 	configDir: string;
 	apiKey?: string;
+	/** Extra allowlisted variables, such as a non-OpenAI provider key. */
+	extraEnv?: Record<string, string>;
 	prompt: string;
 	timeoutMs: number;
 	maxOutputBytes?: number;
 	maxToolCalls?: number;
 	maxAssistantBytes?: number;
 }
-function runPi(params: RunPiParams): Promise<PiRunLog> {
+export function runPi(params: RunPiParams): Promise<PiRunLog> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(params.binaryPath, params.args, {
 			cwd: params.cwd,
-			env: buildPiEnv(params.configDir, params.apiKey),
+			env: buildPiEnv(params.configDir, params.apiKey, params.extraEnv),
 			stdio: ['pipe', 'pipe', 'pipe'],
 			detached: process.platform !== 'win32',
 		});

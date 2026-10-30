@@ -20,11 +20,26 @@ SECURITY NOTICE & MANDATORY INSTRUCTIONS:
 `.trim();
 
 /**
+ * Provider key variables the fallback may forward to Pi, mapped to the Pi
+ * provider id. Only the first one present is passed, never all of process.env.
+ */
+const PI_PROVIDER_KEYS: ReadonlyArray<readonly [string, string]> = [
+	['ANTHROPIC_API_KEY', 'anthropic'],
+	['OPENROUTER_API_KEY', 'openrouter'],
+	['GEMINI_API_KEY', 'google'],
+	['GROQ_API_KEY', 'groq'],
+	['MISTRAL_API_KEY', 'mistral'],
+	['XAI_API_KEY', 'xai'],
+];
+
+/**
  * Pi-powered security engine for diff security reviews and finding confirmations.
  * Spec reference: §5.2, §15, §22.
  */
 export class PiSecurityEngine implements SecurityEngine {
 	readonly name = 'pi-security';
+	/** One isolated Pi config directory per engine run, not per Pi call. */
+	private configDirPromise?: Promise<string>;
 
 	/**
 	 * Run diff-based security reasoning.
@@ -177,39 +192,21 @@ export class PiSecurityEngine implements SecurityEngine {
 		// Text mode prints only the final assistant message; `--mode json`
 		// re-serializes every streamed delta and can emit tens of MiB for one
 		// answer. `parseFindings` scans the raw output for the JSON artifact.
-		const { spawn } = await import('node:child_process');
-		return new Promise((resolve, reject) => {
-			const proc = spawn(
-				ctx.options.piBinaryPath || 'pi',
-				['-p', '--mode', 'text', '--no-session'],
-				{
-					cwd: ctx.repositoryPath,
-					env: { ...process.env },
-				}
-			);
-
-			let out = '';
-			let err = '';
-
-			proc.stdout?.on('data', (d) => {
-				out += d.toString();
-			});
-			proc.stderr?.on('data', (d) => {
-				err += d.toString();
-			});
-
-			proc.on('error', (e) => reject(e));
-			proc.on('close', (code) => {
-				if (code !== 0 && !out) {
-					reject(new Error(`Pi exited with ${code}: ${err}`));
-				} else {
-					resolve(redactSecrets(out));
-				}
-			});
-
-			proc.stdin?.write(prompt);
-			proc.stdin?.end();
+		const { buildPiArgs, resolveRuntimeConfigDir, runPi } = await import(
+			'../../harness/pi.js'
+		);
+		const keyed = PI_PROVIDER_KEYS.find(([name]) => process.env[name]);
+		this.configDirPromise ??= resolveRuntimeConfigDir();
+		const log = await runPi({
+			binaryPath: ctx.options.piBinaryPath || 'pi',
+			args: buildPiArgs(ctx.repositoryPath, undefined, keyed?.[1]),
+			cwd: ctx.repositoryPath,
+			configDir: await this.configDirPromise,
+			extraEnv: keyed ? { [keyed[0]]: process.env[keyed[0]] ?? '' } : {},
+			prompt,
+			timeoutMs: 15 * 60_000,
 		});
+		return redactSecrets(log.stdout);
 	}
 
 	private parseFindings(raw: string, repo: string): SecurityFinding[] {

@@ -1,4 +1,10 @@
 import { spawn } from 'node:child_process';
+import {
+	MAX_ANALYSER_OUTPUT_BYTES,
+	buildAnalyserEnv,
+	killAnalyser,
+	safeTargetFiles,
+} from '../analyser-process.js';
 import { computeFindingFingerprint } from '../findings/fingerprint.js';
 import type {
 	ScannerExecution,
@@ -91,9 +97,10 @@ function toFinding(r: unknown): SecurityFinding | undefined {
  */
 export async function runSemgrepScanner(
 	repositoryPath: string,
-	targetFiles: string[]
+	rawTargetFiles: string[]
 ): Promise<{ execution: ScannerExecution; findings: SecurityFinding[] }> {
 	const start = Date.now();
+	const targetFiles = safeTargetFiles(rawTargetFiles);
 	if (targetFiles.length === 0) {
 		return {
 			execution: {
@@ -115,11 +122,7 @@ export async function runSemgrepScanner(
 		const timeout = setTimeout(() => {
 			if (!settled) {
 				settled = true;
-				try {
-					proc.kill('SIGKILL');
-				} catch {
-					// Ignore
-				}
+				killAnalyser(proc);
 				resolve({
 					execution: {
 						name: 'semgrep',
@@ -133,17 +136,37 @@ export async function runSemgrepScanner(
 			}
 		}, 60_000);
 
-		const args = ['scan', '--json', '--quiet', ...targetFiles];
+		const args = ['scan', '--json', '--quiet', '--', ...targetFiles];
 		const proc = spawn('semgrep', args, {
 			cwd: repositoryPath,
-			env: { ...process.env, SEMGREP_SEND_METRICS: 'off' },
+			env: buildAnalyserEnv({ SEMGREP_SEND_METRICS: 'off' }),
+			detached: process.platform !== 'win32',
 		});
 
-		proc.stdout?.on('data', (d) => {
+		let stdoutBytes = 0;
+		proc.stdout?.on('data', (d: Buffer) => {
+			stdoutBytes += d.length;
+			if (stdoutBytes > MAX_ANALYSER_OUTPUT_BYTES) {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
+				killAnalyser(proc);
+				resolve({
+					execution: {
+						name: 'semgrep',
+						status: 'failed',
+						reason: 'Semgrep output exceeded the size cap',
+						findings: 0,
+						durationMs: Date.now() - start,
+					},
+					findings: [],
+				});
+				return;
+			}
 			stdout += d.toString();
 		});
 		proc.stderr?.on('data', (d) => {
-			stderr += d.toString();
+			if (stderr.length < 64 * 1024) stderr += d.toString();
 		});
 
 		proc.on('error', (err) => {
