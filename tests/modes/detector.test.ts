@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-	isSupportedReviewEvent,
 	resolveReviewMode,
 	shouldSkipDraft,
 	validateReviewEvent,
@@ -48,14 +47,6 @@ describe('validateReviewEvent', () => {
 		const r = validateReviewEvent('pull_request', 'labeled');
 		expect(r.supported).toBe(false);
 		expect(r.reason).toContain('labeled');
-	});
-});
-
-describe('isSupportedReviewEvent', () => {
-	it('mirrors validateReviewEvent truthiness', () => {
-		expect(isSupportedReviewEvent('pull_request', 'opened')).toBe(true);
-		expect(isSupportedReviewEvent('push', 'opened')).toBe(false);
-		expect(isSupportedReviewEvent(undefined, undefined)).toBe(false);
 	});
 });
 

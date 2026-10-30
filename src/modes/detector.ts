@@ -24,16 +24,6 @@ export function resolveReviewMode(raw: string | undefined): ReviewMode {
 	return 'review';
 }
 
-export function isSupportedReviewEvent(
-	eventName: string | undefined,
-	action: string | undefined
-): boolean {
-	if (!eventName) return false;
-	if (!SUPPORTED_EVENTS.has(eventName)) return false;
-	if (!action) return true;
-	return SUPPORTED_ACTIONS.has(action);
-}
-
 /**
  * Opt-in draft skip. Env-only because the V1 input surface is frozen
  * (docs/v1-interface-contract.md). Safe to skip: `ready_for_review` is a
