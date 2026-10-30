@@ -24,6 +24,7 @@ const mockSpawn = vi.mocked(spawn);
 
 interface SpawnPlan {
 	stdout?: string;
+	stdoutChunks?: Buffer[];
 	code?: number | null;
 	signal?: NodeJS.Signals | null;
 	error?: NodeJS.ErrnoException;
@@ -46,6 +47,9 @@ function planSpawn(plan: SpawnPlan): void {
 		}
 		if (plan.stdout !== undefined) {
 			proc.stdout.emit('data', Buffer.from(plan.stdout));
+		}
+		for (const chunk of plan.stdoutChunks ?? []) {
+			proc.stdout.emit('data', chunk);
 		}
 		proc.emit('close', plan.code ?? 0, plan.signal ?? null);
 	});
@@ -93,6 +97,25 @@ describe('runSemgrepScanner completion truth', () => {
 		expect(res.execution.status).toBe('success');
 		expect(res.findings).toHaveLength(1);
 		expect(res.findings[0].severity).toBe('high');
+	});
+
+	it('keeps a multibyte character split across stdout chunks', async () => {
+		const raw = Buffer.from(
+			JSON.stringify({
+				results: [
+					{
+						...semgrepFinding(),
+						extra: { message: 'caf\u00e9', severity: 'ERROR', metadata: {} },
+					},
+				],
+				errors: [],
+			})
+		);
+		const cut = raw.indexOf(0xc3) + 1;
+		planSpawn({ stdoutChunks: [raw.subarray(0, cut), raw.subarray(cut)] });
+		const res = await runSemgrepScanner('/repo', ['src/a.py']);
+		expect(res.execution.status).toBe('success');
+		expect(JSON.stringify(res.findings)).toContain('caf\u00e9');
 	});
 
 	it('reports failed on exit 2 with structured errors', async () => {

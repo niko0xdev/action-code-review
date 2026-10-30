@@ -126,6 +126,31 @@ describe('runPrelint - no binary available', () => {
 	});
 });
 
+describe('runPrelint - chunked output', () => {
+	it('keeps a multibyte character split across stdout chunks', async () => {
+		process.env.AI_REVIEW_ALLOW_WORKSPACE_TOOLS = 'true';
+		const binDir = join(scratch, 'node_modules', '.bin');
+		mkdirSync(binDir, { recursive: true });
+		const fakeBin = join(binDir, 'ruff');
+		writeFileSync(
+			fakeBin,
+			`#!/bin/sh
+printf '[{"filename":"main.py","code":"E1","message":"caf\\303'
+sleep 0.3
+printf '\\251","location":{"row":1}}]'
+`
+		);
+		chmodSync(fakeBin, 0o755);
+		makeRepo({ 'main.py': 'x = 1' });
+
+		const result = await runPrelint({
+			repositoryPath: scratch,
+			changedFiles: [changedFile('main.py')],
+		});
+		expect(result.findings.map((f) => f.message)).toEqual(['café']);
+	});
+});
+
 describe('runPrelint - custom runner', () => {
 	it('invokes the provided runner and aggregates findings', async () => {
 		makeRepo({ 'src/app.ts': '' });

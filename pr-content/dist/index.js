@@ -32453,9 +32453,11 @@ function wrappy (fn, cb) {
 /* harmony import */ var node_fs__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__nccwpck_require__.n(node_fs__WEBPACK_IMPORTED_MODULE_1__);
 /* harmony import */ var node_path__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(6760);
 /* harmony import */ var node_path__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__nccwpck_require__.n(node_path__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(474);
-/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__nccwpck_require__.n(_actions_core__WEBPACK_IMPORTED_MODULE_3__);
-/* harmony import */ var _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_4__ = __nccwpck_require__(1620);
+/* harmony import */ var node_string_decoder__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(6193);
+/* harmony import */ var node_string_decoder__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__nccwpck_require__.n(node_string_decoder__WEBPACK_IMPORTED_MODULE_3__);
+/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_4__ = __nccwpck_require__(474);
+/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__nccwpck_require__.n(_actions_core__WEBPACK_IMPORTED_MODULE_4__);
+/* harmony import */ var _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__ = __nccwpck_require__(1620);
 /**
  * PreLint orchestrator.
  *
@@ -32472,6 +32474,7 @@ function wrappy (fn, cb) {
  * binaries require `AI_REVIEW_ALLOW_WORKSPACE_TOOLS=true`; otherwise use a
  * pinned directory via `AI_REVIEW_TRUSTED_ANALYZER_DIR`.
  */
+
 
 
 
@@ -32533,12 +32536,14 @@ function spawnCollect(cmd, args, options) {
     return new Promise((resolve, reject) => {
         const child = (0,node_child_process__WEBPACK_IMPORTED_MODULE_0__.spawn)(cmd, args, {
             cwd: options.cwd,
-            env: (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_4__/* .buildAnalyserEnv */ .pk)(),
+            env: (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .buildAnalyserEnv */ .pk)(),
             stdio: ['ignore', 'pipe', 'pipe'],
             detached: process.platform !== 'win32',
         });
         let stdout = '';
         let stderr = '';
+        const stdoutDecoder = new node_string_decoder__WEBPACK_IMPORTED_MODULE_3__.StringDecoder('utf8');
+        const stderrDecoder = new node_string_decoder__WEBPACK_IMPORTED_MODULE_3__.StringDecoder('utf8');
         let stdoutBytes = 0;
         let stderrBytes = 0;
         let settled = false;
@@ -32549,26 +32554,26 @@ function spawnCollect(cmd, args, options) {
             cb();
         };
         const timer = setTimeout(() => {
-            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_4__/* .killAnalyser */ .eQ)(child);
+            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .killAnalyser */ .eQ)(child);
             finish(() => reject(new Error(`${cmd} timed out after ${options.timeoutMs}ms`)));
         }, options.timeoutMs);
         const overCap = (size) => {
-            if (size <= _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_4__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG)
+            if (size <= _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG)
                 return false;
             clearTimeout(timer);
-            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_4__/* .killAnalyser */ .eQ)(child);
-            finish(() => reject(new Error(`${cmd} output exceeded ${_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_4__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG} byte cap`)));
+            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .killAnalyser */ .eQ)(child);
+            finish(() => reject(new Error(`${cmd} output exceeded ${_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG} byte cap`)));
             return true;
         };
         child.stdout?.on('data', (chunk) => {
             stdoutBytes += chunk.length;
             if (!settled && !overCap(stdoutBytes))
-                stdout += chunk.toString('utf8');
+                stdout += stdoutDecoder.write(chunk);
         });
         child.stderr?.on('data', (chunk) => {
             stderrBytes += chunk.length;
             if (!settled && !overCap(stderrBytes))
-                stderr += chunk.toString('utf8');
+                stderr += stderrDecoder.write(chunk);
         });
         child.on('error', (err) => {
             clearTimeout(timer);
@@ -32576,6 +32581,8 @@ function spawnCollect(cmd, args, options) {
         });
         child.on('close', (code) => {
             clearTimeout(timer);
+            stdout += stdoutDecoder.end();
+            stderr += stderrDecoder.end();
             // Every supported linter prints its JSON report even when it exits
             // non-zero because it found issues. Non-zero with no stdout means the
             // tool itself failed, which must not read as a clean run.
@@ -32596,7 +32603,7 @@ const biomeRunner = {
         const binary = configuredBinary(repositoryPath, 'biome');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_4__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['lint', '--reporter=json', '--max-diagnostics=50', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32611,7 +32618,7 @@ const ruffRunner = {
         const binary = configuredBinary(repositoryPath, 'ruff');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_4__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['check', '--output-format=json', '--no-fix', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32631,7 +32638,7 @@ const swiftlintRunner = {
         const binary = configuredBinary(repositoryPath, 'swiftlint');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_4__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['lint', '--reporter=json', '--quiet', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32652,7 +32659,7 @@ const ktlintRunner = {
         const binary = configuredBinary(repositoryPath, 'ktlint');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_4__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['--reporter=json', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32672,7 +32679,7 @@ const sqlfluffRunner = {
         const binary = configuredBinary(repositoryPath, 'sqlfluff');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_4__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         // sqlfluff returns non-zero on violations; we want the JSON anyway.
@@ -32920,7 +32927,7 @@ async function runPrelint(options) {
         }
         catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
-            _actions_core__WEBPACK_IMPORTED_MODULE_3__.warning(`Prelint tool ${tool.id} failed and was skipped: ${reason}`);
+            _actions_core__WEBPACK_IMPORTED_MODULE_4__.warning(`Prelint tool ${tool.id} failed and was skipped: ${reason}`);
             skipped.push(`${tool.id} (${reason})`);
         }
     }
@@ -32970,6 +32977,8 @@ var external_node_os_ = __nccwpck_require__(8161);
 var external_node_path_ = __nccwpck_require__(6760);
 // EXTERNAL MODULE: external "node:perf_hooks"
 var external_node_perf_hooks_ = __nccwpck_require__(643);
+// EXTERNAL MODULE: external "node:string_decoder"
+var external_node_string_decoder_ = __nccwpck_require__(6193);
 // EXTERNAL MODULE: ./node_modules/.pnpm/@actions+core@1.11.1/node_modules/@actions/core/lib/core.js
 var core = __nccwpck_require__(474);
 // EXTERNAL MODULE: ./src/security/redaction/redactor.ts
@@ -33137,6 +33146,7 @@ function coerceFinding(item) {
 }
 
 ;// CONCATENATED MODULE: ./src/harness/pi.ts
+
 
 
 
@@ -33838,12 +33848,18 @@ function runPi(params) {
                 finish(new Error(`Pi review process timed out after ${params.timeoutMs}ms`));
             }, 250);
         }, params.timeoutMs);
+        // One decoder per stream so a multibyte character split across chunks
+        // is not replaced with U+FFFD.
+        const decoders = {
+            stdout: new external_node_string_decoder_.StringDecoder('utf8'),
+            stderr: new external_node_string_decoder_.StringDecoder('utf8'),
+        };
         const append = (current, size, chunk, stream) => {
             if (maxBytes > 0 && size + chunk.length > maxBytes) {
                 killAndFail(`Pi ${stream} output exceeded ${maxBytes} byte cap (tool calls: ${toolCalls})`);
                 return [current, size];
             }
-            return [current + chunk.toString('utf8'), size + chunk.length];
+            return [current + decoders[stream].write(chunk), size + chunk.length];
         };
         child.stdout.on('data', (chunk) => {
             [stdout, stdoutBytes] = append(stdout, stdoutBytes, chunk, 'stdout');
@@ -33881,6 +33897,8 @@ function runPi(params) {
         child.on('close', (code) => {
             if (settled)
                 return;
+            stdout += decoders.stdout.end();
+            stderr += decoders.stderr.end();
             if (timedOut) {
                 finish(new Error(`Pi review process timed out after ${params.timeoutMs}ms`));
                 return;
@@ -35259,6 +35277,13 @@ module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:perf_ho
 /***/ ((module) => {
 
 module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:stream");
+
+/***/ }),
+
+/***/ 6193:
+/***/ ((module) => {
+
+module.exports = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:string_decoder");
 
 /***/ }),
 
@@ -41519,7 +41544,9 @@ function scanDependenciesInDiff(changedFiles) {
 
 const OSV_BATCH_URL = 'https://api.osv.dev/v1/querybatch';
 const OSV_REQUEST_TIMEOUT_MS = 20_000;
-const MAX_QUERIES_PER_RUN = 50;
+const MAX_QUERIES_PER_BATCH = 50;
+const MAX_BATCHES_IN_FLIGHT = 3;
+const MAX_DEPENDENCIES_PER_RUN = 500;
 /**
  * Extracts newly added (name, version) dependency pairs from diff patches.
  * Only pinned or resolvable versions are returned, since OSV queries
@@ -41716,7 +41743,8 @@ function toFinding(dep, vuln) {
 }
 /**
  * Queries OSV.dev for known vulnerabilities in newly added dependencies.
- * Network failures degrade to a skipped execution, never a run failure.
+ * Network and API errors are reported as `failed` so an unchecked run never
+ * reads as clean; the scan never throws.
  */
 async function runOsvDependencyScan(changedFiles) {
     const start = Date.now();
@@ -41732,7 +41760,9 @@ async function runOsvDependencyScan(changedFiles) {
             findings: [],
         };
     }
-    const deps = extractAddedDependencies(changedFiles).slice(0, MAX_QUERIES_PER_RUN);
+    const allDeps = extractAddedDependencies(changedFiles);
+    const deps = allDeps.slice(0, MAX_DEPENDENCIES_PER_RUN);
+    const unqueried = allDeps.length - deps.length;
     if (deps.length === 0) {
         return {
             execution: {
@@ -41745,74 +41775,73 @@ async function runOsvDependencyScan(changedFiles) {
             findings: [],
         };
     }
-    let payload;
-    try {
-        const res = await fetch(OSV_BATCH_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                queries: deps.map((d) => ({
-                    package: { name: d.name, ecosystem: d.ecosystem },
-                    version: d.version,
-                })),
-            }),
-            signal: AbortSignal.timeout(OSV_REQUEST_TIMEOUT_MS),
-        });
-        if (!res.ok) {
-            return {
-                execution: {
-                    name: 'osv-dependency-cve',
-                    status: 'failed',
-                    reason: `OSV.dev returned HTTP ${res.status}`.slice(0, 200),
-                    findings: 0,
-                    durationMs: Date.now() - start,
-                },
-                findings: [],
-            };
-        }
-        payload = (await res.json());
-    }
-    catch (err) {
-        return {
-            execution: {
-                name: 'osv-dependency-cve',
-                status: 'skipped',
-                reason: `OSV.dev unreachable (offline or blocked egress): ${err instanceof Error ? err.message : String(err)}`.slice(0, 200),
-                findings: 0,
-                durationMs: Date.now() - start,
-            },
-            findings: [],
-        };
-    }
-    if (!payload || !Array.isArray(payload.results)) {
-        return {
-            execution: {
-                name: 'osv-dependency-cve',
-                status: 'failed',
-                reason: 'OSV.dev response missing results array',
-                findings: 0,
-                durationMs: Date.now() - start,
-            },
-            findings: [],
-        };
+    const batches = [];
+    for (let i = 0; i < deps.length; i += MAX_QUERIES_PER_BATCH) {
+        batches.push(deps.slice(i, i + MAX_QUERIES_PER_BATCH));
     }
     const findings = [];
-    payload.results.forEach((result, i) => {
-        const dep = deps[i];
-        for (const vuln of result?.vulns ?? []) {
-            if (typeof vuln?.id === 'string')
-                findings.push(toFinding(dep, vuln));
+    const errors = [];
+    let next = 0;
+    const worker = async () => {
+        while (next < batches.length) {
+            const batch = batches[next++];
+            try {
+                const found = await queryBatch(batch);
+                findings.push(...found);
+            }
+            catch (err) {
+                errors.push(err instanceof Error ? err.message : String(err));
+            }
         }
-    });
+    };
+    await Promise.all(Array.from({ length: Math.min(MAX_BATCHES_IN_FLIGHT, batches.length) }, worker));
+    // A batch that never ran, or dependencies past the cap, must not read as a
+    // clean CVE check, so either one reports `failed` (findings still publish).
+    const reasons = [];
+    if (unqueried > 0)
+        reasons.push(`only the first ${MAX_DEPENDENCIES_PER_RUN} of ${allDeps.length} added dependencies were checked; ${unqueried} not queried`);
+    if (errors.length > 0)
+        reasons.push(`${errors.length} of ${batches.length} OSV.dev batches failed (offline or blocked egress?): ${errors[0].slice(0, 120)}`);
     return {
         execution: {
             name: 'osv-dependency-cve',
-            status: 'success',
+            status: reasons.length > 0 ? 'failed' : 'success',
+            ...(reasons.length > 0 && { reason: reasons.join('; ') }),
             findings: findings.length,
             durationMs: Date.now() - start,
         },
         findings,
     };
+}
+/** Queries one batch and maps results back to dependencies by index. Throws on any error. */
+async function queryBatch(deps) {
+    const res = await fetch(OSV_BATCH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            queries: deps.map((d) => ({
+                package: { name: d.name, ecosystem: d.ecosystem },
+                version: d.version,
+            })),
+        }),
+        signal: AbortSignal.timeout(OSV_REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok)
+        throw new Error(`OSV.dev returned HTTP ${res.status}`);
+    const payload = (await res.json());
+    if (!payload || !Array.isArray(payload.results))
+        throw new Error('OSV.dev response missing results array');
+    const found = [];
+    payload.results.forEach((result, i) => {
+        const dep = deps[i];
+        if (!dep)
+            return;
+        for (const vuln of result?.vulns ?? []) {
+            if (typeof vuln?.id === 'string')
+                found.push(toFinding(dep, vuln));
+        }
+    });
+    return found;
 }
 
 ;// CONCATENATED MODULE: ./src/security/scanners/secret-scanner.ts
@@ -41922,9 +41951,12 @@ function scanSecretsInDiff(changedFiles) {
 
 // EXTERNAL MODULE: external "node:child_process"
 var external_node_child_process_ = __nccwpck_require__(1421);
+// EXTERNAL MODULE: external "node:string_decoder"
+var external_node_string_decoder_ = __nccwpck_require__(6193);
 // EXTERNAL MODULE: ./src/security/analyser-process.ts
 var analyser_process = __nccwpck_require__(1620);
 ;// CONCATENATED MODULE: ./src/security/scanners/semgrep.ts
+
 
 
 
@@ -42031,6 +42063,8 @@ async function runSemgrepScanner(repositoryPath, rawTargetFiles) {
             env: (0,analyser_process/* buildAnalyserEnv */.pk)({ SEMGREP_SEND_METRICS: 'off' }),
             detached: process.platform !== 'win32',
         });
+        const stdoutDecoder = new external_node_string_decoder_.StringDecoder('utf8');
+        const stderrDecoder = new external_node_string_decoder_.StringDecoder('utf8');
         let stdoutBytes = 0;
         proc.stdout?.on('data', (d) => {
             stdoutBytes += d.length;
@@ -42052,11 +42086,11 @@ async function runSemgrepScanner(repositoryPath, rawTargetFiles) {
                 });
                 return;
             }
-            stdout += d.toString();
+            stdout += stdoutDecoder.write(d);
         });
         proc.stderr?.on('data', (d) => {
             if (stderr.length < 64 * 1024)
-                stderr += d.toString();
+                stderr += stderrDecoder.write(d);
         });
         proc.on('error', (err) => {
             if (settled)
@@ -42093,6 +42127,8 @@ async function runSemgrepScanner(repositoryPath, rawTargetFiles) {
                 return;
             settled = true;
             clearTimeout(timeout);
+            stdout += stdoutDecoder.end();
+            stderr += stderrDecoder.end();
             const abnormal = code !== 0 || signal !== null;
             const stderrHint = stderr.trim().slice(0, 100);
             let data;

@@ -3,6 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { StringDecoder } from 'node:string_decoder';
 import * as core from '@actions/core';
 import { redactSecrets } from '../security/redaction/redactor.js';
 import type { ReviewContext } from '../types/context.js';
@@ -841,6 +842,12 @@ export function runPi(params: RunPiParams): Promise<PiRunLog> {
 				);
 			}, 250);
 		}, params.timeoutMs);
+		// One decoder per stream so a multibyte character split across chunks
+		// is not replaced with U+FFFD.
+		const decoders = {
+			stdout: new StringDecoder('utf8'),
+			stderr: new StringDecoder('utf8'),
+		};
 		const append = (
 			current: string,
 			size: number,
@@ -853,7 +860,7 @@ export function runPi(params: RunPiParams): Promise<PiRunLog> {
 				);
 				return [current, size];
 			}
-			return [current + chunk.toString('utf8'), size + chunk.length];
+			return [current + decoders[stream].write(chunk), size + chunk.length];
 		};
 		child.stdout.on('data', (chunk: Buffer) => {
 			[stdout, stdoutBytes] = append(stdout, stdoutBytes, chunk, 'stdout');
@@ -891,6 +898,8 @@ export function runPi(params: RunPiParams): Promise<PiRunLog> {
 		});
 		child.on('close', (code) => {
 			if (settled) return;
+			stdout += decoders.stdout.end();
+			stderr += decoders.stderr.end();
 			if (timedOut) {
 				finish(
 					new Error(`Pi review process timed out after ${params.timeoutMs}ms`)

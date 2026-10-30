@@ -20,8 +20,8 @@ Operational quick reference for a run that looks wrong:
 | [architecture.md](architecture.md) | What was built: pipeline, layout, Pi provisioning, env vars | Running, extending, or debugging the engine |
 | [design-spec.md](design-spec.md) | Full engine spec: profiles, validation, limits, prompts, rollout | Reviewing a change for spec compliance |
 | [v1-interface-contract.md](v1-interface-contract.md) | Frozen public surface: inputs, outputs, defaults, behavior | Touching `pr-*/action.yml`, inputs, outputs, or env names |
-| [security-model.md](security-model.md) | Threat model: injection, secrets, permissions, plane separation | Touching prompts, subprocess calls, or anything published to GitHub |
-| [security-review.md](security-review.md) | Security engine: profiles, inputs/outputs, skills, workflow examples | Using `mode: security` or changing security behavior |
+| [security-model.md](security-model.md) | Threat model: injection, secrets, permissions, plane separation, output integrity, scanner completeness | Touching prompts, subprocess calls, or anything published to GitHub |
+| [security-review.md](security-review.md) | Security engine: profiles, inputs/outputs, skills, workflow examples, OSV scanner coverage | Using `mode: security` or changing security behavior |
 | [research/code-review-deep-research.md](research/code-review-deep-research.md) | Source audit and primary-source research at commit `f59cfc3` (2026-09-12) | Assessing known defects and the competitive baseline; historical snapshot |
 | [research/improvement-roadmap.md](research/improvement-roadmap.md) | Proposed quality gates, implementation phases, feature backlog, and benchmark protocol | Planning improvements; proposed work, not shipped behavior |
 | [research/audit-team-2026-09-13.md](research/audit-team-2026-09-13.md) | Audit-team delta: security gaps, scanner/skill research, and selected implementation order | Reviewing the 2026-09-13 audit findings and next security/product work |

@@ -142,6 +142,31 @@ EOF
 		expect(result.findings).toHaveLength(1);
 	});
 
+	it('keeps a multibyte character that is split across stdout chunks', async () => {
+		// "é" is 0xC3 0xA9; the pause forces the two bytes into separate chunks.
+		const bin = writeFakePi(`#!/bin/sh
+printf '{"findings":[],"summary":"caf\\303'
+sleep 0.3
+printf '\\251 ok","risk":"low"}\\n'
+`);
+		const harness = new PiHarness({ binaryPath: bin });
+		const result = await harness.review(makeContext());
+		expect(result.summary).toBe('café ok');
+	});
+
+	it('keeps a multibyte character that is split across stderr chunks', async () => {
+		const bin = writeFakePi(`#!/bin/sh
+printf 'caf\\303' >&2
+sleep 0.3
+printf '\\251 exploded' >&2
+exit 2
+`);
+		const harness = new PiHarness({ binaryPath: bin });
+		await expect(harness.review(makeContext())).rejects.toThrow(
+			/café exploded/
+		);
+	});
+
 	it('reports the provider error text mode writes to stderr', async () => {
 		const bin = writeFakePi(
 			'#!/bin/sh\necho "401 Incorrect API key provided" >&2\nexit 1\n'

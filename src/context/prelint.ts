@@ -18,6 +18,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
+import { StringDecoder } from 'node:string_decoder';
 import * as core from '@actions/core';
 import {
 	MAX_ANALYSER_OUTPUT_BYTES,
@@ -162,6 +163,8 @@ function spawnCollect(
 		});
 		let stdout = '';
 		let stderr = '';
+		const stdoutDecoder = new StringDecoder('utf8');
+		const stderrDecoder = new StringDecoder('utf8');
 		let stdoutBytes = 0;
 		let stderrBytes = 0;
 		let settled = false;
@@ -191,11 +194,13 @@ function spawnCollect(
 		};
 		child.stdout?.on('data', (chunk: Buffer) => {
 			stdoutBytes += chunk.length;
-			if (!settled && !overCap(stdoutBytes)) stdout += chunk.toString('utf8');
+			if (!settled && !overCap(stdoutBytes))
+				stdout += stdoutDecoder.write(chunk);
 		});
 		child.stderr?.on('data', (chunk: Buffer) => {
 			stderrBytes += chunk.length;
-			if (!settled && !overCap(stderrBytes)) stderr += chunk.toString('utf8');
+			if (!settled && !overCap(stderrBytes))
+				stderr += stderrDecoder.write(chunk);
 		});
 		child.on('error', (err) => {
 			clearTimeout(timer);
@@ -203,6 +208,8 @@ function spawnCollect(
 		});
 		child.on('close', (code) => {
 			clearTimeout(timer);
+			stdout += stdoutDecoder.end();
+			stderr += stderrDecoder.end();
 			// Every supported linter prints its JSON report even when it exits
 			// non-zero because it found issues. Non-zero with no stdout means the
 			// tool itself failed, which must not read as a clean run.
