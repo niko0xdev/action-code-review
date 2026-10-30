@@ -1129,3 +1129,98 @@ describe('buildJobSummary (spec §39)', () => {
 		expect(text).toContain('**Files reviewed:** 1 of 4 (3 excluded by filter)');
 	});
 });
+
+describe('review decision on re-runs and fallback', () => {
+	function rerunOctokit(
+		opts: { postedIds?: string[]; batchFails?: boolean } = {}
+	) {
+		const posted = (opts.postedIds ?? []).map((id) => ({
+			id: 1,
+			body: `x\n\n<!-- ai-review-id:${id} -->`,
+		}));
+		const createReview = vi.fn(async (args: { comments?: unknown[] }) => {
+			if (opts.batchFails && (args.comments?.length ?? 0) > 0)
+				throw new Error('422 unprocessable');
+			return { data: {} };
+		});
+		return {
+			rest: {
+				pulls: {
+					createReview,
+					createReviewComment: vi.fn(async () => ({ data: {} })),
+					listReviews: vi.fn(async () => ({ data: [{ id: 1 }] })),
+					listCommentsForReview: vi.fn(async () => ({ data: posted })),
+					listThreads: vi.fn(async () => []),
+				},
+				issues: {
+					createComment: vi.fn(async () => ({ data: {} })),
+					listComments: vi.fn(async () => ({ data: [] })),
+				},
+			},
+			users: {
+				getAuthenticated: vi.fn(async () => ({ data: { login: 'bot' } })),
+			},
+			paginate: vi.fn(
+				async (fn: (a: unknown) => Promise<{ data: unknown }>) => {
+					return (await fn({})).data;
+				}
+			),
+		};
+	}
+
+	function params(findings: Finding[]) {
+		return {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 9,
+			headSha: 'sha9',
+			result: {
+				findings,
+				summary: '',
+				risk: 'high' as const,
+				counts: { critical: 0, high: findings.length, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+			},
+			blockOnIssues: true,
+		};
+	}
+
+	it('keeps REQUEST_CHANGES when the only blocking finding was already commented', async () => {
+		const f = finding();
+		const octokit = rerunOctokit({ postedIds: [normalizeCommentId(f)] });
+		await publishReview(octokit as never, params([f]));
+		const calls = octokit.rest.pulls.createReview.mock.calls as unknown as [
+			{ event: string; comments: unknown[]; body?: string },
+		][];
+		expect(calls).toHaveLength(1);
+		expect(calls[0][0].event).toBe('REQUEST_CHANGES');
+		expect(calls[0][0].comments).toEqual([]);
+		expect(calls[0][0].body).toBeTruthy();
+		const summary = (
+			octokit.rest.issues.createComment.mock.calls as unknown as [
+				{ body: string },
+			][]
+		)[0][0].body;
+		expect(summary).toContain('Missing tenant filter');
+		expect(summary).toMatch(/1 finding\(s\) already commented/);
+	});
+
+	it('does not post duplicates and does not request changes for already-posted low findings', async () => {
+		const f = finding({ severity: 'low' });
+		const octokit = rerunOctokit({ postedIds: [normalizeCommentId(f)] });
+		await publishReview(octokit as never, params([f]));
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('still submits the review event when the batch falls back to per-comment posting', async () => {
+		const octokit = rerunOctokit({ batchFails: true });
+		await publishReview(octokit as never, params([finding()]));
+		expect(octokit.rest.pulls.createReviewComment).toHaveBeenCalledOnce();
+		const calls = octokit.rest.pulls.createReview.mock.calls as unknown as [
+			{ event: string; comments: unknown[] },
+		][];
+		const last = calls[calls.length - 1][0];
+		expect(last.event).toBe('REQUEST_CHANGES');
+		expect(last.comments).toEqual([]);
+	});
+});

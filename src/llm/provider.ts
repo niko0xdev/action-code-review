@@ -61,7 +61,9 @@ export interface LlmProvider {
 export class LlmError extends Error {
 	constructor(
 		message: string,
-		public readonly status?: number
+		public readonly status?: number,
+		/** Server-requested delay before retrying, from `Retry-After`. */
+		public readonly retryAfterMs?: number
 	) {
 		super(message);
 		this.name = 'LlmError';
