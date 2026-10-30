@@ -74,7 +74,7 @@ const PR_REVIEW_DEFAULTS = {
 	openaiModel: 'gpt-4',
 	maxFiles: '10',
 	excludePatterns: '*.md,*.txt',
-	autoApproveWhenResolved: 'true',
+	autoApproveWhenResolved: 'false',
 	minSeverity: 'critical',
 	blockOnIssues: 'true',
 	includeFullContent: 'false',

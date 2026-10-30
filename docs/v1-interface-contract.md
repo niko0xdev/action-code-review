@@ -77,7 +77,7 @@ None declared.
 | `max-files` | false | `'10'` |
 | `exclude-patterns` | false | `'*.md,*.txt'` |
 | `include-dir` | false | — (no default) |
-| `auto-approve-when-resolved` | false | `'true'` |
+| `auto-approve-when-resolved` | false | `'false'` |
 | `min-severity` | false | `'critical'` |
 | `block-on-issues` | false | `'true'` |
 | `include-full-content` | false | `'false'` |
@@ -157,8 +157,10 @@ breaking shape change.
   list. `status` is `reviewed`, `excluded`, or `not-analyzed`. Excluded entries
   use one reason: `configured-filter`, `missing-patch`, `default-ignore`, or
   `max-files`. A selected but unreviewed file uses `review-group-failed` when
-  any review group failed, otherwise `review-incomplete`. Entries contain only
-  the repository-relative path and status/reason, never the patch or file
+  any review group failed, otherwise `review-incomplete` (this includes files
+  cut off or omitted because the diff exceeded `max-context-chars`; truncation
+  happens per file at hunk boundaries). Entries contain only the
+  repository-relative path and status/reason, never the patch or file
   contents. Existing string redaction also applies to these paths. The ledger
   is capped at 128 Ki UTF-16 characters; `fileDetailsTruncated` and
   `filesOmitted` report any entries omitted at that limit. This is separate
@@ -267,14 +269,16 @@ matching ids are skipped.
   ```
 
 - Sets output `review-summary`.
-- When `auto-approve-when-resolved` is enabled (default `true`): paginates
+- When `auto-approve-when-resolved` is enabled (default `false`): paginates
   GitHub's GraphQL `reviewThreads` connection. A thread is treated as
   AI-authored only when its root comment carries the action's hidden marker and
   its author matches the token's login, or, when the login cannot be resolved (a
   workflow `GITHUB_TOKEN` is refused on `GET /user`), is a bot account. GraphQL
   reports bot logins without the `[bot]` suffix (`github-actions`), so they are
   normalised to the REST form (`github-actions[bot]`) before matching.
-  If every AI-authored thread is resolved, submits an `APPROVE` review with body
+  Approval also requires a complete review, at least one AI-authored thread,
+  and no findings dropped by `min-severity`; a PR with no AI threads is never
+  approved. If every AI-authored thread is resolved, submits an `APPROVE` review with body
   `All AI-generated review comments have been resolved. Auto-approving PR.`
   Missing or malformed thread data fails closed and never triggers approval.
   GitHub refuses `APPROVE` from `GITHUB_TOKEN` unless the repository enables
