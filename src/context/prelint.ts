@@ -18,6 +18,11 @@
 import { spawn } from 'node:child_process';
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
+import {
+	MAX_ANALYSER_OUTPUT_BYTES,
+	buildAnalyserEnv,
+	safeTargetFiles,
+} from '../security/analyser-process.js';
 import type { ChangedFile } from '../types/context.js';
 import type { ToolFinding } from '../types/finding.js';
 
@@ -150,11 +155,14 @@ function spawnCollect(
 		const child = spawn(cmd, args, {
 			cwd: options.cwd,
 			timeout: options.timeoutMs,
+			env: buildAnalyserEnv(),
 			stdio: ['ignore', 'pipe', 'pipe'],
 			killSignal: 'SIGKILL',
 		});
 		let stdout = '';
 		let stderr = '';
+		let stdoutBytes = 0;
+		let stderrBytes = 0;
 		let settled = false;
 		const finish = (cb: () => void) => {
 			if (settled) return;
@@ -167,11 +175,26 @@ function spawnCollect(
 				reject(new Error(`${cmd} timed out after ${options.timeoutMs}ms`))
 			);
 		}, options.timeoutMs);
+		const overCap = (size: number) => {
+			if (size <= MAX_ANALYSER_OUTPUT_BYTES) return false;
+			clearTimeout(timer);
+			child.kill('SIGKILL');
+			finish(() =>
+				reject(
+					new Error(
+						`${cmd} output exceeded ${MAX_ANALYSER_OUTPUT_BYTES} byte cap`
+					)
+				)
+			);
+			return true;
+		};
 		child.stdout?.on('data', (chunk: Buffer) => {
-			stdout += chunk.toString('utf8');
+			stdoutBytes += chunk.length;
+			if (!settled && !overCap(stdoutBytes)) stdout += chunk.toString('utf8');
 		});
 		child.stderr?.on('data', (chunk: Buffer) => {
-			stderr += chunk.toString('utf8');
+			stderrBytes += chunk.length;
+			if (!settled && !overCap(stderrBytes)) stderr += chunk.toString('utf8');
 		});
 		child.on('error', (err) => {
 			clearTimeout(timer);
@@ -193,10 +216,11 @@ const biomeRunner: ToolRunner = {
 	run: async ({ repositoryPath, files, timeoutMs }) => {
 		const binary = configuredBinary(repositoryPath, 'biome');
 		if (!binary) return [];
-		const fileList = files.map((f) => f.filename);
+		const fileList = safeTargetFiles(files.map((f) => f.filename));
+		if (fileList.length === 0) return [];
 		const { stdout } = await spawnCollect(
 			binary,
-			['lint', '--reporter=json', '--max-diagnostics=50', ...fileList],
+			['lint', '--reporter=json', '--max-diagnostics=50', '--', ...fileList],
 			{ cwd: repositoryPath, timeoutMs }
 		);
 		return parseBiomeOutput(stdout);
@@ -210,10 +234,11 @@ const ruffRunner: ToolRunner = {
 	run: async ({ repositoryPath, files, timeoutMs }) => {
 		const binary = configuredBinary(repositoryPath, 'ruff');
 		if (!binary) return [];
-		const fileList = files.map((f) => f.filename);
+		const fileList = safeTargetFiles(files.map((f) => f.filename));
+		if (fileList.length === 0) return [];
 		const { stdout } = await spawnCollect(
 			binary,
-			['check', '--output-format=json', '--no-fix', ...fileList],
+			['check', '--output-format=json', '--no-fix', '--', ...fileList],
 			{ cwd: repositoryPath, timeoutMs }
 		);
 		return parseRuffOutput(stdout);
@@ -232,10 +257,11 @@ const swiftlintRunner: ToolRunner = {
 	run: async ({ repositoryPath, files, timeoutMs }) => {
 		const binary = configuredBinary(repositoryPath, 'swiftlint');
 		if (!binary) return [];
-		const fileList = files.map((f) => f.filename);
+		const fileList = safeTargetFiles(files.map((f) => f.filename));
+		if (fileList.length === 0) return [];
 		const { stdout } = await spawnCollect(
 			binary,
-			['lint', '--reporter=json', '--quiet', ...fileList],
+			['lint', '--reporter=json', '--quiet', '--', ...fileList],
 			{ cwd: repositoryPath, timeoutMs }
 		);
 		return parseSwiftlintOutput(stdout);
@@ -256,10 +282,11 @@ const ktlintRunner: ToolRunner = {
 	run: async ({ repositoryPath, files, timeoutMs }) => {
 		const binary = configuredBinary(repositoryPath, 'ktlint');
 		if (!binary) return [];
-		const fileList = files.map((f) => f.filename);
+		const fileList = safeTargetFiles(files.map((f) => f.filename));
+		if (fileList.length === 0) return [];
 		const { stdout } = await spawnCollect(
 			binary,
-			['--reporter=json', ...fileList],
+			['--reporter=json', '--', ...fileList],
 			{ cwd: repositoryPath, timeoutMs }
 		);
 		return parseKtlintOutput(stdout, fileList);
@@ -278,11 +305,12 @@ const sqlfluffRunner: ToolRunner = {
 	run: async ({ repositoryPath, files, timeoutMs }) => {
 		const binary = configuredBinary(repositoryPath, 'sqlfluff');
 		if (!binary) return [];
-		const fileList = files.map((f) => f.filename);
+		const fileList = safeTargetFiles(files.map((f) => f.filename));
+		if (fileList.length === 0) return [];
 		// sqlfluff returns non-zero on violations; we want the JSON anyway.
 		const { stdout } = await spawnCollect(
 			binary,
-			['lint', '--format=json', '--disable-progress-bar', ...fileList],
+			['lint', '--format=json', '--disable-progress-bar', '--', ...fileList],
 			{ cwd: repositoryPath, timeoutMs }
 		);
 		return parseSqlfluffOutput(stdout);

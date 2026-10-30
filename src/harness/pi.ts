@@ -743,12 +743,12 @@ export class PiHarness implements ReviewHarness {
 		return toReviewResult(output, includedFiles);
 	}
 }
-async function resolveRuntimeConfigDir(): Promise<string> {
+export async function resolveRuntimeConfigDir(): Promise<string> {
 	const configDir = process.env.PI_CODING_AGENT_DIR;
 	if (configDir) return configDir;
 	return mkdtemp(join(tmpdir(), 'acr-pi-test-'));
 }
-interface RunPiParams {
+export interface RunPiParams {
 	binaryPath: string;
 	args: string[];
 	cwd: string;
@@ -760,7 +760,7 @@ interface RunPiParams {
 	maxToolCalls?: number;
 	maxAssistantBytes?: number;
 }
-function runPi(params: RunPiParams): Promise<PiRunLog> {
+export function runPi(params: RunPiParams): Promise<PiRunLog> {
 	return new Promise((resolve, reject) => {
 		const child = spawn(params.binaryPath, params.args, {
 			cwd: params.cwd,

@@ -26,6 +26,8 @@
 - **Mitigation**:
   1. Safe Subprocess Spawning: Use `node:child_process` `spawn` with discrete argument arrays rather than `exec` with shell interpolation.
   2. Argument Sanitization: Pi CLI arguments pass through strict allowlist validation (`--max-duration`, `--model-override`, `--no-session`).
+  3. Sandboxed Spawns: every process that touches PR content (Pi review, the Pi security fallback, prelint linters, Semgrep) runs with an allowlisted environment (`PATH`, `HOME`, locale, temp dirs, TLS certificate paths; never API keys or tokens). The Pi security fallback reuses the review path's isolation flags (`--no-extensions`, `--no-skills`, `--no-context-files`, read-only `--tools`), timeout, and process-group kill.
+  4. Analyser Arguments and Output: PR file names beginning with `-` are dropped, `--` precedes file arguments, and collected analyser output is capped at 16 MiB (`src/security/analyser-process.ts`).
 
 ### 2.4 Toxic PR Target Permissions (`pull_request_target`)
 - **Threat**: Running on `pull_request_target` with write tokens while checking out untrusted attacker PR heads.

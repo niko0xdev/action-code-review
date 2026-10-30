@@ -177,39 +177,18 @@ export class PiSecurityEngine implements SecurityEngine {
 		// Text mode prints only the final assistant message; `--mode json`
 		// re-serializes every streamed delta and can emit tens of MiB for one
 		// answer. `parseFindings` scans the raw output for the JSON artifact.
-		const { spawn } = await import('node:child_process');
-		return new Promise((resolve, reject) => {
-			const proc = spawn(
-				ctx.options.piBinaryPath || 'pi',
-				['-p', '--mode', 'text', '--no-session'],
-				{
-					cwd: ctx.repositoryPath,
-					env: { ...process.env },
-				}
-			);
-
-			let out = '';
-			let err = '';
-
-			proc.stdout?.on('data', (d) => {
-				out += d.toString();
-			});
-			proc.stderr?.on('data', (d) => {
-				err += d.toString();
-			});
-
-			proc.on('error', (e) => reject(e));
-			proc.on('close', (code) => {
-				if (code !== 0 && !out) {
-					reject(new Error(`Pi exited with ${code}: ${err}`));
-				} else {
-					resolve(redactSecrets(out));
-				}
-			});
-
-			proc.stdin?.write(prompt);
-			proc.stdin?.end();
+		const { buildPiArgs, resolveRuntimeConfigDir, runPi } = await import(
+			'../../harness/pi.js'
+		);
+		const log = await runPi({
+			binaryPath: ctx.options.piBinaryPath || 'pi',
+			args: buildPiArgs(ctx.repositoryPath),
+			cwd: ctx.repositoryPath,
+			configDir: await resolveRuntimeConfigDir(),
+			prompt,
+			timeoutMs: 15 * 60_000,
 		});
+		return redactSecrets(log.stdout);
 	}
 
 	private parseFindings(raw: string, repo: string): SecurityFinding[] {
