@@ -71,10 +71,13 @@ const SECURITY_DEFAULTS = {
 	riskThreshold: 'high',
 } as const;
 
+/** Default `exclude-patterns`, split; exported so callers can tell it from a user choice. */
+export const DEFAULT_EXCLUDE_PATTERNS = ['*.md', '*.txt'];
+
 const PR_REVIEW_DEFAULTS = {
 	openaiModel: 'gpt-4',
 	maxFiles: '10',
-	excludePatterns: '*.md,*.txt',
+	excludePatterns: DEFAULT_EXCLUDE_PATTERNS.join(','),
 	autoApproveWhenResolved: 'false',
 	minSeverity: 'critical',
 	blockOnIssues: 'true',

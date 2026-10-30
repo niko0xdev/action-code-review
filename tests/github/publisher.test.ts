@@ -1224,3 +1224,206 @@ describe('review decision on re-runs and fallback', () => {
 		expect(last.comments).toEqual([]);
 	});
 });
+
+const EVENT_TEXT =
+	'Blocking findings remain open on this pull request. See the summary comment for details.';
+
+describe('repeat REQUEST_CHANGES suppression on re-runs', () => {
+	interface FakeReview {
+		id: number;
+		state: string;
+		commit_id: string;
+		user: { login: string };
+		body?: string;
+	}
+	function octokitWith(
+		reviews: FakeReview[],
+		postedIds: string[],
+		login: string | null = 'bot'
+	) {
+		return {
+			rest: {
+				pulls: {
+					createReview: vi.fn(async () => ({ data: {} })),
+					createReviewComment: vi.fn(async () => ({ data: {} })),
+					listReviews: vi.fn(async () => ({ data: reviews })),
+					listCommentsForReview: vi.fn(async () => ({
+						data: postedIds.map((id) => ({
+							body: `x\n\n<!-- ai-review-id:${id} -->`,
+						})),
+					})),
+					listThreads: vi.fn(async () => []),
+				},
+				issues: {
+					createComment: vi.fn(async () => ({ data: {} })),
+					listComments: vi.fn(async () => ({ data: [] })),
+				},
+			},
+			users: {
+				getAuthenticated: vi.fn(async () => {
+					if (!login) throw new Error('403');
+					return { data: { login } };
+				}),
+			},
+		};
+	}
+	function run(octokit: ReturnType<typeof octokitWith>, f: Finding) {
+		return publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 9,
+			headSha: 'head2',
+			result: {
+				findings: [f],
+				summary: '',
+				risk: 'high',
+				counts: { critical: 0, high: 1, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+			},
+			blockOnIssues: true,
+		});
+	}
+	const prior = (over: Partial<FakeReview> = {}): FakeReview => ({
+		id: 1,
+		state: 'CHANGES_REQUESTED',
+		commit_id: 'head2',
+		user: { login: 'bot' },
+		...over,
+	});
+
+	it('skips the event when the latest own review already requests changes on the same head', async () => {
+		const f = finding();
+		const octokit = octokitWith([prior()], [normalizeCommentId(f)]);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('skips on the same head when the login is unresolvable and the author is a bot', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[
+				prior({
+					user: { login: 'github-actions[bot]' },
+					body: `${EVENT_TEXT}\n\n<!-- ai-review-event -->`,
+				}),
+			],
+			[normalizeCommentId(f)],
+			null
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('still recognises an already-posted event-only review without the marker', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[prior({ user: { login: 'github-actions[bot]' }, body: EVENT_TEXT })],
+			[normalizeCommentId(f)],
+			null
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('does not trust github-actions[bot] reviews without the event-only body when the login is unresolved', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[prior({ user: { login: 'github-actions[bot]' }, body: 'other' })],
+			[normalizeCommentId(f)],
+			null
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+	});
+
+	it('never treats another review bot as this action when the login is unresolved', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[
+				prior({
+					user: { login: 'coderabbitai[bot]' },
+					body: EVENT_TEXT,
+				}),
+			],
+			[normalizeCommentId(f)],
+			null
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+	});
+
+	it('submits when the review lookup fails', async () => {
+		const f = finding();
+		const octokit = octokitWith([prior()], [normalizeCommentId(f)]);
+		let calls = 0;
+		octokit.rest.pulls.listReviews = vi.fn(async () => {
+			calls += 1;
+			// The first call feeds the duplicate check; the second is the
+			// blocking-review lookup.
+			if (calls > 1) throw new Error('500');
+			return { data: [prior()] };
+		});
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+	});
+
+	it('ignores a PENDING review when choosing the latest own review', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[prior(), prior({ id: 2, state: 'PENDING' })],
+			[normalizeCommentId(f)]
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('submits when the head changed since the previous review', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[prior({ commit_id: 'head1' })],
+			[normalizeCommentId(f)]
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+	});
+
+	it.each(['DISMISSED', 'COMMENTED', 'APPROVED'])(
+		'submits when the previous review state is %s',
+		async (state) => {
+			const f = finding();
+			const octokit = octokitWith([prior({ state })], [normalizeCommentId(f)]);
+			await run(octokit, f);
+			expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+		}
+	);
+
+	it('ignores requested changes from another author', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[prior({ user: { login: 'human' } })],
+			[normalizeCommentId(f)]
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+	});
+
+	it('uses only the latest own review', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[prior(), prior({ id: 2, state: 'DISMISSED' })],
+			[normalizeCommentId(f)]
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+	});
+
+	it('always submits when this run has new inline comments', async () => {
+		const octokit = octokitWith([prior()], []);
+		await run(octokit, finding());
+		const [args] = octokit.rest.pulls.createReview.mock.calls[0] as unknown as [
+			{ event: string; comments: unknown[] },
+		];
+		expect(args.event).toBe('REQUEST_CHANGES');
+		expect(args.comments).toHaveLength(1);
+	});
+});

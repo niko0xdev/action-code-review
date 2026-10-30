@@ -32,6 +32,9 @@ function isPermissionError(error: unknown): boolean {
 
 interface ReviewRecord {
 	id: number;
+	state?: string | null;
+	commit_id?: string | null;
+	body?: string | null;
 	user?: { login?: string } | null;
 }
 interface ReviewCommentRecord {
@@ -161,6 +164,16 @@ export function buildReviewPayload(
 	};
 }
 
+/**
+ * Body of a review that only carries the REQUEST_CHANGES event. Re-runs
+ * recognise their own earlier event by this fixed prefix, so keep it stable
+ * (reviews already posted carry the text without the hidden marker).
+ */
+const EVENT_ONLY_BODY =
+	'Blocking findings remain open on this pull request. See the summary comment for details.';
+const EVENT_ONLY_MARKER = '<!-- ai-review-event -->';
+const eventOnlyBody = `${EVENT_ONLY_BODY}\n\n${EVENT_ONLY_MARKER}`;
+
 export async function publishReview(
 	octokit: PublisherOctokit,
 	params: PublishParams
@@ -245,14 +258,19 @@ export async function publishReview(
 	// blocking off, findings are posted as plain COMMENTs instead of
 	// REQUEST_CHANGES (docs/v1-interface-contract.md).
 	const shouldBlock = params.blockOnIssues !== false && hasBlockingFinding;
-	if (findingsToPublish.length > 0 || shouldBlock) {
+	// A re-run with nothing new to post must not add another body-only
+	// REQUEST_CHANGES to the timeline when the bot's latest review already
+	// requests changes on this exact head.
+	const alreadyBlockingOnHead =
+		findingsToPublish.length === 0 &&
+		shouldBlock &&
+		(await hasCurrentBlockingReview(octokit, owner, repo, prNumber, headSha));
+	if ((findingsToPublish.length > 0 || shouldBlock) && !alreadyBlockingOnHead) {
 		const payload = buildReviewPayload(findingsToPublish, headSha, {
 			blockOnIssues: shouldBlock,
 		});
 		const event = shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT';
 		// GitHub requires a body when a review carries no inline comments.
-		const eventOnlyBody =
-			'Blocking findings remain open on this pull request. See the summary comment for details.';
 		try {
 			await octokit.rest.pulls.createReview({
 				owner,
@@ -597,6 +615,47 @@ async function findStickyComment(
 		}
 	} catch {}
 	return null;
+}
+
+/**
+ * True when this action's latest submitted review is CHANGES_REQUESTED and
+ * was made on `headSha`. Any lookup failure returns false so the event is
+ * still submitted (the safe direction).
+ */
+async function hasCurrentBlockingReview(
+	octokit: PublisherOctokit,
+	owner: string,
+	repo: string,
+	prNumber: number,
+	headSha: string
+): Promise<boolean> {
+	if (!octokit.rest.pulls.listReviews) return false;
+	try {
+		const reviews = await listAll(octokit.rest.pulls.listReviews, {
+			owner,
+			repo,
+			pull_number: prNumber,
+		});
+		const selfLogin = await resolveSelfLogin(octokit);
+		// With a resolved login the author is exact. Without one (a workflow
+		// GITHUB_TOKEN is refused on GET /user) accept only `github-actions[bot]`
+		// whose body is the action's own event-only text: another review bot
+		// must never be mistaken for this action.
+		const own = reviews.filter(
+			(review) =>
+				review.state !== 'PENDING' &&
+				(selfLogin
+					? review.user?.login === selfLogin
+					: review.user?.login === 'github-actions[bot]' &&
+						(review.body ?? '').startsWith(EVENT_ONLY_BODY))
+		);
+		const latest = own[own.length - 1];
+		return (
+			latest?.state === 'CHANGES_REQUESTED' && latest.commit_id === headSha
+		);
+	} catch {
+		return false;
+	}
 }
 
 async function listAll<T>(
