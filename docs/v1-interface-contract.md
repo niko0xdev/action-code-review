@@ -248,7 +248,7 @@ matching ids are skipped.
 - Only runs on `pull_request` events; otherwise `core.setFailed('This action only runs on pull requests')`.
 - Lists PR files, applies `exclude-patterns` (comma-separated glob-ish,
   `*` → `.*`), optional `include-dir` allowlist, then truncates to `max-files`.
-- Empty file list after filtering → exit silently (no summary, no output).
+- Empty file list after filtering → `review-summary` is `skipped: no files to review` and the run exits green. It is logged as a notice, or as a warning when an `include-dir` or non-default `exclude-patterns` removed every file. `include-dir` entries drop a leading `/`; entries containing `..` match nothing and warn.
 - Reviews each file via OpenAI Chat Completions (`temperature: 0.3`,
   `max_tokens: 1500`). Response is parsed as strict JSON
   (`file_overview`, `summary_points`, `positive_insights`, `risks`,

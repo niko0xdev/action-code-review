@@ -3,11 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
-import {
-	PI_PACKAGE,
-	PI_PACKAGE_PIN,
-	buildInstallStepScript,
-} from '../src/adapter/pi-install.js';
+import { PI_PACKAGE, PI_PACKAGE_PIN } from '../src/adapter/pi-install.js';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -204,14 +200,57 @@ describe.each([
 	});
 });
 
-describe('buildInstallStepScript', () => {
-	it('skips installation when pi already resolves on PATH', () => {
-		const script = buildInstallStepScript();
-		expect(script.startsWith('if ! command -v pi')).toBe(true);
+describe('pr-review install step', () => {
+	const step = loadAction('pr-review/action.yml').runs.steps?.find(
+		(candidate) => candidate.name === 'Setup harness loop'
+	);
+	const script = step?.run ?? '';
+
+	it('installs from the lockfile without running lifecycle scripts', () => {
+		expect(step?.shell).toBe('bash');
 		expect(script).toContain(
-			'npm ci --prefix "$GITHUB_ACTION_PATH/pi-runtime"'
+			'npm ci --prefix "$GITHUB_ACTION_PATH/pi-runtime" --ignore-scripts'
 		);
-		expect(script).toContain('--ignore-scripts');
+	});
+
+	it('puts the installed binary on PATH', () => {
+		expect(script).toContain(
+			'echo "$GITHUB_ACTION_PATH/pi-runtime/node_modules/.bin" >> "$GITHUB_PATH"'
+		);
+	});
+
+	it('only skips the install when the pinned version already resolves', () => {
+		expect(script).toContain('! command -v pi');
+		const pattern = script.match(/grep -Eq '([^']+)'/)?.[1] ?? '';
+		const regex = new RegExp(pattern);
+		expect(regex.test(PI_PACKAGE_PIN)).toBe(true);
+		expect(regex.test(`${PI_PACKAGE_PIN}0`)).toBe(false);
+		expect(regex.test(PI_PACKAGE_PIN.replace('.73.', '.7x3.'))).toBe(false);
+		expect(pattern.replaceAll('\\', '')).toContain(`^${PI_PACKAGE_PIN}`);
+	});
+
+	it('records an integrity hash and an npm registry URL for every locked package', () => {
+		const lock = JSON.parse(
+			readFileSync(
+				resolve(repoRoot, 'pr-review/pi-runtime/package-lock.json'),
+				'utf8'
+			)
+		) as {
+			packages: Record<
+				string,
+				{ integrity?: string; resolved?: string; link?: boolean }
+			>;
+		};
+		const entries = Object.entries(lock.packages).filter(
+			([path]) => path !== ''
+		);
+		expect(entries.length).toBeGreaterThan(0);
+		for (const [path, entry] of entries) {
+			expect(entry.integrity, `${path} integrity`).toMatch(/^sha(256|512)-/);
+			expect(entry.resolved, `${path} resolved`).toMatch(
+				/^https:\/\/registry\.npmjs\.org\//
+			);
+		}
 	});
 
 	it('keeps the lock-pinned Pi runtime in step with PI_PACKAGE_PIN', () => {

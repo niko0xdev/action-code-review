@@ -3,8 +3,9 @@
  *
  * The composite action installs the Pi coding agent itself, so consumer
  * repositories never see it: no workflow changes, no extra setup steps.
- * The version is pinned for reproducible installs; the guard skips work
- * when the binary already resolves on PATH (warm caches).
+ * The version is pinned for reproducible installs; the install step in
+ * pr-review/action.yml skips work when the pinned binary already resolves on
+ * PATH (warm caches).
  */
 
 export const PI_PACKAGE = '@mariozechner/pi-coding-agent';
@@ -13,16 +14,3 @@ export const PI_PACKAGE = '@mariozechner/pi-coding-agent';
  * Mirrored in pr-review/pi-runtime/package.json and its package-lock.json.
  */
 export const PI_PACKAGE_PIN = '0.73.1';
-
-/**
- * Bash script body for the composite install step. Idempotent: a pre-
- * existing `pi` binary short-circuits the npm install.
- */
-export function buildInstallStepScript(): string {
-	return [
-		'if ! command -v pi >/dev/null 2>&1 || ! pi --version 2>/dev/null | grep -q "^0.73.1"; then',
-		'  npm ci --prefix "$GITHUB_ACTION_PATH/pi-runtime" --ignore-scripts --no-audit --no-fund --silent',
-		'  echo "$GITHUB_ACTION_PATH/pi-runtime/node_modules/.bin" >> "$GITHUB_PATH"',
-		'fi',
-	].join('\n');
-}

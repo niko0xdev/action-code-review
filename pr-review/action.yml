@@ -172,7 +172,7 @@ runs:
       if: inputs.pi-binary-path == ''
       shell: bash
       run: |
-        if ! command -v pi >/dev/null 2>&1 || ! pi --version 2>/dev/null | grep -q '^0.73.1'; then
+        if ! command -v pi >/dev/null 2>&1 || ! pi --version 2>/dev/null | grep -Eq '^0\.73\.1([^0-9]|$)'; then
           # Install from the committed lockfile so transitive dependencies
           # cannot float; npm ci verifies every integrity hash.
           npm ci --prefix "$GITHUB_ACTION_PATH/pi-runtime" --ignore-scripts --no-audit --no-fund --silent
