@@ -18,7 +18,7 @@
 | Path | Action name | Description |
 |------|-------------|-------------|
 | `niko0xdev/action-code-review/pr-content@<ref>` | Auto-update PR Content | Auto-update PR title and description using AI based on code changes |
-| `niko0xdev/action-code-review/pr-review@<ref>` | AI Code Review | Uses OpenAI to review pull requests and suggest improvements |
+| `niko0xdev/action-code-review/pr-review@<ref>` | AI Code Review | Uses an OpenAI-compatible endpoint to review pull requests and suggest improvements |
 
 Runner: both actions originally declared `runs.using: node20`,
 `runs.main: dist/index.js`. They now ship as **composite actions** that

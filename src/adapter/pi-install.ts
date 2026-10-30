@@ -8,7 +8,10 @@
  */
 
 export const PI_PACKAGE = '@mariozechner/pi-coding-agent';
-/** Pinned upstream release; bump deliberately and document in docs/architecture.md. */
+/**
+ * Pinned upstream release; bump deliberately and document in docs/architecture.md.
+ * Mirrored in pr-review/pi-runtime/package.json and its package-lock.json.
+ */
 export const PI_PACKAGE_PIN = '0.73.1';
 
 /**
@@ -18,7 +21,8 @@ export const PI_PACKAGE_PIN = '0.73.1';
 export function buildInstallStepScript(): string {
 	return [
 		'if ! command -v pi >/dev/null 2>&1 || ! pi --version 2>/dev/null | grep -q "^0.73.1"; then',
-		`  npm install -g ${PI_PACKAGE}@${PI_PACKAGE_PIN} --no-audit --no-fund --ignore-scripts --silent`,
+		'  npm ci --prefix "$GITHUB_ACTION_PATH/pi-runtime" --ignore-scripts --no-audit --no-fund --silent',
+		'  echo "$GITHUB_ACTION_PATH/pi-runtime/node_modules/.bin" >> "$GITHUB_PATH"',
 		'fi',
 	].join('\n');
 }

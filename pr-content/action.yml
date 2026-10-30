@@ -36,15 +36,9 @@ runs:
   using: composite
   steps:
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: '24'
-    - name: Setup harness loop
-      shell: bash
-      run: |
-        if ! command -v pi >/dev/null 2>&1 || ! pi --version 2>/dev/null | grep -q '^0.73.1'; then
-          npm install -g @mariozechner/pi-coding-agent@0.73.1 --no-audit --no-fund --ignore-scripts --silent
-        fi
     - name: Run Auto-update PR Content
       shell: bash
       run: node ${{ github.action_path }}/dist/index.js

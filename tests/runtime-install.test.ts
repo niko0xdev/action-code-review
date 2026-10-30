@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 import {
+	PI_PACKAGE,
 	PI_PACKAGE_PIN,
 	buildInstallStepScript,
 } from '../src/adapter/pi-install.js';
@@ -108,6 +109,7 @@ describe.each([
 	['pr-content/action.yml', 'pr-content'],
 	['pr-review/action.yml', 'pr-review'],
 ] as const)('composite runtime: %s', (actionPath, action) => {
+	const hasPiInstall = action === 'pr-review';
 	const parsed = loadAction(actionPath);
 
 	it('declares a composite runner', () => {
@@ -135,27 +137,52 @@ describe.each([
 		}
 	});
 
-	it('provisions pinned Node.js before the Pi install step', () => {
-		const steps = parsed.runs.steps ?? [];
-		const setupNodeIndex = steps.findIndex((step) =>
-			step.uses?.includes('actions/setup-node')
+	it('pins actions/setup-node to a full commit SHA', () => {
+		const step = parsed.runs.steps?.find((s) =>
+			s.uses?.includes('actions/setup-node')
 		);
-		const installIndex = steps.findIndex((step) =>
-			step.run?.includes('pi-coding-agent')
-		);
-		expect(setupNodeIndex).toBeGreaterThanOrEqual(0);
-		expect(steps[setupNodeIndex]?.with?.['node-version']).toBe('24');
-		expect(setupNodeIndex).toBeLessThan(installIndex);
+		expect(step?.uses).toMatch(/^actions\/setup-node@[0-9a-f]{40}$/);
 	});
 
-	it('installs Pi in an idempotent bash pre-step', () => {
-		const installStep = parsed.runs.steps?.find((step) =>
-			step.run?.includes('pi-coding-agent')
-		);
-		expect(installStep).toBeDefined();
-		expect(installStep?.shell).toBe('bash');
-		expect(installStep?.run).toContain('command -v pi');
-	});
+	it.skipIf(!hasPiInstall)(
+		'provisions pinned Node.js before the Pi install step',
+		() => {
+			const steps = parsed.runs.steps ?? [];
+			const setupNodeIndex = steps.findIndex((step) =>
+				step.uses?.includes('actions/setup-node')
+			);
+			const installIndex = steps.findIndex((step) =>
+				step.run?.includes('pi-runtime')
+			);
+			expect(setupNodeIndex).toBeGreaterThanOrEqual(0);
+			expect(steps[setupNodeIndex]?.with?.['node-version']).toBe('24');
+			expect(setupNodeIndex).toBeLessThan(installIndex);
+		}
+	);
+
+	it.skipIf(hasPiInstall)(
+		'does not install Pi (the engine never spawns it)',
+		() => {
+			const raw = readFileSync(resolve(repoRoot, actionPath), 'utf8');
+			expect(raw).not.toContain('pi-coding-agent');
+			expect(raw).not.toContain('command -v pi');
+		}
+	);
+
+	it.skipIf(!hasPiInstall)(
+		'installs Pi from the lockfile in an idempotent bash pre-step',
+		() => {
+			const installStep = parsed.runs.steps?.find((step) =>
+				step.run?.includes('pi-runtime')
+			);
+			expect(installStep).toBeDefined();
+			expect(installStep?.run).toContain('npm ci');
+			expect(installStep?.run).toContain('--ignore-scripts');
+			expect(installStep?.run).not.toContain('npm install');
+			expect(installStep?.shell).toBe('bash');
+			expect(installStep?.run).toContain('command -v pi');
+		}
+	);
 
 	it('forwards every V1 input to the node step via env', () => {
 		const runStep = parsed.runs.steps?.find((step) =>
@@ -181,7 +208,28 @@ describe('buildInstallStepScript', () => {
 	it('skips installation when pi already resolves on PATH', () => {
 		const script = buildInstallStepScript();
 		expect(script.startsWith('if ! command -v pi')).toBe(true);
-		expect(script).toContain('--no-audit --no-fund --ignore-scripts --silent');
-		expect(script).toContain(`@mariozechner/pi-coding-agent@${PI_PACKAGE_PIN}`);
+		expect(script).toContain(
+			'npm ci --prefix "$GITHUB_ACTION_PATH/pi-runtime"'
+		);
+		expect(script).toContain('--ignore-scripts');
+	});
+
+	it('keeps the lock-pinned Pi runtime in step with PI_PACKAGE_PIN', () => {
+		const manifest = JSON.parse(
+			readFileSync(
+				resolve(repoRoot, 'pr-review/pi-runtime/package.json'),
+				'utf8'
+			)
+		) as { dependencies: Record<string, string> };
+		expect(manifest.dependencies[PI_PACKAGE]).toBe(PI_PACKAGE_PIN);
+		const lock = JSON.parse(
+			readFileSync(
+				resolve(repoRoot, 'pr-review/pi-runtime/package-lock.json'),
+				'utf8'
+			)
+		) as { packages: Record<string, { version?: string }> };
+		expect(lock.packages[`node_modules/${PI_PACKAGE}`]?.version).toBe(
+			PI_PACKAGE_PIN
+		);
 	});
 });

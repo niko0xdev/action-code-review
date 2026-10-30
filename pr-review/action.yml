@@ -1,5 +1,5 @@
 name: 'AI Code Review'
-description: 'Uses OpenAI to review pull requests and suggest improvements'
+description: 'Uses an OpenAI-compatible endpoint to review pull requests and suggest improvements'
 author: 'niko0xdev'
 branding:
   icon: 'code'
@@ -165,7 +165,7 @@ runs:
   using: composite
   steps:
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       with:
         node-version: '24'
     - name: Setup harness loop
@@ -173,7 +173,10 @@ runs:
       shell: bash
       run: |
         if ! command -v pi >/dev/null 2>&1 || ! pi --version 2>/dev/null | grep -q '^0.73.1'; then
-          npm install -g @mariozechner/pi-coding-agent@0.73.1 --no-audit --no-fund --ignore-scripts --silent
+          # Install from the committed lockfile so transitive dependencies
+          # cannot float; npm ci verifies every integrity hash.
+          npm ci --prefix "$GITHUB_ACTION_PATH/pi-runtime" --ignore-scripts --no-audit --no-fund --silent
+          echo "$GITHUB_ACTION_PATH/pi-runtime/node_modules/.bin" >> "$GITHUB_PATH"
         fi
     - name: Run AI Code Review
       id: run-review

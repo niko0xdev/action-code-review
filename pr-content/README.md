@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Update PR Content
-        uses: ./
+        uses: niko0xdev/action-code-review/pr-content@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Update PR Content
-        uses: ./
+        uses: niko0xdev/action-code-review/pr-content@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -101,7 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Update PR Content
-        uses: ./
+        uses: niko0xdev/action-code-review/pr-content@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -122,7 +122,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Update PR Content
-        uses: ./
+        uses: niko0xdev/action-code-review/pr-content@main
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -133,8 +133,8 @@ jobs:
 
 1. The action fetches the pull request details and file changes
 2. If a template file is specified, it reads the template from the repository
-3. It sends the code changes and template to OpenAI for analysis
-4. OpenAI generates an improved title and description based on the changes
+3. It sends the code changes and template to the OpenAI-compatible endpoint for analysis
+4. The model generates an improved title and description based on the changes
 5. If a template is provided, the action fills in the template with the AI-generated content
 6. The action updates the pull request with the new title and description
 
