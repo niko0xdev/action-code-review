@@ -989,9 +989,13 @@ export function classifyEmptySelection(args: {
 	excludePatterns: string[];
 }): 'notice' | 'warning' {
 	if (args.filesTotal === 0 || args.filteredCount > 0) return 'notice';
-	if (args.includeDirs?.length) return 'warning';
+	const effectiveDirs = (args.includeDirs ?? [])
+		.map(normalizeIncludeDir)
+		.filter((dir) => dir !== '' && dir !== '.');
+	if (effectiveDirs.length > 0) return 'warning';
+	const sorted = (list: string[]) => [...list].sort().join(',');
 	const isDefault =
-		args.excludePatterns.join(',') === DEFAULT_EXCLUDE_PATTERNS.join(',');
+		sorted(args.excludePatterns) === sorted(DEFAULT_EXCLUDE_PATTERNS);
 	return isDefault ? 'notice' : 'warning';
 }
 

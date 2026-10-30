@@ -38609,6 +38609,14 @@ function buildReviewPayload(findings, headSha, options = {}) {
         comments,
     };
 }
+/**
+ * Body of a review that only carries the REQUEST_CHANGES event. Re-runs
+ * recognise their own earlier event by this fixed prefix, so keep it stable
+ * (reviews already posted carry the text without the hidden marker).
+ */
+const EVENT_ONLY_BODY = 'Blocking findings remain open on this pull request. See the summary comment for details.';
+const EVENT_ONLY_MARKER = '<!-- ai-review-event -->';
+const eventOnlyBody = `${EVENT_ONLY_BODY}\n\n${EVENT_ONLY_MARKER}`;
 async function publishReview(octokit, params) {
     const { owner, repo, prNumber, headSha, result } = params;
     if (params.recheckHead !== false &&
@@ -38676,7 +38684,6 @@ async function publishReview(octokit, params) {
         });
         const event = shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT';
         // GitHub requires a body when a review carries no inline comments.
-        const eventOnlyBody = 'Blocking findings remain open on this pull request. See the summary comment for details.';
         try {
             await octokit.rest.pulls.createReview({
                 owner,
@@ -38979,8 +38986,15 @@ async function hasCurrentBlockingReview(octokit, owner, repo, prNumber, headSha)
             pull_number: prNumber,
         });
         const selfLogin = await resolveSelfLogin(octokit);
+        // With a resolved login the author is exact. Without one (a workflow
+        // GITHUB_TOKEN is refused on GET /user) accept only `github-actions[bot]`
+        // whose body is the action's own event-only text: another review bot
+        // must never be mistaken for this action.
         const own = reviews.filter((review) => review.state !== 'PENDING' &&
-            isTrustedAuthor(review.user?.login, selfLogin));
+            (selfLogin
+                ? review.user?.login === selfLogin
+                : review.user?.login === 'github-actions[bot]' &&
+                    (review.body ?? '').startsWith(EVENT_ONLY_BODY)));
         const latest = own[own.length - 1];
         return (latest?.state === 'CHANGES_REQUESTED' && latest.commit_id === headSha);
     }
@@ -43912,9 +43926,13 @@ function readReviewEnvLimits(env) {
 function classifyEmptySelection(args) {
     if (args.filesTotal === 0 || args.filteredCount > 0)
         return 'notice';
-    if (args.includeDirs?.length)
+    const effectiveDirs = (args.includeDirs ?? [])
+        .map(normalizeIncludeDir)
+        .filter((dir) => dir !== '' && dir !== '.');
+    if (effectiveDirs.length > 0)
         return 'warning';
-    const isDefault = args.excludePatterns.join(',') === DEFAULT_EXCLUDE_PATTERNS.join(',');
+    const sorted = (list) => [...list].sort().join(',');
+    const isDefault = sorted(args.excludePatterns) === sorted(DEFAULT_EXCLUDE_PATTERNS);
     return isDefault ? 'notice' : 'warning';
 }
 function applyLegacyFilters(filenames, options) {

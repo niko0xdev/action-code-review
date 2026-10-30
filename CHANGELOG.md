@@ -33,7 +33,10 @@ Questions) lives in `docs/v3-decisions.md`.
   nothing new needs posting and the action's latest review is already
   `CHANGES_REQUESTED` on the current head commit, the body-only review is
   skipped. A new head, a dismissed, `COMMENTED`, or approved earlier review, or
-  new inline comments still submit. Approval gating is unchanged.
+  new inline comments still submit. Approval gating is unchanged. When the
+  token cannot resolve its own login, only `github-actions[bot]` reviews whose
+  body is the action's event-only text count as its own; another review bot
+  never suppresses the event.
 - **An empty file selection is a notice, not a warning,** unless an
   `include-dir` or non-default `exclude-patterns` removed every file.
   `include-dir` now drops a leading `/`, and entries with `..` match nothing and

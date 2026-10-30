@@ -1225,12 +1225,16 @@ describe('review decision on re-runs and fallback', () => {
 	});
 });
 
+const EVENT_TEXT =
+	'Blocking findings remain open on this pull request. See the summary comment for details.';
+
 describe('repeat REQUEST_CHANGES suppression on re-runs', () => {
 	interface FakeReview {
 		id: number;
 		state: string;
 		commit_id: string;
 		user: { login: string };
+		body?: string;
 	}
 	function octokitWith(
 		reviews: FakeReview[],
@@ -1297,9 +1301,77 @@ describe('repeat REQUEST_CHANGES suppression on re-runs', () => {
 	it('skips on the same head when the login is unresolvable and the author is a bot', async () => {
 		const f = finding();
 		const octokit = octokitWith(
-			[prior({ user: { login: 'github-actions[bot]' } })],
+			[
+				prior({
+					user: { login: 'github-actions[bot]' },
+					body: `${EVENT_TEXT}\n\n<!-- ai-review-event -->`,
+				}),
+			],
 			[normalizeCommentId(f)],
 			null
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('still recognises an already-posted event-only review without the marker', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[prior({ user: { login: 'github-actions[bot]' }, body: EVENT_TEXT })],
+			[normalizeCommentId(f)],
+			null
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('does not trust github-actions[bot] reviews without the event-only body when the login is unresolved', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[prior({ user: { login: 'github-actions[bot]' }, body: 'other' })],
+			[normalizeCommentId(f)],
+			null
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+	});
+
+	it('never treats another review bot as this action when the login is unresolved', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[
+				prior({
+					user: { login: 'coderabbitai[bot]' },
+					body: EVENT_TEXT,
+				}),
+			],
+			[normalizeCommentId(f)],
+			null
+		);
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+	});
+
+	it('submits when the review lookup fails', async () => {
+		const f = finding();
+		const octokit = octokitWith([prior()], [normalizeCommentId(f)]);
+		let calls = 0;
+		octokit.rest.pulls.listReviews = vi.fn(async () => {
+			calls += 1;
+			// The first call feeds the duplicate check; the second is the
+			// blocking-review lookup.
+			if (calls > 1) throw new Error('500');
+			return { data: [prior()] };
+		});
+		await run(octokit, f);
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
+	});
+
+	it('ignores a PENDING review when choosing the latest own review', async () => {
+		const f = finding();
+		const octokit = octokitWith(
+			[prior(), prior({ id: 2, state: 'PENDING' })],
+			[normalizeCommentId(f)]
 		);
 		await run(octokit, f);
 		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();

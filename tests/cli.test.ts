@@ -171,6 +171,29 @@ describe('classifyEmptySelection', () => {
 		).toBe('warning');
 	});
 
+	it.each([['.'], ['/'], ['./']])(
+		'is a notice when include-dir %s applies no filter',
+		(dir) => {
+			expect(
+				classifyEmptySelection({
+					...base,
+					filteredCount: 0,
+					includeDirs: [dir],
+				})
+			).toBe('notice');
+		}
+	);
+
+	it('treats the default exclude patterns in any order as the default', () => {
+		expect(
+			classifyEmptySelection({
+				...base,
+				filteredCount: 0,
+				excludePatterns: ['*.txt', '*.md'],
+			})
+		).toBe('notice');
+	});
+
 	it('warns when custom exclude patterns removed every file', () => {
 		expect(
 			classifyEmptySelection({

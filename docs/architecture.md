@@ -239,7 +239,9 @@ Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic alrea
    valid finding, including ones already commented, and is submitted separately
    from the inline comments so it survives the per-comment fallback. When
    nothing new needs posting and the action's latest review is already
-   `CHANGES_REQUESTED` on the same head commit, the body-only event is not
+   `CHANGES_REQUESTED` on the same head commit (author matched by exact login,
+   or, when the login is unresolved, `github-actions[bot]` with the event-only
+   body text), the body-only event is not
    submitted again (one timeline entry per head, not per run); a new head, a
    dismissed, `COMMENTED`, or approved earlier review, or any new inline
    comment still submits. An empty file selection is a notice, except when an
