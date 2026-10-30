@@ -9,7 +9,11 @@ const read = (file: string): string =>
 const workflow = (file: string) => parse(read(file)) as Record<string, any>;
 
 describe('repository workflows', () => {
-	const files = ['.github/workflows/pr-review.yml', '.github/workflows/ci.yml'];
+	const files = [
+		'.github/workflows/pr-review.yml',
+		'.github/workflows/ci.yml',
+		'.github/workflows/dependency-review.yml',
+	];
 
 	it.each(files)('%s pins third-party actions to commit SHAs', (file) => {
 		const uses = [...read(file).matchAll(/^\s*uses:\s*(\S+)/gm)].map(
@@ -26,7 +30,10 @@ describe('repository workflows', () => {
 			const checkout = job.steps.find((s: any) =>
 				String(s.uses).startsWith('actions/checkout@')
 			);
-			expect(checkout.with['persist-credentials']).toBe(false);
+			// Jobs without a checkout (dependency review uses the API) are exempt.
+			if (checkout) {
+				expect(checkout.with['persist-credentials']).toBe(false);
+			}
 		}
 	});
 
@@ -51,5 +58,36 @@ describe('repository workflows', () => {
 		const build = parse(read('package.json')).scripts.build as string;
 		expect(build).not.toContain('npx');
 		expect(read('.github/workflows/ci.yml')).toContain('git diff --exit-code');
+	});
+
+	it('dependency review is read-only, high-severity, and without licence rules', () => {
+		const wf = workflow('.github/workflows/dependency-review.yml');
+		expect(wf.permissions).toEqual({ contents: 'read' });
+		const job = wf.jobs['dependency-review'];
+		expect(job.permissions).toBeUndefined();
+		const step = job.steps.find((s: any) =>
+			String(s.uses).startsWith('actions/dependency-review-action@')
+		);
+		expect(step.with['fail-on-severity']).toBe('high');
+		expect(step.with['comment-summary-in-pr']).toBe('never');
+		expect(step.with['license-check']).toBe(false);
+		expect(step.with['deny-licenses']).toBeUndefined();
+	});
+
+	it('harden-runner is first and audit-only, and stays out of the review job', () => {
+		for (const file of [
+			'.github/workflows/ci.yml',
+			'.github/workflows/dependency-review.yml',
+		]) {
+			for (const job of Object.values<any>(workflow(file).jobs)) {
+				expect(job.steps[0].uses, file).toMatch(
+					/^step-security\/harden-runner@[0-9a-f]{40}$/
+				);
+				expect(job.steps[0].with['egress-policy']).toBe('audit');
+			}
+		}
+		expect(read('.github/workflows/pr-review.yml')).not.toContain(
+			'harden-runner'
+		);
 	});
 });
