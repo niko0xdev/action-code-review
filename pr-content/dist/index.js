@@ -37294,14 +37294,124 @@ __nccwpck_require__.d(__webpack_exports__, {
 var external_node_path_ = __nccwpck_require__(6760);
 ;// CONCATENATED MODULE: external "node:url"
 const external_node_url_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:url");
-;// CONCATENATED MODULE: external "node:buffer"
-const external_node_buffer_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:buffer");
-// EXTERNAL MODULE: external "node:perf_hooks"
-var external_node_perf_hooks_ = __nccwpck_require__(643);
 // EXTERNAL MODULE: ./node_modules/.pnpm/@actions+core@1.11.1/node_modules/@actions/core/lib/core.js
 var core = __nccwpck_require__(474);
 // EXTERNAL MODULE: ./node_modules/.pnpm/@actions+github@5.1.1/node_modules/@actions/github/lib/github.js
 var github = __nccwpck_require__(1533);
+;// CONCATENATED MODULE: ./src/github/actor-filter.ts
+function isBotActor(actor) {
+    return actor.endsWith('[bot]');
+}
+function normalizeActor(actor) {
+    return actor.toLowerCase().replace(/\[bot\]$/, '');
+}
+function isAllowedBot(actor, allowedBots) {
+    const trimmed = allowedBots.trim();
+    if (trimmed === '*')
+        return true;
+    if (!trimmed)
+        return false;
+    const list = trimmed
+        .split(',')
+        .map((b) => b
+        .trim()
+        .toLowerCase()
+        .replace(/\[bot\]$/, ''))
+        .filter(Boolean);
+    return list.includes(normalizeActor(actor));
+}
+function matchesPattern(actor, pattern) {
+    const p = pattern.trim();
+    if (!p)
+        return false;
+    if (p === '*')
+        return true;
+    if (p === '*[bot]')
+        return isBotActor(actor);
+    if (p.endsWith('[bot]'))
+        return normalizeActor(actor) === p.toLowerCase().replace(/\[bot\]$/, '');
+    if (p.includes('*')) {
+        const re = new RegExp(`^${p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`, 'i');
+        return re.test(actor);
+    }
+    return actor.toLowerCase() === p.toLowerCase();
+}
+function isActorAllowed(actor, options) {
+    if (!actor)
+        return { allowed: true };
+    const excludeList = (options.excludeActors ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    for (const pat of excludeList) {
+        if (matchesPattern(actor, pat)) {
+            return {
+                allowed: false,
+                reason: `actor ${actor} matched exclude-actors pattern "${pat}"`,
+            };
+        }
+    }
+    if (isBotActor(actor) && !isAllowedBot(actor, options.allowedBots ?? '')) {
+        return { allowed: false, reason: `bot actor ${actor} not in allowed-bots` };
+    }
+    if (!isBotActor(actor) && excludeList.length === 0)
+        return { allowed: true };
+    // Non-bot actors not in exclude → allowed (no allowlist for humans)
+    return { allowed: true };
+}
+
+;// CONCATENATED MODULE: ./src/modes/detector.ts
+
+const SUPPORTED_EVENTS = new Set([
+    'pull_request',
+    'pull_request_target',
+    'workflow_dispatch',
+    'schedule',
+]);
+const SUPPORTED_ACTIONS = new Set([
+    'opened',
+    'synchronize',
+    'reopened',
+    'ready_for_review',
+]);
+function resolveReviewMode(raw) {
+    if (!raw || raw === 'review')
+        return 'review';
+    if (raw === 'auto' || raw === 'security' || raw === 'agent')
+        return raw;
+    core.warning(`Unknown mode "${raw}" — falling back to "review" (only "auto", "review", "security", "agent" are supported).`);
+    return 'review';
+}
+/**
+ * Opt-in draft skip. Env-only because the V1 input surface is frozen
+ * (docs/v1-interface-contract.md). Safe to skip: `ready_for_review` is a
+ * supported trigger, so the PR is reviewed when it leaves draft.
+ */
+function shouldSkipDraft(draft, env = process.env) {
+    return draft && env.AI_REVIEW_SKIP_DRAFTS === 'true';
+}
+function validateReviewEvent(eventName, action) {
+    if (!eventName)
+        return { supported: true };
+    if (!SUPPORTED_EVENTS.has(eventName)) {
+        return {
+            supported: false,
+            reason: `event "${eventName}" is not pull_request/pull_request_target`,
+        };
+    }
+    if (action && !SUPPORTED_ACTIONS.has(action)) {
+        return {
+            supported: false,
+            reason: `action "${action}" is not one of ${[...SUPPORTED_ACTIONS].join(', ')}`,
+        };
+    }
+    return { supported: true };
+}
+
+;// CONCATENATED MODULE: external "node:buffer"
+const external_node_buffer_namespaceObject = __WEBPACK_EXTERNAL_createRequire(import.meta.url)("node:buffer");
+// EXTERNAL MODULE: external "node:perf_hooks"
+var external_node_perf_hooks_ = __nccwpck_require__(643);
 // EXTERNAL MODULE: ./src/llm/config.ts
 var config = __nccwpck_require__(3950);
 ;// CONCATENATED MODULE: ./src/adapter/engine-config.ts
@@ -37524,300 +37634,6 @@ function mapPrContent(inputs) {
     };
 }
 
-// EXTERNAL MODULE: external "node:fs/promises"
-var promises_ = __nccwpck_require__(1455);
-// EXTERNAL MODULE: external "node:os"
-var external_node_os_ = __nccwpck_require__(8161);
-;// CONCATENATED MODULE: ./src/skills/javascript.ts
-/**
- * Built-in Pi skill for the javascript profile.
- *
- * Generated at build time from skills/javascript/SKILL.md. Stored as a JSON
- * string so backticks, `${...}` interpolation, and other markdown syntax
- * inside the skill body do not conflict with the surrounding template literal.
- */
-const content = "---\nname: javascript\ndescription: Modern JavaScript (ES2022+) code review covering ES module syntax, async/await, destructuring, spread operators, and DOM/browser-specific pitfalls. Use when reviewing plain JavaScript files (.js, .mjs) without TypeScript.\n---\n\n# JavaScript Code Review\n\nWhen reviewing plain JavaScript code, prioritize:\n\n## ES Modules\n\n- **Named vs default exports**: prefer named exports (`export function foo()`). Default exports are harder to rename/refactor.\n- **Import order**: external deps first, then internal modules, then relative (./foo). ESLint `import/order` enforces.\n- **No CommonJS in modules**: don't mix `require()` and `import`. For hybrid projects, use ESM only.\n- **Dynamic imports**: `await import('./module')` for code splitting. Returns a module record with all exports.\n\n## Modern Syntax\n\n- **Optional chaining**: `obj?.prop?.method?.()` — concise null safety. Avoid for deep chains where you might want to handle each null level differently.\n- **Nullish coalescing**: `val ?? default` — when 0/empty/false is valid input. Use instead of `||` for \"missing value\" checks.\n- **Destructuring**: `const { a, b } = obj` — clean extraction. Use `const { a = 'default' } = obj` for default values.\n- **Spread for immutability**: `{ ...obj, key: val }` creates new object. Don't spread + mutate (`{ ...arr }.push(x)` doesn't work).\n- **Template literals**: prefer over string concatenation, especially with multi-line strings. Use `${expr}` for interpolation.\n\n## Async/Await\n\n- **await Promise.all()**: parallel async operations. Sequential `await` calls add latency unnecessarily.\n- **No async in forEach**: `arr.forEach(async () => ...)` doesn't wait. Use `for...of` or `Promise.all(arr.map(async ...))`.\n- **Top-level await in ESM**: works in modules and `package.json` `\"type\": \"module\"`. Avoid in CommonJS.\n- **AbortController**: for cancellable requests `fetch(url, { signal: ac.signal })`. Prevents wasted work on discarded requests.\n\n## Equality\n\n- **`===` and `!==`**: always. Never `==` (unless intentionally leveraging coercion, e.g. `x == null` checks both null and undefined).\n- **No `=== undefined`**: use `typeof x === 'undefined'` for undeclared variables. `=== undefined` throws ReferenceError.\n- **`Object.is`**: when you need exact equality (NaN equals NaN, +0/-0 distinguished). Mostly for internal use.\n\n## Numbers\n\n- **`Number.parseInt` / `Number.parseFloat`**: explicit radix `parseInt(str, 10)` always.\n- **`Number.isNaN`**: check `x !== x` (NaN) or `Number.isNaN(x)`. Don't use global `isNaN` (coerces).\n- **BigInt**: for integers larger than `Number.MAX_SAFE_INTEGER` (2^53 - 1). Don't mix with regular numbers.\n\n## Strings\n\n- **Unicode-safe operations**: `str.length` counts UTF-16 code units, not characters. Use `Array.from(str)` for true character iteration.\n- **`String.prototype.normalize`**: for comparing strings with different Unicode forms (NFC vs NFD).\n- **No regex DoS**: catastrophic backtracking patterns like `(a+)+b` on long input. Use atomic groups or rewrite.\n\n## Arrays\n\n- **Immutability**: `[...arr]` (copy), `arr.filter()`, `arr.map()` — never `arr.push()` if arr should be immutable.\n- **`at()` method**: `arr.at(-1)` for last element (ES2022). Better than `arr[arr.length - 1]`.\n- **`flat()` / `flatMap()`**: for nested arrays. `flatMap` combines map + flat(1).\n- **`find` vs `filter`**: `find` returns first match (or undefined), `filter` returns array. Use `find` when you only need one.\n- **Avoid `splice`**: mutates in place. Prefer `toSpliced()` (ES2023) for immutable splice.\n\n## Classes\n\n- **Private fields**: `#field` syntax for true privacy (ES2022). Not just `_field` convention.\n- **Static blocks**: `static { /* init */ }` for one-time class initialization (ES2022).\n- **Getters/setters sparingly**: can surprise consumers with hidden computation. Prefer explicit methods.\n\n## Common Issues to Flag\n\n- Missing `'use strict'` (ESM has it implicit, but watch for CommonJS).\n- `var` instead of `const`/`let`.\n- `==` instead of `===`.\n- `console.log` left in production code.\n- Missing error handling on async operations.\n- Modifying objects/arrays passed as props.\n- JSON.parse without try/catch.\n- Infinite loops or unbounded recursion.\n- Memory leaks from event listeners not removed.\n- `setTimeout` with string argument (eval-like, never use).\n- `with` statement (forbidden in strict mode).\n";
-/* harmony default export */ const javascript = (content);
-
-;// CONCATENATED MODULE: ./src/skills/kotlin.ts
-/**
- * Built-in Pi skill for the kotlin profile.
- *
- * Generated at build time from skills/kotlin/SKILL.md. Stored as a JSON
- * string so backticks, `${...}` interpolation, and other markdown syntax
- * inside the skill body do not conflict with the surrounding template literal.
- */
-const kotlin_content = '---\nname: kotlin\ndescription: Kotlin (v1.9+) and Jetpack Compose code review covering null safety, coroutines, Compose state, sealed classes, and Android-specific patterns. Use when reviewing Kotlin code (Android, KMP, server-side) for safe APIs, coroutine scopes, and idiomatic Kotlin patterns.\n---\n\n# Kotlin Code Review\n\nWhen reviewing Kotlin code, prioritize:\n\n## Null Safety\n\n- **Nullable vs non-null types**: `String` (non-null) vs `String?` (nullable). Kotlin enforces at compile time.\n- **`?.let { }` for null-safe blocks**: `user?.let { println(it.name) }` — only enters block when non-null.\n- **`?:` Elvis operator**: `name ?: "Unknown"` — fallback when null.\n- **`!!` (force unwrap)**: `name!!` — crashes on null. Avoid, use `requireNotNull(name) { "name required" }` for tests.\n- **`requireNotNull` / `checkNotNull`**: throws `IllegalArgumentException` or `IllegalStateException` with a message. Better than `!!`.\n- **Smart casts after null check**: `if (x != null) x.method()` — Kotlin auto-narrows type. No cast needed.\n\n## Coroutines\n\n- **`CoroutineScope`**: owns coroutines. Tied to lifecycle. `lifecycleScope` in Android UI.\n- **`launch`**: fire coroutine that doesn\'t return value. `async` returns `Deferred` for await-able result.\n- **`awaitAll` / `await`**: parallel = `awaitAll(deferred1, deferred2)`. Sequential is fine when dependencies exist.\n- **Structured concurrency**: `coroutineScope { }` cancels children on exception. Prevents leaks.\n- **Dispatchers**: `Dispatchers.Main` (UI), `Dispatchers.IO` (I/O), `Dispatchers.Default` (CPU). Pick by workload type.\n- **`withContext(Dispatchers.IO)`**: switch dispatcher in suspend function.\n- **`Flow`**: cold stream. `collect` to consume. Hot variants: `StateFlow`, `SharedFlow`.\n- **`viewModelScope`**: ViewModel-bound scope. Auto-cancelled on ViewModel cleared.\n- **Don\'t use `GlobalScope`**: leaks. Always use scoped (viewModelScope, lifecycleScope, custom scope).\n\n## Data Classes\n\n- **`data class`**: auto-generates equals/hashCode/copy/toString. Default for DTOs and value objects.\n- **`copy()` for modification**: `val updated = user.copy(age = 30)`. Immutable by default.\n- **Destructuring**: `val (name, age) = user` — based on declared order. Only `component1..N` for data classes.\n- **`Pair` / `Triple`**: convenient but lack semantics. Prefer named data class for clarity.\n\n## Sealed Classes (ADT)\n\n- **`sealed class`/`sealed interface`**: restricted hierarchy. Compiler knows all subtypes → exhaustive `when`.\n- **Exhaustive `when`**: no `else` needed when all sealed subtypes covered:\n  ```kotlin\n  when (result) {\n    is Loading -> showProgress()\n    is Success -> showData(result.data)\n    is Error -> showError(result.message)\n    // no else — compiler verifies exhaustive\n  }\n  ```\n- **`sealed interface`**: for non-hierarchical types or multiple inheritance.\n\n## Object & Companion\n\n- **`object`**: singleton. Lazy init. Use for stateless utility (`object FileUtils`) or true singletons.\n- **`companion object`**: like Java\'s static. `MyClass.create()` not `MyClass.Companion.create()`.\n- **`@JvmStatic`**: from companion to expose as Java static for consumers.\n\n## Jetpack Compose\n\n- **Composables are functions**: `@Composable fun Greeting(name: String)` — same name, no side effects in body.\n- **Recomposition**: when state changes, only composables reading that state recompose. Don\'t read non-Compose state.\n- **`remember`**: state across recomposition. `remember { mutableStateOf(0) }`.\n- **`rememberSaveable`**: state preserved across config changes (rotation). Bundle-backed.\n- **`derivedStateOf`**: compute cached state. `val canSubmit by remember { derivedStateOf { name.isNotBlank() } }`.\n- **Side effects**: `LaunchedEffect(key) { /* run on mount, cancel on unmount */ }`. `DisposableEffect` for cleanup.\n- **`collectAsStateWithLifecycle`**: collect Flow with lifecycle awareness. For Android UI.\n- **List keys**: `LazyColumn { items(list, key = { it.id }) { item -> Row(item) } }` for stable identity.\n\n## Android Specific\n\n- **ViewModel for state**: keep state in ViewModel, not in composables. Survives config changes.\n- **Repository pattern**: ViewModel → Repository → (Network, DB). DataSource interface for testability.\n- **Hilt / Koin / Manual DI**: pick one. Hilt is Google-recommended for Android.\n- **`@HiltViewModel`**: for ViewModel injection. Use `@Inject lateinit var repo: UserRepo`.\n- **`Flow` from DB**: `userRepo.observeAll(): Flow<List<User>>` — auto-update via Room.\n- **Configuration changes**: any state lives in ViewModel, not Composables.\n\n## Extensions & Scope\n\n- **Extension functions**: `fun String.titleCase(): String = this.split(\' \').map { it.capitalize() }.joinToString(" ")`.\n- **Scope functions**: `let`, `run`, `with`, `apply`, `also`. Use sparingly — easy to abuse.\n- **`apply`**: configure-and-return-self. `val p = Paint().apply { color = RED; strokeWidth = 2f }`.\n- **`also`**: side effect, return self. `val list = mutableList.add(item).also { log("Added $item") }`.\n\n## Common Issues to Flag\n\n- `!!` non-null assertion (almost always wrong).\n- `GlobalScope.launch` (leaks; use scoped).\n- Smart cast not happening because of mutable property — capture in local val.\n- `runBlocking` in coroutine context (blocks event loop).\n- `Array<T>` instead of `List<T>` (arrays are mutable, fixed-size; lists are modern).\n- Java-style getters (`getName()` vs Kotlin property `name`).\n- Missing `data class` for value objects.\n- Comparison with `==` on arrays (reference equality, not content; use `contentEquals`).\n- Lateinit misuse: `lateinit` on non-nullable, non-primitive. Throws on access before init.\n- Calling `runBlocking` in Android app (blocks UI thread).\n';
-/* harmony default export */ const kotlin = (kotlin_content);
-
-;// CONCATENATED MODULE: ./src/skills/nestjs.ts
-/**
- * Built-in Pi skill for the nestjs profile.
- *
- * Generated at build time from skills/nestjs/SKILL.md. Stored as a JSON
- * string so backticks, `${...}` interpolation, and other markdown syntax
- * inside the skill body do not conflict with the surrounding template literal.
- */
-const nestjs_content = "---\nname: nestjs\ndescription: NestJS (v10+) backend code review covering modules, providers, controllers, DTOs, guards, interceptors, exception filters, and lifecycle hooks. Use when reviewing NestJS applications for DI correctness, decorator usage, request scoping, async patterns, and testability.\n---\n\n# NestJS Code Review\n\nWhen reviewing NestJS code, prioritize:\n\n## Dependency Injection\n\n- **Constructor injection preferred** over property injection — easier to test, explicit dependencies.\n- **Use interfaces as tokens** for non-class providers (TypeORM repos, etc.):\n  ```ts\n  @Inject('USER_REPO') private repo: Repository<User>\n  ```\n- **Avoid circular dependencies**: if A imports B and B imports A, use `forwardRef(() => B)` as last resort. Better: refactor to a third module.\n- **Module providers must be exported** to be visible to importing modules.\n\n## Modules\n\n- **Feature modules**: organize by domain (UsersModule, OrdersModule), not by technical layer (ServicesModule, ControllersModule).\n- **Single responsibility**: each module owns one bounded context. Don't import unrelated providers.\n- **Global modules**: only for truly cross-cutting concerns (ConfigModule, LoggerModule). Prefer explicit imports.\n\n## Controllers\n\n- **One route per handler**: `create`, `findAll`, `findOne`, `update`, `remove` — separate `@Get()`, `@Post()` etc.\n- **DTOs + class-validator**: never accept raw `any` or entity classes in body. Validate at the boundary:\n  ```ts\n  class CreateUserDto {\n    @IsEmail() email: string;\n    @IsString() @MinLength(8) password: string;\n  }\n  ```\n- **Response shape**: use `@SerializeOptions()` or interceptor to strip sensitive fields (password hash, internal IDs).\n- **Status codes**: `@HttpCode(201)` for POST creating, `@HttpCode(204)` for DELETE. Default 200/201 is OK but be explicit.\n\n## Guards & Interceptors\n\n- **Guards for auth**: `@UseGuards(AuthGuard)` returns `false`/throws to deny. Use `@SetMetadata()` for custom guards.\n- **Global guards**: register via `APP_GUARD` provider — but only for truly global concerns (auth, rate limit).\n- **Interceptors for cross-cutting**: logging, caching, response transformation. Don't put business logic in interceptors.\n- **Execution context**: in guards/interceptors, get request via `context.switchToHttp().getRequest()`.\n\n## Async Pitfalls\n\n- **Missing await**: NestJS interceptors that return without await lose side effects. Use `from()` rxjs operators or `async/await` consistently.\n- **Promise.all vs sequential**: independent operations → `Promise.all([getA(), getB()])`. Sequential when B depends on A.\n- **Unhandled rejections**: subscribe to streams with proper error handlers; NestJS will swallow unhandled promise rejections silently.\n- **Fire-and-forget**: avoid `void someAsync()` without logging/error handling — exceptions disappear.\n\n## Database & Transactions\n\n- **Transactions**: use `dataSource.transaction(async (manager) => ...)` for multi-step writes. Don't rely on auto-commit behavior.\n- **N+1 queries**: use `relations: ['user', 'posts']` in TypeORM `findOne` or query builder `leftJoinAndSelect`. Watch for nested relations causing more queries.\n- **Pagination**: use `take`/`skip` or cursor-based — never load entire tables into memory.\n- **Connection leaks**: with `DataSource` from `@nestjs/typeorm`, use `OnModuleDestroy` for cleanup. Pool exhaustion → 500 errors.\n\n## Exception Handling\n\n- **Domain exceptions**: create `UserNotFoundException extends NotFoundException` for clarity. NestJS auto-converts to HTTP responses.\n- **Exception filter**: use `@Catch()` for custom error mapping (logging, sanitization).\n- **Don't swallow errors**: catch only to add context, then rethrow with `throw new InternalServerErrorException('Failed to create user', { cause: err })`.\n\n## Lifecycle Hooks\n\n- **`OnModuleInit` / `OnModuleDestroy`**: use for resource setup/teardown. Async supported.\n- **`OnApplicationBootstrap`**: after all modules initialized. Good for warming caches.\n- **`@nestjs/schedule`**: cron jobs via `@Cron()`. Make idempotent — may run on multiple instances.\n\n## Testing\n\n- **Test files co-located**: `user.service.spec.ts` next to `user.service.ts`.\n- **TestingModule**: use `Test.createTestingModule({ providers: [UserService] })` with mock providers.\n- **Mock external dependencies**: TypeORM repos, HTTP clients — never hit real DB/HTTP in unit tests.\n- **E2E with `supertest`**: NestJS provides `Test.createTestingModule` + `app.init()` for full app testing.\n\n## Common Issues to Flag\n\n- `any` type in service methods → defeats TypeScript.\n- Missing `@Injectable()` decorator on providers → DI fails at runtime.\n- `@Catch()` filter without `Error` base class → misses errors.\n- Synchronous DB calls in async controllers → blocks event loop.\n- Hardcoded secrets in `@nestjs/config` → use `ConfigService.get('JWT_SECRET')`.\n- No DTO validation on POST endpoints → security risk.\n";
-/* harmony default export */ const nestjs = (nestjs_content);
-
-;// CONCATENATED MODULE: ./src/skills/nextjs.ts
-/**
- * Built-in Pi skill for the nextjs profile.
- *
- * Generated at build time from skills/nextjs/SKILL.md. Stored as a JSON
- * string so backticks, `${...}` interpolation, and other markdown syntax
- * inside the skill body do not conflict with the surrounding template literal.
- */
-const nextjs_content = "---\nname: nextjs\ndescription: Next.js (v13+) code review covering App Router, Server Components, Server Actions, caching, middleware, and Next.js-specific performance and security pitfalls. Use when reviewing pages, route handlers, layouts, or anything Next.js-specific.\n---\n\n# Next.js Code Review\n\nWhen reviewing Next.js code, prioritize:\n\n## Server vs Client Components\n\n- **Default to Server Components**: add `'use client'` only when component needs state, effects, browser APIs, or event handlers.\n- **Boundary**: `use client` at the smallest possible leaf — never wrap entire pages.\n- **Server-only modules**: import secrets, DB clients, file system only in Server Components. Never in client bundles.\n- **Props serialization**: Server → Client props must be JSON-serializable. No Date, Map, Set, functions, class instances.\n\n## App Router (v13+)\n\n- **Layouts vs Pages**: layouts persist across navigation; pages re-render. Use layouts for shared chrome.\n- **Loading & Error UI**: `loading.tsx` for Suspense boundaries, `error.tsx` for error boundaries. Without them, errors bubble to root.\n- **Route Handlers**: `route.ts` files — never mix GET and POST handlers with side effects; each HTTP verb should be a separate exported function.\n- **Dynamic routes**: `[id]/page.tsx` — params are async (Next.js 15+) — `const { id } = await params;` not `params.id`.\n\n## Data Fetching\n\n- **`fetch()` caching**: Next.js extends `fetch()` with `{ next: { revalidate: 60 } }` or `{ cache: 'force-cache' }`. Plain `fetch()` is **not** cached by default in App Router.\n- **`cache()` wrapper**: for non-fetch deduplication, wrap with `import { cache } from 'react';` then `const getUser = cache(async (id) => ...)`.\n- **Parallel fetching**: `Promise.all([getUser(), getPosts()])` not sequential awaits.\n- **No data fetching in Client Components for static data**: lift to Server Components.\n\n## Server Actions\n\n- **Form actions**: `async function createPost(formData: FormData) { ... }` exported from `'use server'` file or inline.\n- **Always revalidate**: after mutation, call `revalidatePath('/posts')` or `revalidateTag('posts')`.\n- **Auth in Server Actions**: never trust client. Re-check auth on server every time.\n- **Input validation**: validate on server, never trust client form values.\n\n## Performance\n\n- **Image component**: use `next/image` not `<img>`. Required for automatic optimization, lazy loading, responsive sizes.\n- **Font optimization**: use `next/font` to avoid FOUT and large font payloads.\n- **Script loading**: `next/script` with `strategy=\"lazyOnload\"` for third-party scripts.\n- **Dynamic imports**: `const Heavy = dynamic(() => import('./Heavy'), { ssr: false })` for client-only heavy components.\n- **Streaming with Suspense**: wrap slow data fetches in `<Suspense fallback={...}>` so above-the-fold content renders immediately.\n\n## Caching Pitfalls\n\n- **Default cache changed**: Next.js 15 made `fetch()` **non-cached by default**. Opt-in caching required.\n- **Static vs Dynamic**: pages calling `cookies()`, `headers()`, `searchParams` are dynamic. Mark dynamic explicitly or use `dynamic = 'force-static'` carefully.\n- **`unstable_cache`**: for non-fetch data, use `unstable_cache` with explicit tags.\n\n## Security\n\n- **Environment variables**: only `NEXT_PUBLIC_*` exposed to client. Never put secrets in non-prefixed vars.\n- **Middleware**: runs on Edge runtime by default — no Node.js APIs (no `fs`, no native modules). Use for auth checks, redirects, headers.\n- **CSP headers**: set via `next.config.js` `headers()` function. Avoid `'unsafe-inline'` and `'unsafe-eval'`.\n\n## Common Issues to Flag\n\n- `'use client'` directive missing but component uses `useState`/`useEffect` → won't compile.\n- Secrets in `NEXT_PUBLIC_*` env vars → exposed to client bundle.\n- `cookies()` or `headers()` used without `dynamic = 'force-dynamic'` → Next.js 15 errors at build.\n- Missing `revalidatePath` after Server Action → stale UI.\n- Direct DB query in Client Component → bundle bloat + secrets leak.\n";
-/* harmony default export */ const nextjs = (nextjs_content);
-
-;// CONCATENATED MODULE: ./src/skills/nodejs.ts
-/**
- * Built-in Pi skill for the nodejs profile.
- *
- * Generated at build time from skills/nodejs/SKILL.md. Stored as a JSON
- * string so backticks, `${...}` interpolation, and other markdown syntax
- * inside the skill body do not conflict with the surrounding template literal.
- */
-const nodejs_content = "---\nname: nodejs\ndescription: Node.js (v20+) backend code review covering async patterns, streams, error handling, resource management, and runtime safety. Use when reviewing Node.js server code (Express, Fastify, raw http, workers, scripts).\n---\n\n# Node.js Code Review\n\nWhen reviewing Node.js server code, prioritize:\n\n## Async Patterns\n\n- **await or return**: every async function path must either await or return the promise. Missing await = unhandled rejection.\n- **Promise.all for parallel**: independent operations → `Promise.all([fetch(url1), fetch(url2)])`. Sequential awaits when not needed = N× latency.\n- **Promise.allSettled vs all**: use `allSettled` when you want to process partial successes (one failed, others OK). `all` short-circuits on first rejection.\n- **No async in forEach**: `arr.forEach(async () => ...)` doesn't await — use `for...of` or `Promise.all(arr.map(async ...))`.\n- **Floating promises**: TypeScript strict mode flags these with `no-floating-promises`. Add `await` or `.catch()`.\n\n## Error Handling\n\n- **Always handle rejection**: unhandled promise rejections crash Node.js v15+ (`unhandledRejection` policy).\n- **Try/catch vs catch on chain**: `.catch()` on promise chains is fine; `try/catch` for async/await.\n- **Don't swallow**: `catch (e) { /* ignore */ }` — log at minimum. Silent failures are debugging nightmares.\n- **Operational vs programmer errors**: distinguish (`Error` for programmer, custom for user input). Treat user input as recoverable.\n- **Don't throw strings**: `throw \"oops\"` loses stack trace. `throw new Error(\"oops\")` preserves it.\n\n## Streams & Backpressure\n\n- **Pipelines for memory**: `fs.createReadStream('big.csv').pipe(parser).pipe(filter)` — never `fs.readFileSync('big.csv')` (loads entire file).\n- **Backpressure**: when `write()` returns `false`, pause and wait for `drain` event before resuming. Don't ignore backpressure or memory explodes.\n- **Object mode**: streams of objects (not buffers) need `{ objectMode: true }`. Mixing modes crashes silently.\n- **Stream cleanup**: always handle `error`, `end`, `close` events. Unclosed streams leak file descriptors.\n\n## Resource Management\n\n- **Always cleanup**: timers (`clearInterval`), handles (`fileHandle.close()`), connections (`socket.destroy()`). Use `try/finally` or `using` syntax (TC39 Stage 3).\n- **Connection pools**: `pg.Pool`, `http.Agent`, `redis.createClient` — call `.end()` on shutdown.\n- **Memory leaks**: closures holding large objects, event listeners never removed, growing arrays in long-lived scopes.\n- **Heap snapshots**: for diagnosis, use `v8.writeHeapSnapshot()` then load in Chrome DevTools.\n\n## Event Loop & Concurrency\n\n- **Worker threads for CPU-bound**: crypto, image processing, large data transforms. Main thread is single-threaded — long sync work blocks all I/O.\n- **`cluster` for multi-core**: scale beyond single process. Use `cluster.fork()` + shared port via `server.listen({ reusePort: true })`.\n- **Don't block event loop**: sync file I/O, sync crypto, large JSON.parse on hot paths → freeze server. Use async APIs or workers.\n- **`process.nextTick` vs `setImmediate`**: `nextTick` runs before I/O callbacks (can starve I/O); `setImmediate` runs on next event loop iteration. Default to `setImmediate` unless you specifically need priority.\n\n## HTTP Servers\n\n- **Body size limits**: `express.json({ limit: '100kb' })` — unlimited body is DoS vulnerability.\n- **Timeouts**: `server.headersTimeout`, `keepAliveTimeout`, `requestTimeout`. Default Node.js has no request timeout — set explicitly.\n- **Graceful shutdown**: handle `SIGTERM`/`SIGINT`, stop accepting new connections, drain in-flight, close DB pool. Otherwise K8s rolling restarts lose requests.\n- **CORS**: don't use `cors()` with `origin: '*'` for credentialed requests (browsers block). Whitelist specific origins.\n\n## Security\n\n- **Never eval**: `eval()`, `Function()` constructor, `vm.runInThisContext()` with user input = RCE.\n- **Path traversal**: `path.join(baseDir, userInput)` — if `userInput = '../../etc/passwd'`, escapes. Validate resolved path is under baseDir.\n- **SQL injection**: never string concat. Use parameterized queries (`pg.query('... $1', [val])`).\n- **Prototype pollution**: `Object.assign(target, JSON.parse(input))` — if input has `__proto__`, pollutes Object prototype. Sanitize keys.\n- **Crypto**: use `crypto.randomBytes(32)` for tokens, never `Math.random()`. Use `crypto.timingSafeEqual` for comparison.\n\n## Performance\n\n- **Streaming responses**: `res.write(chunk)` incrementally. `res.send(bigArray)` loads entire array in memory.\n- **Compression**: `compression()` middleware for text responses. ~70% size reduction.\n- **Caching**: `Cache-Control` headers + `ETag` for client-side caching. Server-side: Redis for shared state.\n- **Database indexes**: check `EXPLAIN ANALYZE` for slow queries. Missing index on `WHERE` columns = full table scan.\n- **Connection pooling**: `pg.Pool({ max: 10 })` not `new Client()` per request.\n\n## Common Issues to Flag\n\n- `await` in `forEach` (silent no-op).\n- Unhandled promise rejection (will crash Node.js).\n- `fs.readFileSync` on large files (memory exhaustion).\n- No body size limit on POST endpoints.\n- Sync work in async handlers (blocks event loop).\n- Hardcoded secrets in env vars at module load time (use runtime config).\n- Missing `Content-Security-Policy` headers.\n";
-/* harmony default export */ const nodejs = (nodejs_content);
-
-;// CONCATENATED MODULE: ./src/skills/python.ts
-/**
- * Built-in Pi skill for the python profile.
- *
- * Generated at build time from skills/python/SKILL.md. Stored as a JSON
- * string so backticks, `${...}` interpolation, and other markdown syntax
- * inside the skill body do not conflict with the surrounding template literal.
- */
-const python_content = '---\nname: python\ndescription: Python (3.11+) code review covering PEP 8 style, type hints, async patterns, packaging with pyproject.toml/uv, and Pythonic idioms. Use when reviewing Python code (FastAPI, Django, Flask, scripts, ML code) for correctness, idioms, and modern best practices.\n---\n\n# Python Code Review\n\nWhen reviewing Python code, prioritize:\n\n## Style (PEP 8)\n\n- **Line length**: 88-100 chars (Black/Ruff default). Wrap long lines.\n- **Naming**: `snake_case` functions/variables, `PascalCase` classes, `UPPER_SNAKE` constants, `_leading_underscore` private.\n- **Imports**: stdlib → third-party → local. One import per line for `from x import y, z` is OK; alphabetical sort.\n- **Docstrings**: PEP 257 format. First line imperative (`"""Fetch user by ID."""`). Use Google or NumPy style consistently.\n- **Type hints**: PEP 484. Use `from __future__ import annotations` for forward references.\n\n## Type Hints\n\n- **`typing` module**: `list[int]` (not `List[int]`) in 3.9+. Use `|` for unions: `int | str` (3.10+) not `Union[int, str]`.\n- **`Optional[X]` → `X | None`**: 3.10+ syntax. Backward compat: stick to `Optional` for public APIs.\n- **Generic**: `def first(items: list[T]) -> T | None`. Constrain with `T: Comparable` if needed.\n- **TypedDict**: `class User(TypedDict): id: int; name: str` for dict-shaped data.\n- **`Self` type**: 3.11+ `def with_name(self, name: str) -> Self` for fluent methods.\n\n## Async\n\n- **`async def` + `await`**: I/O-bound operations. CPU-bound work → `multiprocessing` or `ProcessPoolExecutor`.\n- **Don\'t mix sync/await**: blocking calls in async functions freeze event loop. Use `asyncio.to_thread(blocking_fn)` for unavoidable sync I/O.\n- **`asyncio.gather`**: parallel awaits. Sequential `await` when not needed = N× latency.\n- **`TaskGroup`**: 3.11+ structured concurrency. Replaces `gather` for most cases. Auto-cancels on exception.\n- **No `asyncio.run` inside `asyncio.run`**: "asyncio.run() cannot be called from a running event loop". Use main entry point only.\n\n## Imports\n\n- **No `from x import *`**: pollutes namespace. Use explicit imports.\n- **Circular imports**: refactor with TYPE_CHECKING:\n  ```python\n  from typing import TYPE_CHECKING\n  if TYPE_CHECKING:\n      from .models import User\n  ```\n- **Relative vs absolute**: prefer absolute imports for clarity. Relative only within package.\n\n## Async/Sync Mistakes\n\n- **Forgotten await**: `result = some_async_fn()` returns coroutine, not value. Add `await`. Tests catch this with `RuntimeWarning: coroutine was never awaited`.\n- **Sync I/O in async**: `requests.get()` in async def freezes loop. Use `httpx.AsyncClient()` or `aiohttp`.\n- **Missing `await` on async context managers**: `async with db.session():` not `with db.session():` (latter is sync).\n\n## Packaging\n\n- **`pyproject.toml` (PEP 621)**: package metadata, dependencies (`[project] dependencies`), tool config (Ruff, pytest, mypy sections).\n- **uv for fast installs**: `uv pip install -r requirements.txt` or `uv sync` (with `uv.lock`).\n- **Lock files**: uv.lock, poetry.lock, pdm.lock — commit these for reproducible builds.\n- **Editable installs**: `uv pip install -e .` for development. Don\'t ship editable installs.\n- **Entry points**: `[project.scripts]` in pyproject.toml for CLI commands.\n\n## Testing\n\n- **`pytest`**: de facto standard. Test files: `test_*.py` or `*_test.py`. Functions: `def test_X():`.\n- **Fixtures**: `@pytest.fixture` for setup. Use `conftest.py` for shared fixtures across files.\n- **Parametrize**: `@pytest.mark.parametrize("input,expected", [...])` for table-driven tests.\n- **`assert` is fine**: pytest assertions are runtime-checked. Don\'t use `unittest.TestCase.assertEqual`.\n- **Async tests**: `pytest-asyncio` plugin. `@pytest.mark.asyncio` decorator or `asyncio_mode=auto`.\n\n## Pythonic Idioms\n\n- **List/dict/set comprehensions**: prefer over `map`/`filter` when readable. `[x*2 for x in nums if x > 0]`.\n- **`enumerate` over `(i, x)` tuple unpacking**: `for i, val in enumerate(items):`.\n- **`zip` for parallel iteration**: `for a, b in zip(list_a, list_b):`.\n- **`with` statement**: for all resource management (files, locks, connections). No `try/finally` boilerplate.\n- **`isinstance` over `type(x) == Foo`**: respects subclasses.\n- **`dataclasses`** (3.7+): `@dataclass class Point: x: int; y: int` instead of `__init__` boilerplate.\n- **Match statement** (3.10+): `match shape: case Circle(r=r): ...`. Like switch but with destructuring.\n\n## Common Issues to Flag\n\n- Mutable default arguments: `def f(x=[]):` — shared across calls. Use `def f(x=None): x = x or []`.\n- Bare `except:` — catches everything including KeyboardInterrupt. Use `except Exception:` or specific.\n- `print()` left in production code.\n- `os.path.join` with absolute path argument → ignores earlier args: `os.path.join(\'/base\', \'/abs\')` = `/abs`.\n- String formatting with `+` instead of f-strings.\n- Shadowing builtins (`list`, `dict`, `type`, `id`).\n- `global` / `nonlocal` without good reason.\n- `== None` instead of `is None`.\n- Try/except that\'s too broad or swallows errors silently.\n';
-/* harmony default export */ const python = (python_content);
-
-;// CONCATENATED MODULE: ./src/skills/react.ts
-/**
- * Built-in Pi skill for the react profile.
- *
- * Generated at build time from skills/react/SKILL.md. Stored as a JSON
- * string so backticks, `${...}` interpolation, and other markdown syntax
- * inside the skill body do not conflict with the surrounding template literal.
- */
-const react_content = '---\nname: react\ndescription: React (v18+) best practices and common issues for code review. Use when reviewing React components, hooks, state management, JSX, and component lifecycle. Highlights hook rules, state synchronization, re-render patterns, performance anti-patterns, and accessibility.\n---\n\n# React Code Review\n\nWhen reviewing React code, prioritize these categories:\n\n## Hook Rules (CRITICAL)\n\n- **Rules of Hooks**: hooks called only at top level (no loops, conditions, nested functions). Verify with ESLint `react-hooks/rules-of-hooks`.\n- **Dependency arrays**: `useEffect`, `useMemo`, `useCallback`, `useEffectEvent` must list every reactive value used inside. Missing deps → stale closures or infinite loops.\n- **Stale closures**: `useEffect` that captures state without deps causes UI desync with state.\n- **Effect cleanup**: subscriptions, intervals, event listeners must return cleanup function or call `.unsubscribe()` / `clearInterval()`.\n\n## State Management\n\n- **State updates are async**: never read state immediately after `setState()` — use `useEffect` or compute from event.\n- **Object/array state**: mutate via spread (`{...state, key: val}`) not direct assignment — React uses Object.is for re-render detection.\n- **Derived state**: compute during render (`const filtered = items.filter(...)`), don\'t store in `useState`. Storing derived state causes sync bugs.\n- **Reducer for complex updates**: prefer `useReducer` over multiple `useState` when updates are interdependent.\n\n## Performance\n\n- **Memoization**: `React.memo`, `useMemo`, `useCallback` only when (a) reference equality matters (passed to memoized child, used in deps) or (b) computation is expensive. Premature memoization adds overhead.\n- **Key prop**: stable, unique keys for list items. Index keys are OK only if list is static; avoid for reorderable lists.\n- **Lazy init**: `useState(() => expensiveComputation())` for costly initial values.\n- **Refs for non-render values**: use `useRef` for timers, DOM nodes, previous values — avoid storing in state (causes extra renders).\n\n## Re-render Traps\n\n- **Inline objects/functions**: `<Child style={{ color: \'red\' }} />` creates new object each render → child re-renders. Hoist or memoize.\n- **Context value identity**: `const value = { a, b }` in render causes all consumers to re-render. Wrap in `useMemo` or split into multiple contexts.\n- **State colocation**: keep state as local as possible. Lift only when siblings need it.\n\n## Accessibility\n\n- Semantic HTML (`button` not `div onClick`, `nav` for navigation).\n- `aria-*` attributes only when no semantic equivalent.\n- Form labels (`<label htmlFor>` or wrap input).\n- Focus management on modal/dialog open.\n- `alt` text on images (empty `alt=""` for decorative).\n\n## JSX Pitfalls\n\n- `className` not `class`.\n- `htmlFor` not `for`.\n- Self-close void elements (`<img />`, `<br />`, `<input />`).\n- Inline event handlers are camelCase (`onClick`, `onChange`).\n- `key` must be unique among siblings and stable across renders.\n- Boolean attributes need explicit values (`disabled={true}`, not `disabled="true"`).\n\n## Common Issues to Flag\n\n- `useEffect` with no cleanup for subscriptions/timers → memory leak.\n- `useState` storing derived/computed values → sync bug.\n- Inline function passed to memoized child → child re-renders every render.\n- Direct DOM mutation in React → fights React\'s reconciliation.\n- Conditional hooks → Rules of Hooks violation, component breaks unpredictably.\n- `setState` in render (without condition) → infinite re-render loop.\n';
-/* harmony default export */ const react = (react_content);
-
-;// CONCATENATED MODULE: ./src/skills/swift.ts
-/**
- * Built-in Pi skill for the swift profile.
- *
- * Generated at build time from skills/swift/SKILL.md. Stored as a JSON
- * string so backticks, `${...}` interpolation, and other markdown syntax
- * inside the skill body do not conflict with the surrounding template literal.
- */
-const swift_content = '---\nname: swift\ndescription: Swift (v5.9+) and SwiftUI code review covering type safety, optionals, value vs reference semantics, concurrency (async/await + actors), and SwiftUI view lifecycle. Use when reviewing iOS/macOS code for memory leaks, retain cycles, force unwraps, and modern Swift concurrency.\n---\n\n# Swift Code Review\n\nWhen reviewing Swift code, prioritize:\n\n## Optionals\n\n- **Avoid force unwraps (`!`)**: `foo!`, `try!`, `as!`. Replace with `guard let foo = foo else { return }` or `if let foo = foo`.\n- **`guard let` for early exit**: when unwrap fail means "stop, no recovery possible". Reduces nesting.\n- **`if let` for branching**: when unwrap fail has different behavior than success.\n- **Optional chaining**: `user?.name?.first` — short-circuits on nil. Don\'t overuse for deep chains (silent failures).\n- **Nil coalescing**: `name ?? "Unknown"` — fallback only on nil.\n- **`?? fatalError`**: `user ?? fatalError("user required")` — only at known-good state (e.g., after auth).\n\n## Memory & Reference Semantics\n\n- **Value types (struct, enum)**: default. Copy semantics. No retain cycles to worry about.\n- **Reference types (class)**: when identity matters. Watch for retain cycles.\n- **Retain cycles with closures**: `[weak self]` for `self`-capturing closures stored on `self`:\n  ```swift\n  someHandler = { [weak self] in\n    self?.doThing()\n  }\n  ```\n- **`@MainActor` closures**: long-running work in `@MainActor` blocks main thread. Move off main for I/O.\n- **Delegate weak references**: `weak var delegate: SomeDelegate?` — delegate protocols are class-bound, must be weak.\n\n## Type System\n\n- **`enum` for finite states**: not just for "this OR that" but for state machines with associated values:\n  ```swift\n  enum NetworkState {\n    case idle\n    case loading\n    case success(Data)\n    case failure(Error)\n  }\n  ```\n- **Protocol composition**: `protocol P: A, B {}` for small, focused protocols (composition over inheritance).\n- **`any` keyword** (5.7+): `let shape: any Drawable = Circle()` — disambiguates existential types.\n- **Generics**: `func fetch<T: Decodable>(_ type: T.Type)`. Constrain with associated types: `protocol Repository { associatedtype Model }`.\n- **Opaque types** (`some`): `func makeView() -> some View`. Hides concrete type, preserves type identity.\n\n## Concurrency\n\n- **`async`/`await`**: basic async work. `func fetch() async throws -> Data`.\n- **`Task { }`**: fire-and-forget. Captures context (MainActor, etc.) if inside `Task.detached` for outside.\n- **`@MainActor`**: UI work on main. View bodies are implicit `@MainActor`.\n- **`async let`**: parallel awaits. `async let a = fetchA(); async let b = fetchB(); let result = try await (a, b)`.\n- **`AsyncSequence`**: streams. `for await item in stream { }`.\n- **Actors**: `actor Counter { var value: int = 0; func increment() { value += 1 } }`. Mutex under the hood. Prevents data races.\n- **Sendable**: types safe to share across concurrency domains. Mark `struct` (value, automatic) or `@unchecked Sendable` (you guarantee safety).\n- **Async/await vs GCD**: prefer async/await. Don\'t mix in new code. DispatchQueue.global().async {} is legacy.\n\n## SwiftUI\n\n- **View bodies are pure**: no side effects, no expensive computation. Use `let view = ...` outside body or in init.\n- **`@State`**: source of truth owned by view. Mutations must come from view or via bindings.\n- **`@Binding`**: two-way connection. `TextField(text: $name)` requires `@State var name`.\n- **`@StateObject`**: owns an observable. Lazy once. `@ObservedObject` for injection.\n- **`@EnvironmentObject`**: shared via `.environmentObject(...)`. Resolved by type. Useful for app-wide state.\n- **`onAppear { }` vs `task { }`**: `task` for async work, `onAppear` for sync side effects. `task` automatically cancels when view disappears.\n- **List identity**: `List(items, id: \\.id)` — stable, unique IDs required. Index keys cause animation glitches.\n\n## Error Handling\n\n- **`throws` + `do/catch`**: for recoverable errors. `try`/`try?`/`try!`.\n- **Custom error types**: `enum NetworkError: Error { case badStatus(Int); case decoding }` for typed errors.\n- **`Result` type**: for callbacks `completion: (Result<Data, Error>) -> Void`. Less common with async/await.\n- **Don\'t ignore errors**: `try?` swallows error silently. Use only when failure genuinely doesn\'t matter.\n\n## Property Wrappers (iOS 14+ / SwiftUI)\n\n- **`@AppStorage`**: UserDefaults-backed. Persists across launches.\n- **`@SceneStorage`**: per-scene state, restored on relaunch.\n- **`@FocusedValue` / `@FocusedBinding`**: focus-driven values, advanced.\n- **`@FetchRequest`**: Core Data in SwiftUI. Sort and filter declaratively.\n\n## Common Issues to Flag\n\n- Force unwrap `!` on `URL(string:)` from user input → crash if invalid.\n- Retain cycle from strong `self` capture in escaping closure → memory leak.\n- `@StateObject` vs `@ObservedObject` confusion → view re-initialization bugs.\n- Missing `[weak self]` in `NotificationCenter` observers → leak.\n- `DispatchQueue.main.async { self.doThing() }` when `doThing` is `@MainActor` → warning in Swift 5.10+.\n- Unbounded `URLSession.dataTask` (no resume? no completion?) → never completes.\n- Cache pollution: `NSCache` with no cost limit + unbounded object keys → memory bloat.\n- Hardcoded API URLs (use `URL(string:)` with constants from config).\n';
-/* harmony default export */ const swift = (swift_content);
-
-;// CONCATENATED MODULE: ./src/skills/typescript.ts
-/**
- * Built-in Pi skill for the typescript profile.
- *
- * Generated at build time from skills/typescript/SKILL.md. Stored as a JSON
- * string so backticks, `${...}` interpolation, and other markdown syntax
- * inside the skill body do not conflict with the surrounding template literal.
- */
-const typescript_content = "---\nname: typescript\ndescription: TypeScript (v5+) code review covering type system correctness, strict mode usage, generic constraints, and avoiding `any`/`as` escape hatches. Use when reviewing TypeScript code for type safety, narrowing, and proper use of advanced type features.\n---\n\n# TypeScript Code Review\n\nWhen reviewing TypeScript code, prioritize:\n\n## Strict Mode\n\n- **`strict: true`**: enables `strictNullChecks`, `noImplicitAny`, `strictFunctionTypes`, `strictBindCallApply`, `alwaysStrict`. Non-negotiable for new code.\n- **`noUncheckedIndexedAccess`**: `arr[i]` returns `T | undefined`, forcing null check. Catches off-by-one bugs.\n- **`exactOptionalPropertyTypes`**: `{ x?: number }` is `number | undefined` only if explicitly set. Distinguishes \"not set\" from \"explicitly undefined\".\n- **`noImplicitOverride`**: subclasses must mark overridden methods with `override` keyword.\n\n## Avoid `any` and Unsafe Casts\n\n- **`any`**: disables type checking. Use `unknown` for values of uncertain type and narrow with type guards.\n- **`as` casts**: bypasses type system. Prefer type guards (`if (typeof x === 'string')`) or branded types.\n- **`as unknown as T`**: double cast to force compatibility. Almost always a code smell — the types genuinely don't match.\n- **`@ts-ignore` / `@ts-expect-error`**: escape hatches. Add a comment explaining WHY. Never use to silence legitimate errors.\n\n## Generics\n\n- **Constraints**: `function fn<T extends keyof X>(key: T)` ensures `key` is a valid key of `X`. Without constraint, `T` could be anything.\n- **Multiple type parameters**: usually a sign the function does too much. Consider splitting.\n- **`infer` in conditional types**: `ReturnType<typeof fn>` infers return type. Powerful but complex — document carefully.\n- **Default type parameters**: `T = SomeDefault` for backward-compatible generic APIs.\n\n## Type Narrowing\n\n- **Discriminated unions**: `{ kind: 'circle'; radius: number } | { kind: 'square'; side: number }` — TS narrows on `kind` discriminant.\n- **`switch` exhaustiveness**: `const _: never = shape;` after switch ensures all cases handled. Add to add new variants = compile error.\n- **Type predicates**: `function isString(x: unknown): x is string { return typeof x === 'string'; }` — custom guards for narrowing.\n- **Assertion functions**: `function assertDefined<T>(x: T | undefined): asserts x is T` — throws if false, narrows after.\n\n## Null Safety\n\n- **`!` non-null assertion**: bypasses null check. Use sparingly — better to handle the null case explicitly. OK for \"I just checked this\" cases with comments.\n- **Optional chaining**: `obj?.prop?.method()` — returns undefined if any link is null. Safe but can mask bugs (silent failures).\n- **Nullish coalescing**: `x ?? defaultValue` — falls back only on null/undefined, NOT on `0`, `''`, `false`. Use this over `||` when 0/empty is valid.\n\n## Interfaces vs Types\n\n- **`interface`**: for object shapes that may be extended. Supports declaration merging.\n- **`type`**: for unions, intersections, mapped types, conditional types. More flexible.\n- **Pick/Omit/Partial/Required**: utility types for transforming existing types.\n- **`Record<K, V>`**: typed object with keys `K` and values `V`. `Record<string, Foo>` is shorthand for `{ [key: string]: Foo }`.\n\n## Performance (Type-only)\n\n- **Type-only imports**: `import type { Foo } from 'bar';` ensures `Foo` is erased at compile time. Saves bundle size for types.\n- **`isolatedModules`**: ensures each file can be transpiled independently. Required for `tsc --isolatedModules` and tools like esbuild/swc.\n- **Avoid type computation in hot paths**: types are erased but complex conditional types slow tsc. Cache computed types as named aliases.\n\n## Common Issues to Flag\n\n- `any` (especially in function signatures, not just variables).\n- `as` casts without justification.\n- Missing return type on exported functions (forces callers to type-narrow).\n- Non-null assertion `!` without preceding null check.\n- `// eslint-disable-next-line` without comment explaining why.\n- Type assertion in test files (`expect(x as Foo)`) — usually indicates test type doesn't match source.\n- `Object`/`Function` types (use specific types).\n- Implicit `any` from untyped dependencies (`@types/...` missing).\n\n## Migration Tips (JS → TS)\n\n- Start with `allowJs: true` and `checkJs: false` to type-check incrementally.\n- Use `// @ts-expect-error` while fixing errors one file at a time.\n- Add types to dependencies first (`@types/node`, `@types/express`).\n- Use `unknown` instead of `any` during migration; narrow with guards.\n";
-/* harmony default export */ const typescript = (typescript_content);
-
-;// CONCATENATED MODULE: ./src/skills/registry.ts
-/**
- * Built-in skill content for each detected tech-stack profile.
- *
- * Skills are Pi's progressive-disclosure context: Pi loads their descriptions
- * at startup (small, in system prompt) and only reads the full body when a
- * task matches. Shipping these as compiled-in strings keeps the bundle
- * self-contained — no external file reads at runtime.
- *
- * Each entry is the full body of a `SKILL.md` file (frontmatter + markdown),
- * keyed by `ProfileId`. The runtime copies the relevant entries to
- * `${PI_CODING_AGENT_DIR}/skills/<id>/SKILL.md` after profile detection so
- * Pi can discover them as ordinary project skills.
- */
-
-
-
-
-
-
-
-
-
-const BUILT_IN_SKILLS = Object.freeze({
-    react: react,
-    nextjs: nextjs,
-    nestjs: nestjs,
-    nodejs: nodejs,
-    typescript: typescript,
-    javascript: javascript,
-    python: python,
-    swift: swift,
-    kotlin: kotlin,
-});
-/** All ProfileIds that have a built-in skill. */
-function profilesWithSkills() {
-    return Object.keys(BUILT_IN_SKILLS);
-}
-
-;// CONCATENATED MODULE: ./src/adapter/runtime.ts
-
-
-
-
-function buildPiRuntimeModelsJson(config) {
-    return JSON.stringify({
-        providers: {
-            [config.provider]: {
-                name: config.provider,
-                baseUrl: config.baseUrl,
-                api: 'openai-completions',
-                compat: {
-                    supportsDeveloperRole: false,
-                    supportsReasoningEffort: false,
-                },
-                models: [
-                    {
-                        id: config.model,
-                        name: config.model,
-                        reasoning: false,
-                        input: ['text'],
-                        contextWindow: 128_000,
-                        maxTokens: 16_384,
-                        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-                    },
-                ],
-            },
-        },
-    }, null, 2);
-}
-/**
- * Pi settings for a review run. Auto-compaction is off: Pi text mode prints
- * only the last message in its state, and compaction (triggered once the
- * context passes `contextWindow - 16384`) replaces that state after the final
- * answer. A review that read many files then exited 0 with empty stdout and
- * surfaced as "the model returned an empty assistant message". With compaction
- * off, a real overflow is reported by the provider as an explicit error.
- */
-function buildPiRuntimeSettingsJson() {
-    return JSON.stringify({ compaction: { enabled: false } }, null, 2);
-}
-/**
- * Write built-in skill SKILL.md files for each detected profile into the
- * Pi config dir. Pi auto-discovers skills at `${PI_CODING_AGENT_DIR}/skills/`
- * recursively, so dropping one directory per profile is enough.
- *
- * Skills are progressive-disclosure: Pi loads their descriptions into the
- * system prompt (~1024 chars each), but only reads the body when the task
- * matches. The full bodies are stored as compiled-in TypeScript strings
- * (see `src/skills/registry.ts`) so we ship self-contained — no external
- * file reads at action runtime.
- */
-async function writeSkillsForProfiles(configDir, profiles) {
-    for (const profile of profiles) {
-        const content = BUILT_IN_SKILLS[profile];
-        if (!content)
-            continue;
-        const skillDir = (0,external_node_path_.join)(configDir, 'skills', profile);
-        await (0,promises_.mkdir)(skillDir, { recursive: true });
-        await (0,promises_.writeFile)((0,external_node_path_.join)(skillDir, 'SKILL.md'), content, 'utf8');
-    }
-}
-async function preparePiRuntimeConfig(config, options) {
-    const configDir = await (0,promises_.mkdtemp)((0,external_node_path_.join)((0,external_node_os_.tmpdir)(), 'acr-pi-'));
-    try {
-        await (0,promises_.mkdir)(configDir, { recursive: true });
-        await (0,promises_.writeFile)((0,external_node_path_.join)(configDir, 'models.json'), buildPiRuntimeModelsJson(config), 'utf8');
-        await (0,promises_.writeFile)((0,external_node_path_.join)(configDir, 'settings.json'), buildPiRuntimeSettingsJson(), 'utf8');
-        if (options?.profiles && options.profiles.length > 0) {
-            await writeSkillsForProfiles(configDir, options.profiles);
-        }
-    }
-    catch (error) {
-        await (0,promises_.rm)(configDir, { recursive: true, force: true });
-        throw error;
-    }
-    return {
-        configDir,
-        async cleanup() {
-            await (0,promises_.rm)(configDir, { recursive: true, force: true });
-        },
-    };
-}
-// Re-export for tests
-
-
-;// CONCATENATED MODULE: ./src/context/files.ts
-/**
- * Default ignore rules (spec §32). Generated artifacts, snapshots,
- * lockfiles and vendor code never consume review context. Dependency
- * manifests stay reviewable even though lockfiles do not, unless
- * `AI_REVIEW_INCLUDE_LOCKFILES=true` opts lockfiles back in.
- */
-const DEFAULT_IGNORE_PATTERNS = [
-    /node_modules\//,
-    /(^|\/)dist\//,
-    /(^|\/)build\//,
-    /(^|\/)coverage\//,
-    /(^|\/)\.next\//,
-    /(^|\/)vendor\//,
-    /(^|\/)generated\//,
-    /\.min\.js$/,
-    /\.map$/,
-    /\.snap$/,
-    /(^|\/)__snapshots__\//,
-];
-const LOCKFILES = new Set([
-    'package-lock.json',
-    'pnpm-lock.yaml',
-    'yarn.lock',
-    'uv.lock',
-    'poetry.lock',
-    'Cargo.lock',
-    'composer.lock',
-    'Gemfile.lock',
-]);
-/** Dependency manifests are always reviewable (spec §32). */
-const MANIFESTS = new Set([
-    'package.json',
-    'pyproject.toml',
-    'Podfile',
-    'Package.swift',
-    'build.gradle',
-    'build.gradle.kts',
-    'settings.gradle',
-    'settings.gradle.kts',
-]);
-function isLockfile(path) {
-    const base = path.split('/').pop() ?? path;
-    return LOCKFILES.has(base);
-}
-function isReviewable(file, env = process.env) {
-    if (MANIFESTS.has(file.filename)) {
-        return true;
-    }
-    if (isLockfile(file.filename)) {
-        return env.AI_REVIEW_INCLUDE_LOCKFILES === 'true';
-    }
-    return !DEFAULT_IGNORE_PATTERNS.some((pattern) => pattern.test(file.filename));
-}
-/**
- * Filter to reviewable files, then keep the highest-impact ones when the
- * count exceeds the cap (spec §31: prioritize source over generated).
- */
-function prioritizeFiles(files, maxFiles) {
-    return files
-        .filter((file) => isReviewable(file))
-        .sort((a, b) => b.changes - a.changes)
-        .slice(0, maxFiles);
-}
-
 ;// CONCATENATED MODULE: ./src/context/pr.ts
 async function fetchPrContext(octokit, repository, prNumber, options = {}) {
     const pageSize = options.pageSize ?? 100;
@@ -37899,70 +37715,6 @@ async function fetchFilePage(octokit, repository, prNumber, pageSize, page) {
     }
 }
 
-// EXTERNAL MODULE: ./src/context/prelint.ts
-var prelint = __nccwpck_require__(7154);
-;// CONCATENATED MODULE: ./src/github/actor-filter.ts
-function isBotActor(actor) {
-    return actor.endsWith('[bot]');
-}
-function normalizeActor(actor) {
-    return actor.toLowerCase().replace(/\[bot\]$/, '');
-}
-function isAllowedBot(actor, allowedBots) {
-    const trimmed = allowedBots.trim();
-    if (trimmed === '*')
-        return true;
-    if (!trimmed)
-        return false;
-    const list = trimmed
-        .split(',')
-        .map((b) => b
-        .trim()
-        .toLowerCase()
-        .replace(/\[bot\]$/, ''))
-        .filter(Boolean);
-    return list.includes(normalizeActor(actor));
-}
-function matchesPattern(actor, pattern) {
-    const p = pattern.trim();
-    if (!p)
-        return false;
-    if (p === '*')
-        return true;
-    if (p === '*[bot]')
-        return isBotActor(actor);
-    if (p.endsWith('[bot]'))
-        return normalizeActor(actor) === p.toLowerCase().replace(/\[bot\]$/, '');
-    if (p.includes('*')) {
-        const re = new RegExp(`^${p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`, 'i');
-        return re.test(actor);
-    }
-    return actor.toLowerCase() === p.toLowerCase();
-}
-function isActorAllowed(actor, options) {
-    if (!actor)
-        return { allowed: true };
-    const excludeList = (options.excludeActors ?? '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    for (const pat of excludeList) {
-        if (matchesPattern(actor, pat)) {
-            return {
-                allowed: false,
-                reason: `actor ${actor} matched exclude-actors pattern "${pat}"`,
-            };
-        }
-    }
-    if (isBotActor(actor) && !isAllowedBot(actor, options.allowedBots ?? '')) {
-        return { allowed: false, reason: `bot actor ${actor} not in allowed-bots` };
-    }
-    if (!isBotActor(actor) && excludeList.length === 0)
-        return { allowed: true };
-    // Non-bot actors not in exclude → allowed (no allowlist for humans)
-    return { allowed: true };
-}
-
 // EXTERNAL MODULE: ./src/llm/openai-compatible.ts + 1 modules
 var openai_compatible = __nccwpck_require__(8251);
 ;// CONCATENATED MODULE: ./src/github/pr-content.ts
@@ -38016,27 +37768,6 @@ async function updatePrContent(octokit, owner, repo, prNumber, options) {
     });
     core.info(`Updated PR title: "${update.title}"`);
     core.info(`Updated PR description: ${description.substring(0, 100)}...`);
-}
-
-// EXTERNAL MODULE: external "node:fs"
-var external_node_fs_ = __nccwpck_require__(3024);
-;// CONCATENATED MODULE: ./src/github/progress.ts
-
-
-function trackPhase(phase, detail, options) {
-    if (!options.enabled)
-        return;
-    const stepSummaryPath = process.env.GITHUB_STEP_SUMMARY;
-    const line = `**[progress]** ${phase}: ${detail}\n`;
-    core.info(line.trim());
-    if (!stepSummaryPath)
-        return;
-    try {
-        (0,external_node_fs_.appendFileSync)(stepSummaryPath, line, 'utf8');
-    }
-    catch (error) {
-        core.warning(`[progress] write to $GITHUB_STEP_SUMMARY failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
 }
 
 // EXTERNAL MODULE: external "node:crypto"
@@ -38155,6 +37886,8 @@ function dedupe_normalizeCommentId(finding) {
 
 // EXTERNAL MODULE: ./src/security/redaction/redactor.ts
 var redactor = __nccwpck_require__(8759);
+// EXTERNAL MODULE: external "node:fs"
+var external_node_fs_ = __nccwpck_require__(3024);
 ;// CONCATENATED MODULE: ./src/github/buffer.ts
 
 
@@ -39189,6 +38922,40 @@ function renderToolFindingsSection(toolFindings, diagnostics) {
     return lines.join('\n');
 }
 
+;// CONCATENATED MODULE: ./src/llm/prompts/pr-content.ts
+function createSystemPrompt(customInstructions, templateContent) {
+    const prompt = [
+        'You are an expert software engineer and technical writer.',
+        'Your task is to improve pull request titles and descriptions to be clear, concise, and informative.',
+        'The title should follow conventional commit format when appropriate and clearly indicate the change.',
+        'The description should include: what changed, why it changed, and any relevant context for reviewers.',
+        'Focus on clarity and completeness while being concise.',
+        'Always respond with valid JSON containing "title" and "description" fields.',
+        'Do not include markdown code fences in your response.',
+    ];
+    if (templateContent) {
+        prompt.push('Use the following pull request template as the base for the description.', 'Fill in the template sections with appropriate content based on the code changes.', 'Preserve the template structure and formatting, only fill in the content sections.', `Template:\n${templateContent}`);
+    }
+    if (customInstructions)
+        prompt.push(`Additional instructions: ${customInstructions}`);
+    return prompt.join(' ');
+}
+function buildUserPrompt(currentTitle, currentDescription, diffs, includeFileList) {
+    let prompt = `Current PR Title: ${currentTitle}\n\n`;
+    prompt += `Current PR Description:\n${currentDescription || '(No description)'}\n\n`;
+    if (includeFileList) {
+        prompt += `Changed Files:\n${diffs.map((d) => `${d.status}: ${d.filename}`).join('\n')}\n\n`;
+    }
+    prompt += 'Code Changes:';
+    diffs.forEach((diff, index) => {
+        prompt += `\n\n--- File ${index + 1}: ${diff.filename} (${diff.status}) ---\n`;
+        prompt += diff.patch.substring(0, 2000);
+        if (diff.patch.length > 2000)
+            prompt += '\n... (truncated)';
+    });
+    return `${prompt}\n\nPlease provide an improved title and description for this pull request.`;
+}
+
 ;// CONCATENATED MODULE: ./src/github/threads.ts
 const REVIEW_THREADS_QUERY = `
 query ReviewThreads($owner: String!, $repo: String!, $number: Int!, $after: String) {
@@ -39279,90 +39046,594 @@ function restLogin(author) {
     return login;
 }
 
-// EXTERNAL MODULE: ./src/harness/pi.ts + 1 modules
-var pi = __nccwpck_require__(593);
-;// CONCATENATED MODULE: ./src/llm/prompts/pr-content.ts
-function createSystemPrompt(customInstructions, templateContent) {
-    const prompt = [
-        'You are an expert software engineer and technical writer.',
-        'Your task is to improve pull request titles and descriptions to be clear, concise, and informative.',
-        'The title should follow conventional commit format when appropriate and clearly indicate the change.',
-        'The description should include: what changed, why it changed, and any relevant context for reviewers.',
-        'Focus on clarity and completeness while being concise.',
-        'Always respond with valid JSON containing "title" and "description" fields.',
-        'Do not include markdown code fences in your response.',
+;// CONCATENATED MODULE: ./src/runners/octokit.ts
+
+function recordArgs(args) {
+    if (!args || typeof args !== 'object')
+        throw new Error('Invalid request arguments');
+    return args;
+}
+function requiredString(args, key) {
+    const value = args[key];
+    if (typeof value !== 'string')
+        throw new Error(`Missing ${key}`);
+    return value;
+}
+function requiredNumber(args, key) {
+    const value = args[key];
+    if (typeof value !== 'number')
+        throw new Error(`Missing ${key}`);
+    return value;
+}
+function repositoryArgs(args) {
+    return {
+        owner: requiredString(args, 'owner'),
+        repo: requiredString(args, 'repo'),
+        pull_number: requiredNumber(args, 'pull_number'),
+    };
+}
+function toPublisherOctokit(client) {
+    const pulls = {
+        get: (args) => client.rest.pulls.get(repositoryArgs(recordArgs(args))),
+        update: (args) => client.rest.pulls.update({
+            ...repositoryArgs(args),
+            title: requiredString(args, 'title'),
+            body: requiredString(args, 'body'),
+        }),
+        listFiles: (args) => client.rest.pulls.listFiles({
+            ...repositoryArgs(args),
+            page: requiredNumber(args, 'page'),
+            per_page: requiredNumber(args, 'per_page'),
+        }),
+        createReview: (args) => {
+            const event = requiredString(args, 'event');
+            if (!['REQUEST_CHANGES', 'COMMENT', 'APPROVE'].includes(event))
+                throw new Error('Invalid event');
+            if (args.comments !== undefined && !Array.isArray(args.comments))
+                throw new Error('comments must be array');
+            return client.rest.pulls.createReview({
+                ...repositoryArgs(args),
+                commit_id: requiredString(args, 'commit_id'),
+                event: event,
+                comments: args.comments,
+            });
+        },
+        createReviewComment: (args) => client.rest.pulls.createReviewComment({
+            ...repositoryArgs(args),
+            body: requiredString(args, 'body'),
+            commit_id: requiredString(args, 'commit_id'),
+            path: requiredString(args, 'path'),
+            line: requiredNumber(args, 'line'),
+            side: (() => {
+                const side = requiredString(args, 'side');
+                if (side !== 'RIGHT' && side !== 'LEFT')
+                    throw new Error('Invalid side');
+                return side;
+            })(),
+        }),
+        createReplyForReviewComment: (args) => client.rest.pulls.createReplyForReviewComment(args),
+        getReviewComment: (args) => client.rest.pulls.getReviewComment({
+            ...repositoryArgs(args),
+            comment_id: requiredNumber(args, 'comment_id'),
+        }),
+        listReviews: async (args) => {
+            const response = await client.rest.pulls.listReviews({
+                ...repositoryArgs(args),
+                page: requiredNumber(args, 'page'),
+                per_page: requiredNumber(args, 'per_page'),
+            });
+            return {
+                data: response.data.map((review) => ({
+                    id: review.id,
+                    user: review.user ? { login: review.user.login ?? undefined } : null,
+                })),
+            };
+        },
+        listCommentsForReview: async (args) => {
+            const response = await client.rest.pulls.listCommentsForReview({
+                ...repositoryArgs(args),
+                review_id: requiredNumber(args, 'review_id'),
+                page: requiredNumber(args, 'page'),
+                per_page: requiredNumber(args, 'per_page'),
+            });
+            return {
+                data: response.data.map((comment) => ({
+                    body: comment.body ?? null,
+                    pull_request_url: comment.pull_request_url ?? null,
+                    user: comment.user
+                        ? { login: comment.user.login ?? undefined }
+                        : null,
+                })),
+            };
+        },
+        listThreads: async (args) => {
+            return listReviewThreads((query, variables) => client.graphql(query, variables), {
+                owner: requiredString(args, 'owner'),
+                repo: requiredString(args, 'repo'),
+                pullNumber: requiredNumber(args, 'pull_number'),
+            });
+        },
+    };
+    return {
+        rest: {
+            pulls,
+            repos: {
+                getCollaboratorPermissionLevel: (args) => client.rest.repos.getCollaboratorPermissionLevel({
+                    owner: requiredString(args, 'owner'),
+                    repo: requiredString(args, 'repo'),
+                    username: requiredString(args, 'username'),
+                }),
+            },
+            issues: {
+                listComments: (args) => client.rest.issues.listComments({
+                    owner: requiredString(args, 'owner'),
+                    repo: requiredString(args, 'repo'),
+                    issue_number: requiredNumber(args, 'issue_number'),
+                    page: requiredNumber(args, 'page'),
+                    per_page: requiredNumber(args, 'per_page'),
+                }),
+                updateComment: (args) => client.rest.issues.updateComment({
+                    owner: requiredString(args, 'owner'),
+                    repo: requiredString(args, 'repo'),
+                    comment_id: requiredNumber(args, 'comment_id'),
+                    body: requiredString(args, 'body'),
+                }),
+                createComment: (args) => client.rest.issues.createComment({
+                    owner: requiredString(args, 'owner'),
+                    repo: requiredString(args, 'repo'),
+                    issue_number: requiredNumber(args, 'issue_number'),
+                    body: requiredString(args, 'body'),
+                }),
+            },
+            users: {
+                getAuthenticated: () => client.rest.users.getAuthenticated(),
+            },
+        },
+        users: { getAuthenticated: () => client.rest.users.getAuthenticated() },
+    };
+}
+
+;// CONCATENATED MODULE: ./src/runners/pr-content.ts
+
+
+
+
+
+
+
+
+
+
+
+
+const DEFAULT_PR_CONTENT_MAX_TOKENS = 4096;
+const PR_CONTENT_RETRY_CEILING = 32_768;
+/**
+ * Retry budget after a truncated, empty, or unparseable answer. Reasoning
+ * models spend output tokens on thinking before the JSON, so repeating the
+ * same budget fails the same way; double it up to a ceiling.
+ */
+function escalateMaxTokens(current) {
+    return Math.min(current * 2, PR_CONTENT_RETRY_CEILING);
+}
+async function runPrContent(options) {
+    const started = external_node_perf_hooks_.performance.now();
+    const context = github.context;
+    const prNumber = context.payload.pull_request?.number;
+    if (!prNumber) {
+        core.setFailed('This action only runs on pull requests');
+        return;
+    }
+    const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
+    const client = github.getOctokit(options.githubToken);
+    const octokit = toPublisherOctokit(client);
+    const prContext = await fetchPrContext(octokit, repoInfo, prNumber);
+    let templateContent = '';
+    try {
+        const template = await client.rest.repos.getContent({
+            ...repoInfo,
+            path: options.templatePath,
+        });
+        if ('content' in template.data &&
+            typeof template.data.content === 'string') {
+            templateContent = external_node_buffer_namespaceObject.Buffer.from(template.data.content, 'base64').toString('utf8');
+        }
+    }
+    catch {
+        // Missing template is valid and matches V1 behavior.
+    }
+    const config = resolveEngineConfig(options);
+    const provider = new openai_compatible.OpenAiCompatibleProvider(config);
+    const diffs = prContext.diff.files
+        .filter((file) => file.patch)
+        .map((file) => ({
+        filename: file.filename,
+        status: file.status,
+        patch: file.patch ?? '',
+    }));
+    const messages = [
+        {
+            role: 'system',
+            content: createSystemPrompt(options.customInstructions, templateContent),
+        },
+        {
+            role: 'user',
+            content: buildUserPrompt(prContext.pullRequest.title, prContext.pullRequest.body, diffs, options.includeFileList),
+        },
     ];
-    if (templateContent) {
-        prompt.push('Use the following pull request template as the base for the description.', 'Fill in the template sections with appropriate content based on the code changes.', 'Preserve the template structure and formatting, only fill in the content sections.', `Template:\n${templateContent}`);
+    const complete = (maxOutputTokens) => provider.complete(messages, { temperature: 0.3, maxOutputTokens });
+    let budget = options.maxTokens || DEFAULT_PR_CONTENT_MAX_TOKENS;
+    // Transient failures (429/5xx/network) are retried inside the provider.
+    let completion = await complete(budget);
+    if (!completion.content || completion.finishReason === 'length') {
+        budget = escalateMaxTokens(budget);
+        core.warning(`AI response truncated or empty; retrying with max_tokens=${budget}`);
+        completion = await complete(budget);
     }
-    if (customInstructions)
-        prompt.push(`Additional instructions: ${customInstructions}`);
-    return prompt.join(' ');
+    try {
+        await updatePrContent(octokit, repoInfo.owner, repoInfo.repo, prNumber, {
+            response: completion.content,
+            templateContent,
+        });
+    }
+    catch (error) {
+        budget = escalateMaxTokens(budget);
+        core.warning(`First parse failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=${budget}`);
+        completion = await complete(budget);
+        await updatePrContent(octokit, repoInfo.owner, repoInfo.repo, prNumber, {
+            response: completion.content,
+            templateContent,
+        });
+    }
+    const durationMs = external_node_perf_hooks_.performance.now() - started;
+    const summary = `${buildJobSummary({
+        model: options.model,
+        durationMs,
+        filesReviewed: diffs.map((diff) => diff.filename),
+        result: {
+            findings: [],
+            counts: { critical: 0, high: 0, medium: 0, low: 0 },
+            risk: 'none',
+        },
+    })}
+- **Token usage:** ${completion.usage ? `${completion.usage.inputTokens} input / ${completion.usage.outputTokens} output` : 'n/a'}
+- **Status:** updated`;
+    core.info(summary);
+    await core.summary.addRaw(summary).write();
+    core.setOutput('pr-content-summary', summary);
 }
-function buildUserPrompt(currentTitle, currentDescription, diffs, includeFileList) {
-    let prompt = `Current PR Title: ${currentTitle}\n\n`;
-    prompt += `Current PR Description:\n${currentDescription || '(No description)'}\n\n`;
-    if (includeFileList) {
-        prompt += `Changed Files:\n${diffs.map((d) => `${d.status}: ${d.filename}`).join('\n')}\n\n`;
-    }
-    prompt += 'Code Changes:';
-    diffs.forEach((diff, index) => {
-        prompt += `\n\n--- File ${index + 1}: ${diff.filename} (${diff.status}) ---\n`;
-        prompt += diff.patch.substring(0, 2000);
-        if (diff.patch.length > 2000)
-            prompt += '\n... (truncated)';
+/** Reads the `pr-content` action inputs and runs the PR-content flow. */
+async function runPrContentAction() {
+    const contentOptions = mapPrContentInputs({
+        'github-token': core.getInput('github-token'),
+        'openai-api-key': core.getInput('openai-api-key'),
+        'openai-base-url': core.getInput('openai-base-url'),
+        'openai-model': core.getInput('openai-model'),
+        'max-tokens': core.getInput('max-tokens'),
+        'include-file-list': core.getInput('include-file-list'),
+        'custom-instructions': core.getInput('custom-instructions'),
+        'template-path': core.getInput('template-path'),
     });
-    return `${prompt}\n\nPlease provide an improved title and description for this pull request.`;
+    await runPrContent(contentOptions);
 }
 
-;// CONCATENATED MODULE: ./src/modes/detector.ts
+// EXTERNAL MODULE: external "node:fs/promises"
+var promises_ = __nccwpck_require__(1455);
+// EXTERNAL MODULE: external "node:os"
+var external_node_os_ = __nccwpck_require__(8161);
+;// CONCATENATED MODULE: ./src/skills/javascript.ts
+/**
+ * Built-in Pi skill for the javascript profile.
+ *
+ * Generated at build time from skills/javascript/SKILL.md. Stored as a JSON
+ * string so backticks, `${...}` interpolation, and other markdown syntax
+ * inside the skill body do not conflict with the surrounding template literal.
+ */
+const content = "---\nname: javascript\ndescription: Modern JavaScript (ES2022+) code review covering ES module syntax, async/await, destructuring, spread operators, and DOM/browser-specific pitfalls. Use when reviewing plain JavaScript files (.js, .mjs) without TypeScript.\n---\n\n# JavaScript Code Review\n\nWhen reviewing plain JavaScript code, prioritize:\n\n## ES Modules\n\n- **Named vs default exports**: prefer named exports (`export function foo()`). Default exports are harder to rename/refactor.\n- **Import order**: external deps first, then internal modules, then relative (./foo). ESLint `import/order` enforces.\n- **No CommonJS in modules**: don't mix `require()` and `import`. For hybrid projects, use ESM only.\n- **Dynamic imports**: `await import('./module')` for code splitting. Returns a module record with all exports.\n\n## Modern Syntax\n\n- **Optional chaining**: `obj?.prop?.method?.()` — concise null safety. Avoid for deep chains where you might want to handle each null level differently.\n- **Nullish coalescing**: `val ?? default` — when 0/empty/false is valid input. Use instead of `||` for \"missing value\" checks.\n- **Destructuring**: `const { a, b } = obj` — clean extraction. Use `const { a = 'default' } = obj` for default values.\n- **Spread for immutability**: `{ ...obj, key: val }` creates new object. Don't spread + mutate (`{ ...arr }.push(x)` doesn't work).\n- **Template literals**: prefer over string concatenation, especially with multi-line strings. Use `${expr}` for interpolation.\n\n## Async/Await\n\n- **await Promise.all()**: parallel async operations. Sequential `await` calls add latency unnecessarily.\n- **No async in forEach**: `arr.forEach(async () => ...)` doesn't wait. Use `for...of` or `Promise.all(arr.map(async ...))`.\n- **Top-level await in ESM**: works in modules and `package.json` `\"type\": \"module\"`. Avoid in CommonJS.\n- **AbortController**: for cancellable requests `fetch(url, { signal: ac.signal })`. Prevents wasted work on discarded requests.\n\n## Equality\n\n- **`===` and `!==`**: always. Never `==` (unless intentionally leveraging coercion, e.g. `x == null` checks both null and undefined).\n- **No `=== undefined`**: use `typeof x === 'undefined'` for undeclared variables. `=== undefined` throws ReferenceError.\n- **`Object.is`**: when you need exact equality (NaN equals NaN, +0/-0 distinguished). Mostly for internal use.\n\n## Numbers\n\n- **`Number.parseInt` / `Number.parseFloat`**: explicit radix `parseInt(str, 10)` always.\n- **`Number.isNaN`**: check `x !== x` (NaN) or `Number.isNaN(x)`. Don't use global `isNaN` (coerces).\n- **BigInt**: for integers larger than `Number.MAX_SAFE_INTEGER` (2^53 - 1). Don't mix with regular numbers.\n\n## Strings\n\n- **Unicode-safe operations**: `str.length` counts UTF-16 code units, not characters. Use `Array.from(str)` for true character iteration.\n- **`String.prototype.normalize`**: for comparing strings with different Unicode forms (NFC vs NFD).\n- **No regex DoS**: catastrophic backtracking patterns like `(a+)+b` on long input. Use atomic groups or rewrite.\n\n## Arrays\n\n- **Immutability**: `[...arr]` (copy), `arr.filter()`, `arr.map()` — never `arr.push()` if arr should be immutable.\n- **`at()` method**: `arr.at(-1)` for last element (ES2022). Better than `arr[arr.length - 1]`.\n- **`flat()` / `flatMap()`**: for nested arrays. `flatMap` combines map + flat(1).\n- **`find` vs `filter`**: `find` returns first match (or undefined), `filter` returns array. Use `find` when you only need one.\n- **Avoid `splice`**: mutates in place. Prefer `toSpliced()` (ES2023) for immutable splice.\n\n## Classes\n\n- **Private fields**: `#field` syntax for true privacy (ES2022). Not just `_field` convention.\n- **Static blocks**: `static { /* init */ }` for one-time class initialization (ES2022).\n- **Getters/setters sparingly**: can surprise consumers with hidden computation. Prefer explicit methods.\n\n## Common Issues to Flag\n\n- Missing `'use strict'` (ESM has it implicit, but watch for CommonJS).\n- `var` instead of `const`/`let`.\n- `==` instead of `===`.\n- `console.log` left in production code.\n- Missing error handling on async operations.\n- Modifying objects/arrays passed as props.\n- JSON.parse without try/catch.\n- Infinite loops or unbounded recursion.\n- Memory leaks from event listeners not removed.\n- `setTimeout` with string argument (eval-like, never use).\n- `with` statement (forbidden in strict mode).\n";
+/* harmony default export */ const javascript = (content);
 
-const SUPPORTED_EVENTS = new Set([
-    'pull_request',
-    'pull_request_target',
-    'workflow_dispatch',
-    'schedule',
-]);
-const SUPPORTED_ACTIONS = new Set([
-    'opened',
-    'synchronize',
-    'reopened',
-    'ready_for_review',
-]);
-function resolveReviewMode(raw) {
-    if (!raw || raw === 'review')
-        return 'review';
-    if (raw === 'auto' || raw === 'security' || raw === 'agent')
-        return raw;
-    core.warning(`Unknown mode "${raw}" — falling back to "review" (only "auto", "review", "security", "agent" are supported).`);
-    return 'review';
+;// CONCATENATED MODULE: ./src/skills/kotlin.ts
+/**
+ * Built-in Pi skill for the kotlin profile.
+ *
+ * Generated at build time from skills/kotlin/SKILL.md. Stored as a JSON
+ * string so backticks, `${...}` interpolation, and other markdown syntax
+ * inside the skill body do not conflict with the surrounding template literal.
+ */
+const kotlin_content = '---\nname: kotlin\ndescription: Kotlin (v1.9+) and Jetpack Compose code review covering null safety, coroutines, Compose state, sealed classes, and Android-specific patterns. Use when reviewing Kotlin code (Android, KMP, server-side) for safe APIs, coroutine scopes, and idiomatic Kotlin patterns.\n---\n\n# Kotlin Code Review\n\nWhen reviewing Kotlin code, prioritize:\n\n## Null Safety\n\n- **Nullable vs non-null types**: `String` (non-null) vs `String?` (nullable). Kotlin enforces at compile time.\n- **`?.let { }` for null-safe blocks**: `user?.let { println(it.name) }` — only enters block when non-null.\n- **`?:` Elvis operator**: `name ?: "Unknown"` — fallback when null.\n- **`!!` (force unwrap)**: `name!!` — crashes on null. Avoid, use `requireNotNull(name) { "name required" }` for tests.\n- **`requireNotNull` / `checkNotNull`**: throws `IllegalArgumentException` or `IllegalStateException` with a message. Better than `!!`.\n- **Smart casts after null check**: `if (x != null) x.method()` — Kotlin auto-narrows type. No cast needed.\n\n## Coroutines\n\n- **`CoroutineScope`**: owns coroutines. Tied to lifecycle. `lifecycleScope` in Android UI.\n- **`launch`**: fire coroutine that doesn\'t return value. `async` returns `Deferred` for await-able result.\n- **`awaitAll` / `await`**: parallel = `awaitAll(deferred1, deferred2)`. Sequential is fine when dependencies exist.\n- **Structured concurrency**: `coroutineScope { }` cancels children on exception. Prevents leaks.\n- **Dispatchers**: `Dispatchers.Main` (UI), `Dispatchers.IO` (I/O), `Dispatchers.Default` (CPU). Pick by workload type.\n- **`withContext(Dispatchers.IO)`**: switch dispatcher in suspend function.\n- **`Flow`**: cold stream. `collect` to consume. Hot variants: `StateFlow`, `SharedFlow`.\n- **`viewModelScope`**: ViewModel-bound scope. Auto-cancelled on ViewModel cleared.\n- **Don\'t use `GlobalScope`**: leaks. Always use scoped (viewModelScope, lifecycleScope, custom scope).\n\n## Data Classes\n\n- **`data class`**: auto-generates equals/hashCode/copy/toString. Default for DTOs and value objects.\n- **`copy()` for modification**: `val updated = user.copy(age = 30)`. Immutable by default.\n- **Destructuring**: `val (name, age) = user` — based on declared order. Only `component1..N` for data classes.\n- **`Pair` / `Triple`**: convenient but lack semantics. Prefer named data class for clarity.\n\n## Sealed Classes (ADT)\n\n- **`sealed class`/`sealed interface`**: restricted hierarchy. Compiler knows all subtypes → exhaustive `when`.\n- **Exhaustive `when`**: no `else` needed when all sealed subtypes covered:\n  ```kotlin\n  when (result) {\n    is Loading -> showProgress()\n    is Success -> showData(result.data)\n    is Error -> showError(result.message)\n    // no else — compiler verifies exhaustive\n  }\n  ```\n- **`sealed interface`**: for non-hierarchical types or multiple inheritance.\n\n## Object & Companion\n\n- **`object`**: singleton. Lazy init. Use for stateless utility (`object FileUtils`) or true singletons.\n- **`companion object`**: like Java\'s static. `MyClass.create()` not `MyClass.Companion.create()`.\n- **`@JvmStatic`**: from companion to expose as Java static for consumers.\n\n## Jetpack Compose\n\n- **Composables are functions**: `@Composable fun Greeting(name: String)` — same name, no side effects in body.\n- **Recomposition**: when state changes, only composables reading that state recompose. Don\'t read non-Compose state.\n- **`remember`**: state across recomposition. `remember { mutableStateOf(0) }`.\n- **`rememberSaveable`**: state preserved across config changes (rotation). Bundle-backed.\n- **`derivedStateOf`**: compute cached state. `val canSubmit by remember { derivedStateOf { name.isNotBlank() } }`.\n- **Side effects**: `LaunchedEffect(key) { /* run on mount, cancel on unmount */ }`. `DisposableEffect` for cleanup.\n- **`collectAsStateWithLifecycle`**: collect Flow with lifecycle awareness. For Android UI.\n- **List keys**: `LazyColumn { items(list, key = { it.id }) { item -> Row(item) } }` for stable identity.\n\n## Android Specific\n\n- **ViewModel for state**: keep state in ViewModel, not in composables. Survives config changes.\n- **Repository pattern**: ViewModel → Repository → (Network, DB). DataSource interface for testability.\n- **Hilt / Koin / Manual DI**: pick one. Hilt is Google-recommended for Android.\n- **`@HiltViewModel`**: for ViewModel injection. Use `@Inject lateinit var repo: UserRepo`.\n- **`Flow` from DB**: `userRepo.observeAll(): Flow<List<User>>` — auto-update via Room.\n- **Configuration changes**: any state lives in ViewModel, not Composables.\n\n## Extensions & Scope\n\n- **Extension functions**: `fun String.titleCase(): String = this.split(\' \').map { it.capitalize() }.joinToString(" ")`.\n- **Scope functions**: `let`, `run`, `with`, `apply`, `also`. Use sparingly — easy to abuse.\n- **`apply`**: configure-and-return-self. `val p = Paint().apply { color = RED; strokeWidth = 2f }`.\n- **`also`**: side effect, return self. `val list = mutableList.add(item).also { log("Added $item") }`.\n\n## Common Issues to Flag\n\n- `!!` non-null assertion (almost always wrong).\n- `GlobalScope.launch` (leaks; use scoped).\n- Smart cast not happening because of mutable property — capture in local val.\n- `runBlocking` in coroutine context (blocks event loop).\n- `Array<T>` instead of `List<T>` (arrays are mutable, fixed-size; lists are modern).\n- Java-style getters (`getName()` vs Kotlin property `name`).\n- Missing `data class` for value objects.\n- Comparison with `==` on arrays (reference equality, not content; use `contentEquals`).\n- Lateinit misuse: `lateinit` on non-nullable, non-primitive. Throws on access before init.\n- Calling `runBlocking` in Android app (blocks UI thread).\n';
+/* harmony default export */ const kotlin = (kotlin_content);
+
+;// CONCATENATED MODULE: ./src/skills/nestjs.ts
+/**
+ * Built-in Pi skill for the nestjs profile.
+ *
+ * Generated at build time from skills/nestjs/SKILL.md. Stored as a JSON
+ * string so backticks, `${...}` interpolation, and other markdown syntax
+ * inside the skill body do not conflict with the surrounding template literal.
+ */
+const nestjs_content = "---\nname: nestjs\ndescription: NestJS (v10+) backend code review covering modules, providers, controllers, DTOs, guards, interceptors, exception filters, and lifecycle hooks. Use when reviewing NestJS applications for DI correctness, decorator usage, request scoping, async patterns, and testability.\n---\n\n# NestJS Code Review\n\nWhen reviewing NestJS code, prioritize:\n\n## Dependency Injection\n\n- **Constructor injection preferred** over property injection — easier to test, explicit dependencies.\n- **Use interfaces as tokens** for non-class providers (TypeORM repos, etc.):\n  ```ts\n  @Inject('USER_REPO') private repo: Repository<User>\n  ```\n- **Avoid circular dependencies**: if A imports B and B imports A, use `forwardRef(() => B)` as last resort. Better: refactor to a third module.\n- **Module providers must be exported** to be visible to importing modules.\n\n## Modules\n\n- **Feature modules**: organize by domain (UsersModule, OrdersModule), not by technical layer (ServicesModule, ControllersModule).\n- **Single responsibility**: each module owns one bounded context. Don't import unrelated providers.\n- **Global modules**: only for truly cross-cutting concerns (ConfigModule, LoggerModule). Prefer explicit imports.\n\n## Controllers\n\n- **One route per handler**: `create`, `findAll`, `findOne`, `update`, `remove` — separate `@Get()`, `@Post()` etc.\n- **DTOs + class-validator**: never accept raw `any` or entity classes in body. Validate at the boundary:\n  ```ts\n  class CreateUserDto {\n    @IsEmail() email: string;\n    @IsString() @MinLength(8) password: string;\n  }\n  ```\n- **Response shape**: use `@SerializeOptions()` or interceptor to strip sensitive fields (password hash, internal IDs).\n- **Status codes**: `@HttpCode(201)` for POST creating, `@HttpCode(204)` for DELETE. Default 200/201 is OK but be explicit.\n\n## Guards & Interceptors\n\n- **Guards for auth**: `@UseGuards(AuthGuard)` returns `false`/throws to deny. Use `@SetMetadata()` for custom guards.\n- **Global guards**: register via `APP_GUARD` provider — but only for truly global concerns (auth, rate limit).\n- **Interceptors for cross-cutting**: logging, caching, response transformation. Don't put business logic in interceptors.\n- **Execution context**: in guards/interceptors, get request via `context.switchToHttp().getRequest()`.\n\n## Async Pitfalls\n\n- **Missing await**: NestJS interceptors that return without await lose side effects. Use `from()` rxjs operators or `async/await` consistently.\n- **Promise.all vs sequential**: independent operations → `Promise.all([getA(), getB()])`. Sequential when B depends on A.\n- **Unhandled rejections**: subscribe to streams with proper error handlers; NestJS will swallow unhandled promise rejections silently.\n- **Fire-and-forget**: avoid `void someAsync()` without logging/error handling — exceptions disappear.\n\n## Database & Transactions\n\n- **Transactions**: use `dataSource.transaction(async (manager) => ...)` for multi-step writes. Don't rely on auto-commit behavior.\n- **N+1 queries**: use `relations: ['user', 'posts']` in TypeORM `findOne` or query builder `leftJoinAndSelect`. Watch for nested relations causing more queries.\n- **Pagination**: use `take`/`skip` or cursor-based — never load entire tables into memory.\n- **Connection leaks**: with `DataSource` from `@nestjs/typeorm`, use `OnModuleDestroy` for cleanup. Pool exhaustion → 500 errors.\n\n## Exception Handling\n\n- **Domain exceptions**: create `UserNotFoundException extends NotFoundException` for clarity. NestJS auto-converts to HTTP responses.\n- **Exception filter**: use `@Catch()` for custom error mapping (logging, sanitization).\n- **Don't swallow errors**: catch only to add context, then rethrow with `throw new InternalServerErrorException('Failed to create user', { cause: err })`.\n\n## Lifecycle Hooks\n\n- **`OnModuleInit` / `OnModuleDestroy`**: use for resource setup/teardown. Async supported.\n- **`OnApplicationBootstrap`**: after all modules initialized. Good for warming caches.\n- **`@nestjs/schedule`**: cron jobs via `@Cron()`. Make idempotent — may run on multiple instances.\n\n## Testing\n\n- **Test files co-located**: `user.service.spec.ts` next to `user.service.ts`.\n- **TestingModule**: use `Test.createTestingModule({ providers: [UserService] })` with mock providers.\n- **Mock external dependencies**: TypeORM repos, HTTP clients — never hit real DB/HTTP in unit tests.\n- **E2E with `supertest`**: NestJS provides `Test.createTestingModule` + `app.init()` for full app testing.\n\n## Common Issues to Flag\n\n- `any` type in service methods → defeats TypeScript.\n- Missing `@Injectable()` decorator on providers → DI fails at runtime.\n- `@Catch()` filter without `Error` base class → misses errors.\n- Synchronous DB calls in async controllers → blocks event loop.\n- Hardcoded secrets in `@nestjs/config` → use `ConfigService.get('JWT_SECRET')`.\n- No DTO validation on POST endpoints → security risk.\n";
+/* harmony default export */ const nestjs = (nestjs_content);
+
+;// CONCATENATED MODULE: ./src/skills/nextjs.ts
+/**
+ * Built-in Pi skill for the nextjs profile.
+ *
+ * Generated at build time from skills/nextjs/SKILL.md. Stored as a JSON
+ * string so backticks, `${...}` interpolation, and other markdown syntax
+ * inside the skill body do not conflict with the surrounding template literal.
+ */
+const nextjs_content = "---\nname: nextjs\ndescription: Next.js (v13+) code review covering App Router, Server Components, Server Actions, caching, middleware, and Next.js-specific performance and security pitfalls. Use when reviewing pages, route handlers, layouts, or anything Next.js-specific.\n---\n\n# Next.js Code Review\n\nWhen reviewing Next.js code, prioritize:\n\n## Server vs Client Components\n\n- **Default to Server Components**: add `'use client'` only when component needs state, effects, browser APIs, or event handlers.\n- **Boundary**: `use client` at the smallest possible leaf — never wrap entire pages.\n- **Server-only modules**: import secrets, DB clients, file system only in Server Components. Never in client bundles.\n- **Props serialization**: Server → Client props must be JSON-serializable. No Date, Map, Set, functions, class instances.\n\n## App Router (v13+)\n\n- **Layouts vs Pages**: layouts persist across navigation; pages re-render. Use layouts for shared chrome.\n- **Loading & Error UI**: `loading.tsx` for Suspense boundaries, `error.tsx` for error boundaries. Without them, errors bubble to root.\n- **Route Handlers**: `route.ts` files — never mix GET and POST handlers with side effects; each HTTP verb should be a separate exported function.\n- **Dynamic routes**: `[id]/page.tsx` — params are async (Next.js 15+) — `const { id } = await params;` not `params.id`.\n\n## Data Fetching\n\n- **`fetch()` caching**: Next.js extends `fetch()` with `{ next: { revalidate: 60 } }` or `{ cache: 'force-cache' }`. Plain `fetch()` is **not** cached by default in App Router.\n- **`cache()` wrapper**: for non-fetch deduplication, wrap with `import { cache } from 'react';` then `const getUser = cache(async (id) => ...)`.\n- **Parallel fetching**: `Promise.all([getUser(), getPosts()])` not sequential awaits.\n- **No data fetching in Client Components for static data**: lift to Server Components.\n\n## Server Actions\n\n- **Form actions**: `async function createPost(formData: FormData) { ... }` exported from `'use server'` file or inline.\n- **Always revalidate**: after mutation, call `revalidatePath('/posts')` or `revalidateTag('posts')`.\n- **Auth in Server Actions**: never trust client. Re-check auth on server every time.\n- **Input validation**: validate on server, never trust client form values.\n\n## Performance\n\n- **Image component**: use `next/image` not `<img>`. Required for automatic optimization, lazy loading, responsive sizes.\n- **Font optimization**: use `next/font` to avoid FOUT and large font payloads.\n- **Script loading**: `next/script` with `strategy=\"lazyOnload\"` for third-party scripts.\n- **Dynamic imports**: `const Heavy = dynamic(() => import('./Heavy'), { ssr: false })` for client-only heavy components.\n- **Streaming with Suspense**: wrap slow data fetches in `<Suspense fallback={...}>` so above-the-fold content renders immediately.\n\n## Caching Pitfalls\n\n- **Default cache changed**: Next.js 15 made `fetch()` **non-cached by default**. Opt-in caching required.\n- **Static vs Dynamic**: pages calling `cookies()`, `headers()`, `searchParams` are dynamic. Mark dynamic explicitly or use `dynamic = 'force-static'` carefully.\n- **`unstable_cache`**: for non-fetch data, use `unstable_cache` with explicit tags.\n\n## Security\n\n- **Environment variables**: only `NEXT_PUBLIC_*` exposed to client. Never put secrets in non-prefixed vars.\n- **Middleware**: runs on Edge runtime by default — no Node.js APIs (no `fs`, no native modules). Use for auth checks, redirects, headers.\n- **CSP headers**: set via `next.config.js` `headers()` function. Avoid `'unsafe-inline'` and `'unsafe-eval'`.\n\n## Common Issues to Flag\n\n- `'use client'` directive missing but component uses `useState`/`useEffect` → won't compile.\n- Secrets in `NEXT_PUBLIC_*` env vars → exposed to client bundle.\n- `cookies()` or `headers()` used without `dynamic = 'force-dynamic'` → Next.js 15 errors at build.\n- Missing `revalidatePath` after Server Action → stale UI.\n- Direct DB query in Client Component → bundle bloat + secrets leak.\n";
+/* harmony default export */ const nextjs = (nextjs_content);
+
+;// CONCATENATED MODULE: ./src/skills/nodejs.ts
+/**
+ * Built-in Pi skill for the nodejs profile.
+ *
+ * Generated at build time from skills/nodejs/SKILL.md. Stored as a JSON
+ * string so backticks, `${...}` interpolation, and other markdown syntax
+ * inside the skill body do not conflict with the surrounding template literal.
+ */
+const nodejs_content = "---\nname: nodejs\ndescription: Node.js (v20+) backend code review covering async patterns, streams, error handling, resource management, and runtime safety. Use when reviewing Node.js server code (Express, Fastify, raw http, workers, scripts).\n---\n\n# Node.js Code Review\n\nWhen reviewing Node.js server code, prioritize:\n\n## Async Patterns\n\n- **await or return**: every async function path must either await or return the promise. Missing await = unhandled rejection.\n- **Promise.all for parallel**: independent operations → `Promise.all([fetch(url1), fetch(url2)])`. Sequential awaits when not needed = N× latency.\n- **Promise.allSettled vs all**: use `allSettled` when you want to process partial successes (one failed, others OK). `all` short-circuits on first rejection.\n- **No async in forEach**: `arr.forEach(async () => ...)` doesn't await — use `for...of` or `Promise.all(arr.map(async ...))`.\n- **Floating promises**: TypeScript strict mode flags these with `no-floating-promises`. Add `await` or `.catch()`.\n\n## Error Handling\n\n- **Always handle rejection**: unhandled promise rejections crash Node.js v15+ (`unhandledRejection` policy).\n- **Try/catch vs catch on chain**: `.catch()` on promise chains is fine; `try/catch` for async/await.\n- **Don't swallow**: `catch (e) { /* ignore */ }` — log at minimum. Silent failures are debugging nightmares.\n- **Operational vs programmer errors**: distinguish (`Error` for programmer, custom for user input). Treat user input as recoverable.\n- **Don't throw strings**: `throw \"oops\"` loses stack trace. `throw new Error(\"oops\")` preserves it.\n\n## Streams & Backpressure\n\n- **Pipelines for memory**: `fs.createReadStream('big.csv').pipe(parser).pipe(filter)` — never `fs.readFileSync('big.csv')` (loads entire file).\n- **Backpressure**: when `write()` returns `false`, pause and wait for `drain` event before resuming. Don't ignore backpressure or memory explodes.\n- **Object mode**: streams of objects (not buffers) need `{ objectMode: true }`. Mixing modes crashes silently.\n- **Stream cleanup**: always handle `error`, `end`, `close` events. Unclosed streams leak file descriptors.\n\n## Resource Management\n\n- **Always cleanup**: timers (`clearInterval`), handles (`fileHandle.close()`), connections (`socket.destroy()`). Use `try/finally` or `using` syntax (TC39 Stage 3).\n- **Connection pools**: `pg.Pool`, `http.Agent`, `redis.createClient` — call `.end()` on shutdown.\n- **Memory leaks**: closures holding large objects, event listeners never removed, growing arrays in long-lived scopes.\n- **Heap snapshots**: for diagnosis, use `v8.writeHeapSnapshot()` then load in Chrome DevTools.\n\n## Event Loop & Concurrency\n\n- **Worker threads for CPU-bound**: crypto, image processing, large data transforms. Main thread is single-threaded — long sync work blocks all I/O.\n- **`cluster` for multi-core**: scale beyond single process. Use `cluster.fork()` + shared port via `server.listen({ reusePort: true })`.\n- **Don't block event loop**: sync file I/O, sync crypto, large JSON.parse on hot paths → freeze server. Use async APIs or workers.\n- **`process.nextTick` vs `setImmediate`**: `nextTick` runs before I/O callbacks (can starve I/O); `setImmediate` runs on next event loop iteration. Default to `setImmediate` unless you specifically need priority.\n\n## HTTP Servers\n\n- **Body size limits**: `express.json({ limit: '100kb' })` — unlimited body is DoS vulnerability.\n- **Timeouts**: `server.headersTimeout`, `keepAliveTimeout`, `requestTimeout`. Default Node.js has no request timeout — set explicitly.\n- **Graceful shutdown**: handle `SIGTERM`/`SIGINT`, stop accepting new connections, drain in-flight, close DB pool. Otherwise K8s rolling restarts lose requests.\n- **CORS**: don't use `cors()` with `origin: '*'` for credentialed requests (browsers block). Whitelist specific origins.\n\n## Security\n\n- **Never eval**: `eval()`, `Function()` constructor, `vm.runInThisContext()` with user input = RCE.\n- **Path traversal**: `path.join(baseDir, userInput)` — if `userInput = '../../etc/passwd'`, escapes. Validate resolved path is under baseDir.\n- **SQL injection**: never string concat. Use parameterized queries (`pg.query('... $1', [val])`).\n- **Prototype pollution**: `Object.assign(target, JSON.parse(input))` — if input has `__proto__`, pollutes Object prototype. Sanitize keys.\n- **Crypto**: use `crypto.randomBytes(32)` for tokens, never `Math.random()`. Use `crypto.timingSafeEqual` for comparison.\n\n## Performance\n\n- **Streaming responses**: `res.write(chunk)` incrementally. `res.send(bigArray)` loads entire array in memory.\n- **Compression**: `compression()` middleware for text responses. ~70% size reduction.\n- **Caching**: `Cache-Control` headers + `ETag` for client-side caching. Server-side: Redis for shared state.\n- **Database indexes**: check `EXPLAIN ANALYZE` for slow queries. Missing index on `WHERE` columns = full table scan.\n- **Connection pooling**: `pg.Pool({ max: 10 })` not `new Client()` per request.\n\n## Common Issues to Flag\n\n- `await` in `forEach` (silent no-op).\n- Unhandled promise rejection (will crash Node.js).\n- `fs.readFileSync` on large files (memory exhaustion).\n- No body size limit on POST endpoints.\n- Sync work in async handlers (blocks event loop).\n- Hardcoded secrets in env vars at module load time (use runtime config).\n- Missing `Content-Security-Policy` headers.\n";
+/* harmony default export */ const nodejs = (nodejs_content);
+
+;// CONCATENATED MODULE: ./src/skills/python.ts
+/**
+ * Built-in Pi skill for the python profile.
+ *
+ * Generated at build time from skills/python/SKILL.md. Stored as a JSON
+ * string so backticks, `${...}` interpolation, and other markdown syntax
+ * inside the skill body do not conflict with the surrounding template literal.
+ */
+const python_content = '---\nname: python\ndescription: Python (3.11+) code review covering PEP 8 style, type hints, async patterns, packaging with pyproject.toml/uv, and Pythonic idioms. Use when reviewing Python code (FastAPI, Django, Flask, scripts, ML code) for correctness, idioms, and modern best practices.\n---\n\n# Python Code Review\n\nWhen reviewing Python code, prioritize:\n\n## Style (PEP 8)\n\n- **Line length**: 88-100 chars (Black/Ruff default). Wrap long lines.\n- **Naming**: `snake_case` functions/variables, `PascalCase` classes, `UPPER_SNAKE` constants, `_leading_underscore` private.\n- **Imports**: stdlib → third-party → local. One import per line for `from x import y, z` is OK; alphabetical sort.\n- **Docstrings**: PEP 257 format. First line imperative (`"""Fetch user by ID."""`). Use Google or NumPy style consistently.\n- **Type hints**: PEP 484. Use `from __future__ import annotations` for forward references.\n\n## Type Hints\n\n- **`typing` module**: `list[int]` (not `List[int]`) in 3.9+. Use `|` for unions: `int | str` (3.10+) not `Union[int, str]`.\n- **`Optional[X]` → `X | None`**: 3.10+ syntax. Backward compat: stick to `Optional` for public APIs.\n- **Generic**: `def first(items: list[T]) -> T | None`. Constrain with `T: Comparable` if needed.\n- **TypedDict**: `class User(TypedDict): id: int; name: str` for dict-shaped data.\n- **`Self` type**: 3.11+ `def with_name(self, name: str) -> Self` for fluent methods.\n\n## Async\n\n- **`async def` + `await`**: I/O-bound operations. CPU-bound work → `multiprocessing` or `ProcessPoolExecutor`.\n- **Don\'t mix sync/await**: blocking calls in async functions freeze event loop. Use `asyncio.to_thread(blocking_fn)` for unavoidable sync I/O.\n- **`asyncio.gather`**: parallel awaits. Sequential `await` when not needed = N× latency.\n- **`TaskGroup`**: 3.11+ structured concurrency. Replaces `gather` for most cases. Auto-cancels on exception.\n- **No `asyncio.run` inside `asyncio.run`**: "asyncio.run() cannot be called from a running event loop". Use main entry point only.\n\n## Imports\n\n- **No `from x import *`**: pollutes namespace. Use explicit imports.\n- **Circular imports**: refactor with TYPE_CHECKING:\n  ```python\n  from typing import TYPE_CHECKING\n  if TYPE_CHECKING:\n      from .models import User\n  ```\n- **Relative vs absolute**: prefer absolute imports for clarity. Relative only within package.\n\n## Async/Sync Mistakes\n\n- **Forgotten await**: `result = some_async_fn()` returns coroutine, not value. Add `await`. Tests catch this with `RuntimeWarning: coroutine was never awaited`.\n- **Sync I/O in async**: `requests.get()` in async def freezes loop. Use `httpx.AsyncClient()` or `aiohttp`.\n- **Missing `await` on async context managers**: `async with db.session():` not `with db.session():` (latter is sync).\n\n## Packaging\n\n- **`pyproject.toml` (PEP 621)**: package metadata, dependencies (`[project] dependencies`), tool config (Ruff, pytest, mypy sections).\n- **uv for fast installs**: `uv pip install -r requirements.txt` or `uv sync` (with `uv.lock`).\n- **Lock files**: uv.lock, poetry.lock, pdm.lock — commit these for reproducible builds.\n- **Editable installs**: `uv pip install -e .` for development. Don\'t ship editable installs.\n- **Entry points**: `[project.scripts]` in pyproject.toml for CLI commands.\n\n## Testing\n\n- **`pytest`**: de facto standard. Test files: `test_*.py` or `*_test.py`. Functions: `def test_X():`.\n- **Fixtures**: `@pytest.fixture` for setup. Use `conftest.py` for shared fixtures across files.\n- **Parametrize**: `@pytest.mark.parametrize("input,expected", [...])` for table-driven tests.\n- **`assert` is fine**: pytest assertions are runtime-checked. Don\'t use `unittest.TestCase.assertEqual`.\n- **Async tests**: `pytest-asyncio` plugin. `@pytest.mark.asyncio` decorator or `asyncio_mode=auto`.\n\n## Pythonic Idioms\n\n- **List/dict/set comprehensions**: prefer over `map`/`filter` when readable. `[x*2 for x in nums if x > 0]`.\n- **`enumerate` over `(i, x)` tuple unpacking**: `for i, val in enumerate(items):`.\n- **`zip` for parallel iteration**: `for a, b in zip(list_a, list_b):`.\n- **`with` statement**: for all resource management (files, locks, connections). No `try/finally` boilerplate.\n- **`isinstance` over `type(x) == Foo`**: respects subclasses.\n- **`dataclasses`** (3.7+): `@dataclass class Point: x: int; y: int` instead of `__init__` boilerplate.\n- **Match statement** (3.10+): `match shape: case Circle(r=r): ...`. Like switch but with destructuring.\n\n## Common Issues to Flag\n\n- Mutable default arguments: `def f(x=[]):` — shared across calls. Use `def f(x=None): x = x or []`.\n- Bare `except:` — catches everything including KeyboardInterrupt. Use `except Exception:` or specific.\n- `print()` left in production code.\n- `os.path.join` with absolute path argument → ignores earlier args: `os.path.join(\'/base\', \'/abs\')` = `/abs`.\n- String formatting with `+` instead of f-strings.\n- Shadowing builtins (`list`, `dict`, `type`, `id`).\n- `global` / `nonlocal` without good reason.\n- `== None` instead of `is None`.\n- Try/except that\'s too broad or swallows errors silently.\n';
+/* harmony default export */ const python = (python_content);
+
+;// CONCATENATED MODULE: ./src/skills/react.ts
+/**
+ * Built-in Pi skill for the react profile.
+ *
+ * Generated at build time from skills/react/SKILL.md. Stored as a JSON
+ * string so backticks, `${...}` interpolation, and other markdown syntax
+ * inside the skill body do not conflict with the surrounding template literal.
+ */
+const react_content = '---\nname: react\ndescription: React (v18+) best practices and common issues for code review. Use when reviewing React components, hooks, state management, JSX, and component lifecycle. Highlights hook rules, state synchronization, re-render patterns, performance anti-patterns, and accessibility.\n---\n\n# React Code Review\n\nWhen reviewing React code, prioritize these categories:\n\n## Hook Rules (CRITICAL)\n\n- **Rules of Hooks**: hooks called only at top level (no loops, conditions, nested functions). Verify with ESLint `react-hooks/rules-of-hooks`.\n- **Dependency arrays**: `useEffect`, `useMemo`, `useCallback`, `useEffectEvent` must list every reactive value used inside. Missing deps → stale closures or infinite loops.\n- **Stale closures**: `useEffect` that captures state without deps causes UI desync with state.\n- **Effect cleanup**: subscriptions, intervals, event listeners must return cleanup function or call `.unsubscribe()` / `clearInterval()`.\n\n## State Management\n\n- **State updates are async**: never read state immediately after `setState()` — use `useEffect` or compute from event.\n- **Object/array state**: mutate via spread (`{...state, key: val}`) not direct assignment — React uses Object.is for re-render detection.\n- **Derived state**: compute during render (`const filtered = items.filter(...)`), don\'t store in `useState`. Storing derived state causes sync bugs.\n- **Reducer for complex updates**: prefer `useReducer` over multiple `useState` when updates are interdependent.\n\n## Performance\n\n- **Memoization**: `React.memo`, `useMemo`, `useCallback` only when (a) reference equality matters (passed to memoized child, used in deps) or (b) computation is expensive. Premature memoization adds overhead.\n- **Key prop**: stable, unique keys for list items. Index keys are OK only if list is static; avoid for reorderable lists.\n- **Lazy init**: `useState(() => expensiveComputation())` for costly initial values.\n- **Refs for non-render values**: use `useRef` for timers, DOM nodes, previous values — avoid storing in state (causes extra renders).\n\n## Re-render Traps\n\n- **Inline objects/functions**: `<Child style={{ color: \'red\' }} />` creates new object each render → child re-renders. Hoist or memoize.\n- **Context value identity**: `const value = { a, b }` in render causes all consumers to re-render. Wrap in `useMemo` or split into multiple contexts.\n- **State colocation**: keep state as local as possible. Lift only when siblings need it.\n\n## Accessibility\n\n- Semantic HTML (`button` not `div onClick`, `nav` for navigation).\n- `aria-*` attributes only when no semantic equivalent.\n- Form labels (`<label htmlFor>` or wrap input).\n- Focus management on modal/dialog open.\n- `alt` text on images (empty `alt=""` for decorative).\n\n## JSX Pitfalls\n\n- `className` not `class`.\n- `htmlFor` not `for`.\n- Self-close void elements (`<img />`, `<br />`, `<input />`).\n- Inline event handlers are camelCase (`onClick`, `onChange`).\n- `key` must be unique among siblings and stable across renders.\n- Boolean attributes need explicit values (`disabled={true}`, not `disabled="true"`).\n\n## Common Issues to Flag\n\n- `useEffect` with no cleanup for subscriptions/timers → memory leak.\n- `useState` storing derived/computed values → sync bug.\n- Inline function passed to memoized child → child re-renders every render.\n- Direct DOM mutation in React → fights React\'s reconciliation.\n- Conditional hooks → Rules of Hooks violation, component breaks unpredictably.\n- `setState` in render (without condition) → infinite re-render loop.\n';
+/* harmony default export */ const react = (react_content);
+
+;// CONCATENATED MODULE: ./src/skills/swift.ts
+/**
+ * Built-in Pi skill for the swift profile.
+ *
+ * Generated at build time from skills/swift/SKILL.md. Stored as a JSON
+ * string so backticks, `${...}` interpolation, and other markdown syntax
+ * inside the skill body do not conflict with the surrounding template literal.
+ */
+const swift_content = '---\nname: swift\ndescription: Swift (v5.9+) and SwiftUI code review covering type safety, optionals, value vs reference semantics, concurrency (async/await + actors), and SwiftUI view lifecycle. Use when reviewing iOS/macOS code for memory leaks, retain cycles, force unwraps, and modern Swift concurrency.\n---\n\n# Swift Code Review\n\nWhen reviewing Swift code, prioritize:\n\n## Optionals\n\n- **Avoid force unwraps (`!`)**: `foo!`, `try!`, `as!`. Replace with `guard let foo = foo else { return }` or `if let foo = foo`.\n- **`guard let` for early exit**: when unwrap fail means "stop, no recovery possible". Reduces nesting.\n- **`if let` for branching**: when unwrap fail has different behavior than success.\n- **Optional chaining**: `user?.name?.first` — short-circuits on nil. Don\'t overuse for deep chains (silent failures).\n- **Nil coalescing**: `name ?? "Unknown"` — fallback only on nil.\n- **`?? fatalError`**: `user ?? fatalError("user required")` — only at known-good state (e.g., after auth).\n\n## Memory & Reference Semantics\n\n- **Value types (struct, enum)**: default. Copy semantics. No retain cycles to worry about.\n- **Reference types (class)**: when identity matters. Watch for retain cycles.\n- **Retain cycles with closures**: `[weak self]` for `self`-capturing closures stored on `self`:\n  ```swift\n  someHandler = { [weak self] in\n    self?.doThing()\n  }\n  ```\n- **`@MainActor` closures**: long-running work in `@MainActor` blocks main thread. Move off main for I/O.\n- **Delegate weak references**: `weak var delegate: SomeDelegate?` — delegate protocols are class-bound, must be weak.\n\n## Type System\n\n- **`enum` for finite states**: not just for "this OR that" but for state machines with associated values:\n  ```swift\n  enum NetworkState {\n    case idle\n    case loading\n    case success(Data)\n    case failure(Error)\n  }\n  ```\n- **Protocol composition**: `protocol P: A, B {}` for small, focused protocols (composition over inheritance).\n- **`any` keyword** (5.7+): `let shape: any Drawable = Circle()` — disambiguates existential types.\n- **Generics**: `func fetch<T: Decodable>(_ type: T.Type)`. Constrain with associated types: `protocol Repository { associatedtype Model }`.\n- **Opaque types** (`some`): `func makeView() -> some View`. Hides concrete type, preserves type identity.\n\n## Concurrency\n\n- **`async`/`await`**: basic async work. `func fetch() async throws -> Data`.\n- **`Task { }`**: fire-and-forget. Captures context (MainActor, etc.) if inside `Task.detached` for outside.\n- **`@MainActor`**: UI work on main. View bodies are implicit `@MainActor`.\n- **`async let`**: parallel awaits. `async let a = fetchA(); async let b = fetchB(); let result = try await (a, b)`.\n- **`AsyncSequence`**: streams. `for await item in stream { }`.\n- **Actors**: `actor Counter { var value: int = 0; func increment() { value += 1 } }`. Mutex under the hood. Prevents data races.\n- **Sendable**: types safe to share across concurrency domains. Mark `struct` (value, automatic) or `@unchecked Sendable` (you guarantee safety).\n- **Async/await vs GCD**: prefer async/await. Don\'t mix in new code. DispatchQueue.global().async {} is legacy.\n\n## SwiftUI\n\n- **View bodies are pure**: no side effects, no expensive computation. Use `let view = ...` outside body or in init.\n- **`@State`**: source of truth owned by view. Mutations must come from view or via bindings.\n- **`@Binding`**: two-way connection. `TextField(text: $name)` requires `@State var name`.\n- **`@StateObject`**: owns an observable. Lazy once. `@ObservedObject` for injection.\n- **`@EnvironmentObject`**: shared via `.environmentObject(...)`. Resolved by type. Useful for app-wide state.\n- **`onAppear { }` vs `task { }`**: `task` for async work, `onAppear` for sync side effects. `task` automatically cancels when view disappears.\n- **List identity**: `List(items, id: \\.id)` — stable, unique IDs required. Index keys cause animation glitches.\n\n## Error Handling\n\n- **`throws` + `do/catch`**: for recoverable errors. `try`/`try?`/`try!`.\n- **Custom error types**: `enum NetworkError: Error { case badStatus(Int); case decoding }` for typed errors.\n- **`Result` type**: for callbacks `completion: (Result<Data, Error>) -> Void`. Less common with async/await.\n- **Don\'t ignore errors**: `try?` swallows error silently. Use only when failure genuinely doesn\'t matter.\n\n## Property Wrappers (iOS 14+ / SwiftUI)\n\n- **`@AppStorage`**: UserDefaults-backed. Persists across launches.\n- **`@SceneStorage`**: per-scene state, restored on relaunch.\n- **`@FocusedValue` / `@FocusedBinding`**: focus-driven values, advanced.\n- **`@FetchRequest`**: Core Data in SwiftUI. Sort and filter declaratively.\n\n## Common Issues to Flag\n\n- Force unwrap `!` on `URL(string:)` from user input → crash if invalid.\n- Retain cycle from strong `self` capture in escaping closure → memory leak.\n- `@StateObject` vs `@ObservedObject` confusion → view re-initialization bugs.\n- Missing `[weak self]` in `NotificationCenter` observers → leak.\n- `DispatchQueue.main.async { self.doThing() }` when `doThing` is `@MainActor` → warning in Swift 5.10+.\n- Unbounded `URLSession.dataTask` (no resume? no completion?) → never completes.\n- Cache pollution: `NSCache` with no cost limit + unbounded object keys → memory bloat.\n- Hardcoded API URLs (use `URL(string:)` with constants from config).\n';
+/* harmony default export */ const swift = (swift_content);
+
+;// CONCATENATED MODULE: ./src/skills/typescript.ts
+/**
+ * Built-in Pi skill for the typescript profile.
+ *
+ * Generated at build time from skills/typescript/SKILL.md. Stored as a JSON
+ * string so backticks, `${...}` interpolation, and other markdown syntax
+ * inside the skill body do not conflict with the surrounding template literal.
+ */
+const typescript_content = "---\nname: typescript\ndescription: TypeScript (v5+) code review covering type system correctness, strict mode usage, generic constraints, and avoiding `any`/`as` escape hatches. Use when reviewing TypeScript code for type safety, narrowing, and proper use of advanced type features.\n---\n\n# TypeScript Code Review\n\nWhen reviewing TypeScript code, prioritize:\n\n## Strict Mode\n\n- **`strict: true`**: enables `strictNullChecks`, `noImplicitAny`, `strictFunctionTypes`, `strictBindCallApply`, `alwaysStrict`. Non-negotiable for new code.\n- **`noUncheckedIndexedAccess`**: `arr[i]` returns `T | undefined`, forcing null check. Catches off-by-one bugs.\n- **`exactOptionalPropertyTypes`**: `{ x?: number }` is `number | undefined` only if explicitly set. Distinguishes \"not set\" from \"explicitly undefined\".\n- **`noImplicitOverride`**: subclasses must mark overridden methods with `override` keyword.\n\n## Avoid `any` and Unsafe Casts\n\n- **`any`**: disables type checking. Use `unknown` for values of uncertain type and narrow with type guards.\n- **`as` casts**: bypasses type system. Prefer type guards (`if (typeof x === 'string')`) or branded types.\n- **`as unknown as T`**: double cast to force compatibility. Almost always a code smell — the types genuinely don't match.\n- **`@ts-ignore` / `@ts-expect-error`**: escape hatches. Add a comment explaining WHY. Never use to silence legitimate errors.\n\n## Generics\n\n- **Constraints**: `function fn<T extends keyof X>(key: T)` ensures `key` is a valid key of `X`. Without constraint, `T` could be anything.\n- **Multiple type parameters**: usually a sign the function does too much. Consider splitting.\n- **`infer` in conditional types**: `ReturnType<typeof fn>` infers return type. Powerful but complex — document carefully.\n- **Default type parameters**: `T = SomeDefault` for backward-compatible generic APIs.\n\n## Type Narrowing\n\n- **Discriminated unions**: `{ kind: 'circle'; radius: number } | { kind: 'square'; side: number }` — TS narrows on `kind` discriminant.\n- **`switch` exhaustiveness**: `const _: never = shape;` after switch ensures all cases handled. Add to add new variants = compile error.\n- **Type predicates**: `function isString(x: unknown): x is string { return typeof x === 'string'; }` — custom guards for narrowing.\n- **Assertion functions**: `function assertDefined<T>(x: T | undefined): asserts x is T` — throws if false, narrows after.\n\n## Null Safety\n\n- **`!` non-null assertion**: bypasses null check. Use sparingly — better to handle the null case explicitly. OK for \"I just checked this\" cases with comments.\n- **Optional chaining**: `obj?.prop?.method()` — returns undefined if any link is null. Safe but can mask bugs (silent failures).\n- **Nullish coalescing**: `x ?? defaultValue` — falls back only on null/undefined, NOT on `0`, `''`, `false`. Use this over `||` when 0/empty is valid.\n\n## Interfaces vs Types\n\n- **`interface`**: for object shapes that may be extended. Supports declaration merging.\n- **`type`**: for unions, intersections, mapped types, conditional types. More flexible.\n- **Pick/Omit/Partial/Required**: utility types for transforming existing types.\n- **`Record<K, V>`**: typed object with keys `K` and values `V`. `Record<string, Foo>` is shorthand for `{ [key: string]: Foo }`.\n\n## Performance (Type-only)\n\n- **Type-only imports**: `import type { Foo } from 'bar';` ensures `Foo` is erased at compile time. Saves bundle size for types.\n- **`isolatedModules`**: ensures each file can be transpiled independently. Required for `tsc --isolatedModules` and tools like esbuild/swc.\n- **Avoid type computation in hot paths**: types are erased but complex conditional types slow tsc. Cache computed types as named aliases.\n\n## Common Issues to Flag\n\n- `any` (especially in function signatures, not just variables).\n- `as` casts without justification.\n- Missing return type on exported functions (forces callers to type-narrow).\n- Non-null assertion `!` without preceding null check.\n- `// eslint-disable-next-line` without comment explaining why.\n- Type assertion in test files (`expect(x as Foo)`) — usually indicates test type doesn't match source.\n- `Object`/`Function` types (use specific types).\n- Implicit `any` from untyped dependencies (`@types/...` missing).\n\n## Migration Tips (JS → TS)\n\n- Start with `allowJs: true` and `checkJs: false` to type-check incrementally.\n- Use `// @ts-expect-error` while fixing errors one file at a time.\n- Add types to dependencies first (`@types/node`, `@types/express`).\n- Use `unknown` instead of `any` during migration; narrow with guards.\n";
+/* harmony default export */ const typescript = (typescript_content);
+
+;// CONCATENATED MODULE: ./src/skills/registry.ts
+/**
+ * Built-in skill content for each detected tech-stack profile.
+ *
+ * Skills are Pi's progressive-disclosure context: Pi loads their descriptions
+ * at startup (small, in system prompt) and only reads the full body when a
+ * task matches. Shipping these as compiled-in strings keeps the bundle
+ * self-contained — no external file reads at runtime.
+ *
+ * Each entry is the full body of a `SKILL.md` file (frontmatter + markdown),
+ * keyed by `ProfileId`. The runtime copies the relevant entries to
+ * `${PI_CODING_AGENT_DIR}/skills/<id>/SKILL.md` after profile detection so
+ * Pi can discover them as ordinary project skills.
+ */
+
+
+
+
+
+
+
+
+
+const BUILT_IN_SKILLS = Object.freeze({
+    react: react,
+    nextjs: nextjs,
+    nestjs: nestjs,
+    nodejs: nodejs,
+    typescript: typescript,
+    javascript: javascript,
+    python: python,
+    swift: swift,
+    kotlin: kotlin,
+});
+/** All ProfileIds that have a built-in skill. */
+function profilesWithSkills() {
+    return Object.keys(BUILT_IN_SKILLS);
+}
+
+;// CONCATENATED MODULE: ./src/adapter/runtime.ts
+
+
+
+
+function buildPiRuntimeModelsJson(config) {
+    return JSON.stringify({
+        providers: {
+            [config.provider]: {
+                name: config.provider,
+                baseUrl: config.baseUrl,
+                api: 'openai-completions',
+                compat: {
+                    supportsDeveloperRole: false,
+                    supportsReasoningEffort: false,
+                },
+                models: [
+                    {
+                        id: config.model,
+                        name: config.model,
+                        reasoning: false,
+                        input: ['text'],
+                        contextWindow: 128_000,
+                        maxTokens: 16_384,
+                        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                    },
+                ],
+            },
+        },
+    }, null, 2);
 }
 /**
- * Opt-in draft skip. Env-only because the V1 input surface is frozen
- * (docs/v1-interface-contract.md). Safe to skip: `ready_for_review` is a
- * supported trigger, so the PR is reviewed when it leaves draft.
+ * Pi settings for a review run. Auto-compaction is off: Pi text mode prints
+ * only the last message in its state, and compaction (triggered once the
+ * context passes `contextWindow - 16384`) replaces that state after the final
+ * answer. A review that read many files then exited 0 with empty stdout and
+ * surfaced as "the model returned an empty assistant message". With compaction
+ * off, a real overflow is reported by the provider as an explicit error.
  */
-function shouldSkipDraft(draft, env = process.env) {
-    return draft && env.AI_REVIEW_SKIP_DRAFTS === 'true';
+function buildPiRuntimeSettingsJson() {
+    return JSON.stringify({ compaction: { enabled: false } }, null, 2);
 }
-function validateReviewEvent(eventName, action) {
-    if (!eventName)
-        return { supported: true };
-    if (!SUPPORTED_EVENTS.has(eventName)) {
-        return {
-            supported: false,
-            reason: `event "${eventName}" is not pull_request/pull_request_target`,
-        };
+/**
+ * Write built-in skill SKILL.md files for each detected profile into the
+ * Pi config dir. Pi auto-discovers skills at `${PI_CODING_AGENT_DIR}/skills/`
+ * recursively, so dropping one directory per profile is enough.
+ *
+ * Skills are progressive-disclosure: Pi loads their descriptions into the
+ * system prompt (~1024 chars each), but only reads the body when the task
+ * matches. The full bodies are stored as compiled-in TypeScript strings
+ * (see `src/skills/registry.ts`) so we ship self-contained — no external
+ * file reads at action runtime.
+ */
+async function writeSkillsForProfiles(configDir, profiles) {
+    for (const profile of profiles) {
+        const content = BUILT_IN_SKILLS[profile];
+        if (!content)
+            continue;
+        const skillDir = (0,external_node_path_.join)(configDir, 'skills', profile);
+        await (0,promises_.mkdir)(skillDir, { recursive: true });
+        await (0,promises_.writeFile)((0,external_node_path_.join)(skillDir, 'SKILL.md'), content, 'utf8');
     }
-    if (action && !SUPPORTED_ACTIONS.has(action)) {
-        return {
-            supported: false,
-            reason: `action "${action}" is not one of ${[...SUPPORTED_ACTIONS].join(', ')}`,
-        };
+}
+async function preparePiRuntimeConfig(config, options) {
+    const configDir = await (0,promises_.mkdtemp)((0,external_node_path_.join)((0,external_node_os_.tmpdir)(), 'acr-pi-'));
+    try {
+        await (0,promises_.mkdir)(configDir, { recursive: true });
+        await (0,promises_.writeFile)((0,external_node_path_.join)(configDir, 'models.json'), buildPiRuntimeModelsJson(config), 'utf8');
+        await (0,promises_.writeFile)((0,external_node_path_.join)(configDir, 'settings.json'), buildPiRuntimeSettingsJson(), 'utf8');
+        if (options?.profiles && options.profiles.length > 0) {
+            await writeSkillsForProfiles(configDir, options.profiles);
+        }
     }
-    return { supported: true };
+    catch (error) {
+        await (0,promises_.rm)(configDir, { recursive: true, force: true });
+        throw error;
+    }
+    return {
+        configDir,
+        async cleanup() {
+            await (0,promises_.rm)(configDir, { recursive: true, force: true });
+        },
+    };
+}
+// Re-export for tests
+
+
+;// CONCATENATED MODULE: ./src/context/files.ts
+/**
+ * Default ignore rules (spec §32). Generated artifacts, snapshots,
+ * lockfiles and vendor code never consume review context. Dependency
+ * manifests stay reviewable even though lockfiles do not, unless
+ * `AI_REVIEW_INCLUDE_LOCKFILES=true` opts lockfiles back in.
+ */
+const DEFAULT_IGNORE_PATTERNS = [
+    /node_modules\//,
+    /(^|\/)dist\//,
+    /(^|\/)build\//,
+    /(^|\/)coverage\//,
+    /(^|\/)\.next\//,
+    /(^|\/)vendor\//,
+    /(^|\/)generated\//,
+    /\.min\.js$/,
+    /\.map$/,
+    /\.snap$/,
+    /(^|\/)__snapshots__\//,
+];
+const LOCKFILES = new Set([
+    'package-lock.json',
+    'pnpm-lock.yaml',
+    'yarn.lock',
+    'uv.lock',
+    'poetry.lock',
+    'Cargo.lock',
+    'composer.lock',
+    'Gemfile.lock',
+]);
+/** Dependency manifests are always reviewable (spec §32). */
+const MANIFESTS = new Set([
+    'package.json',
+    'pyproject.toml',
+    'Podfile',
+    'Package.swift',
+    'build.gradle',
+    'build.gradle.kts',
+    'settings.gradle',
+    'settings.gradle.kts',
+]);
+function isLockfile(path) {
+    const base = path.split('/').pop() ?? path;
+    return LOCKFILES.has(base);
+}
+function isReviewable(file, env = process.env) {
+    if (MANIFESTS.has(file.filename)) {
+        return true;
+    }
+    if (isLockfile(file.filename)) {
+        return env.AI_REVIEW_INCLUDE_LOCKFILES === 'true';
+    }
+    return !DEFAULT_IGNORE_PATTERNS.some((pattern) => pattern.test(file.filename));
+}
+/**
+ * Filter to reviewable files, then keep the highest-impact ones when the
+ * count exceeds the cap (spec §31: prioritize source over generated).
+ */
+function prioritizeFiles(files, maxFiles) {
+    return files
+        .filter((file) => isReviewable(file))
+        .sort((a, b) => b.changes - a.changes)
+        .slice(0, maxFiles);
 }
 
+// EXTERNAL MODULE: ./src/context/prelint.ts
+var prelint = __nccwpck_require__(7154);
+;// CONCATENATED MODULE: ./src/github/progress.ts
+
+
+function trackPhase(phase, detail, options) {
+    if (!options.enabled)
+        return;
+    const stepSummaryPath = process.env.GITHUB_STEP_SUMMARY;
+    const line = `**[progress]** ${phase}: ${detail}\n`;
+    core.info(line.trim());
+    if (!stepSummaryPath)
+        return;
+    try {
+        (0,external_node_fs_.appendFileSync)(stepSummaryPath, line, 'utf8');
+    }
+    catch (error) {
+        core.warning(`[progress] write to $GITHUB_STEP_SUMMARY failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+// EXTERNAL MODULE: ./src/harness/pi.ts + 1 modules
+var pi = __nccwpck_require__(593);
 ;// CONCATENATED MODULE: ./src/profiles/common.ts
 
 
@@ -41151,6 +41422,426 @@ function parseVerifyOutput(raw, expected) {
             reason: 'verify output omitted one or more candidates; findings retained',
         };
     return { verified, status: 'complete' };
+}
+
+// EXTERNAL MODULE: ./src/security/skills/registry.ts
+var registry = __nccwpck_require__(3677);
+// EXTERNAL MODULE: ./src/security/skills/selector.ts
+var selector = __nccwpck_require__(9347);
+;// CONCATENATED MODULE: ./src/runners/review.ts
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function positiveTimeout(value, fallback) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+/**
+ * Like {@link positiveTimeout} but explicit `0` is honored (it disables the
+ * corresponding cap), so an operator can opt out of a budget instead of
+ * silently getting the default.
+ */
+function budgetOrFallback(value, fallback) {
+    if (value === undefined || value.trim() === '')
+        return fallback;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+let agentDebugWritten = false;
+async function appendAgentDebugToSummary(runs) {
+    if (!core.isDebug() || agentDebugWritten)
+        return;
+    const section = (0,pi/* buildAgentDebugSection */.IM)(runs);
+    if (!section)
+        return;
+    core.info(`[debug] agent runtime log: ${runs.length} run(s), ${section.length} chars`);
+    try {
+        core.summary.addRaw(`\n\n${section}\n`);
+        await core.summary.write();
+        agentDebugWritten = true;
+    }
+    catch (error) {
+        core.warning(`[debug] failed to write agent log to summary: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+/** Runs the pull-request review flow (the default `review` mode). */
+async function runPrReviewAction() {
+    const context = github.context;
+    if (!context.payload.pull_request) {
+        core.setFailed('This action only runs on pull requests');
+        return;
+    }
+    const legacyOptions = mapPrReviewInputs({
+        'github-token': core.getInput('github-token'),
+        'openai-api-key': core.getInput('openai-api-key'),
+        'openai-base-url': core.getInput('openai-base-url'),
+        'openai-model': core.getInput('openai-model'),
+        'review-prompt': core.getInput('review-prompt'),
+        'max-files': core.getInput('max-files'),
+        'exclude-patterns': core.getInput('exclude-patterns'),
+        'include-dir': core.getInput('include-dir'),
+        'auto-approve-when-resolved': core.getInput('auto-approve-when-resolved'),
+        'min-severity': core.getInput('min-severity'),
+        'block-on-issues': core.getInput('block-on-issues'),
+        'include-full-content': core.getInput('include-full-content'),
+        'max-context-chars': core.getInput('max-context-chars'),
+    });
+    const llmConfig = resolveEngineConfig(legacyOptions);
+    const octokit = toPublisherOctokit(github.getOctokit(legacyOptions.githubToken));
+    const prNumber = context.payload.pull_request.number;
+    const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
+    const trackEnabled = core.getInput('track-progress') === 'true';
+    const reviewStarted = external_node_perf_hooks_.performance.now();
+    trackPhase('fetch', `PR #${prNumber}`, { enabled: trackEnabled });
+    const reviewContext = await fetchPrContext(octokit, repoInfo, prNumber);
+    if (shouldSkipDraft(reviewContext.pullRequest.draft)) {
+        core.info(`[review] PR #${prNumber} is a draft and AI_REVIEW_SKIP_DRAFTS=true — skipping review`);
+        core.setOutput('review-summary', 'skipped: draft pull request');
+        return;
+    }
+    reviewContext.repositoryPath = process.env.GITHUB_WORKSPACE || process.cwd();
+    const allPrFiles = reviewContext.diff.files;
+    const filtered = applyLegacyFilters(allPrFiles.map((f) => f.filename), legacyOptions);
+    const envLimits = readReviewEnvLimits(process.env);
+    const maxFiles = Math.min(legacyOptions.maxFiles, envLimits.maxFiles);
+    // Captured before filtering so the summary can report
+    // "N of M (X excluded by filter)" (src/github/comments.ts).
+    const filesTotal = allPrFiles.length;
+    reviewContext.diff.files = prioritizeFiles(allPrFiles.filter((f) => filtered.includes(f.filename) && Boolean(f.patch)), maxFiles);
+    const filesSelected = reviewContext.diff.files.length;
+    trackPhase('filter', `${reviewContext.diff.files.length} files after filter`, { enabled: trackEnabled });
+    if (reviewContext.diff.files.length === 0) {
+        const emptyMessage = `[review] No files to review after filtering (${filesTotal} changed, include-dir=${legacyOptions.includeDirs?.join(',') ?? '(none)'}, exclude-patterns=${legacyOptions.excludePatterns.join(',')})`;
+        if (classifyEmptySelection({
+            filesTotal,
+            filteredCount: filtered.length,
+            includeDirs: legacyOptions.includeDirs,
+            excludePatterns: legacyOptions.excludePatterns,
+        }) === 'warning')
+            core.warning(emptyMessage);
+        else
+            core.notice(emptyMessage);
+        core.setOutput('review-summary', 'skipped: no files to review');
+        return;
+    }
+    const detected = resolveProfiles(reviewContext.repositoryPath, process.env.AI_REVIEW_PROFILE);
+    // Detected profiles by default: loading every stack's rules for a repo
+    // that uses one stack buries the relevant rules in ~6k chars of noise and
+    // measurably degrades review quality. `AI_REVIEW_PROFILE=all` keeps the
+    // old load-everything behavior; an explicit comma list still pins stacks.
+    const loadAllProfiles = process.env.AI_REVIEW_PROFILE === 'all';
+    const profiles = loadAllProfiles
+        ? profilesWithSkills().map((id) => ({
+            id,
+            evidence: ['AI_REVIEW_PROFILE=all'],
+        }))
+        : detected;
+    reviewContext.profiles = profiles;
+    trackPhase('profiles', profiles.length > 0
+        ? profiles.map((p) => p.id).join(', ')
+        : 'none detected', { enabled: trackEnabled });
+    const previousConfigDir = process.env.PI_CODING_AGENT_DIR;
+    let harness;
+    const runtimeConfig = await preparePiRuntimeConfig(llmConfig, {
+        profiles: profiles.map((p) => p.id),
+    });
+    process.env.PI_CODING_AGENT_DIR = runtimeConfig.configDir;
+    try {
+        // Run deterministic static analyzers when opted in via env
+        // var. Cannot add a new action input because the V1
+        // contract (docs/v1-interface-contract.md) is frozen.
+        const enablePrelint = process.env.AI_REVIEW_ENABLE_PRELINT === 'true';
+        const prelintResult = enablePrelint
+            ? await (0,prelint/* runPrelint */.MA)({
+                repositoryPath: reviewContext.repositoryPath,
+                changedFiles: reviewContext.diff.files,
+            })
+            : { findings: [], ran: [], skipped: [] };
+        if (prelintResult.skipped.length > 0) {
+            core.info(`[prelint] Skipped tools: ${prelintResult.skipped.join(', ')}`);
+        }
+        if (prelintResult.ran.length > 0) {
+            core.info(`[prelint] Ran ${prelintResult.ran.join(', ')} — ${prelintResult.findings.length} findings`);
+        }
+        trackPhase('harness', 'Pi review start', { enabled: trackEnabled });
+        const piBinaryRaw = core.getInput('pi-binary-path');
+        let piBinaryPath;
+        if (piBinaryRaw) {
+            try {
+                const { accessSync, constants } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 3024, 23));
+                accessSync(piBinaryRaw, constants.X_OK);
+                piBinaryPath = piBinaryRaw;
+            }
+            catch {
+                core.warning(`[review] pi-binary-path ${piBinaryRaw} not executable — falling back to pi`);
+            }
+        }
+        // ponytail: all security skills into default review (12 domains + validation gate); filter by domain when cost matters.
+        const allSecurityPrompt = (0,selector/* renderSkillsForPrompt */.a)(registry/* CURATED_SECURITY_SKILLS */.J);
+        const promptFile = await loadReviewPromptFile({
+            repoPath: reviewContext.repositoryPath,
+            file: core.getInput('review-prompt-file'),
+            baseSha: reviewContext.pullRequest.baseSha,
+            filesTruncated: reviewContext.diff.filesTruncated,
+            fetchBase: async (path, ref) => {
+                try {
+                    const res = await github.getOctokit(legacyOptions.githubToken)
+                        .rest.repos.getContent({ ...repoInfo, path, ref });
+                    return res.data;
+                }
+                catch (error) {
+                    if (error.status === 404)
+                        return undefined;
+                    throw error;
+                }
+            },
+            changedPaths: new Set(allPrFiles.flatMap((f) => f.previousFilename ? [f.filename, f.previousFilename] : [f.filename])),
+        });
+        const reviewRules = [
+            promptFile,
+            allSecurityPrompt,
+            legacyOptions.reviewPrompt,
+            rulesForProfiles(profiles),
+        ]
+            .filter(Boolean)
+            .join('\n\n');
+        harness = new pi/* PiHarness */._7({
+            binaryPath: piBinaryPath,
+            piArgs: core.getInput('pi-args'),
+            timeoutMs: positiveTimeout(process.env.AI_REVIEW_PI_TIMEOUT_MS, 15 * 60_000),
+            maxOutputBytes: budgetOrFallback(process.env.AI_REVIEW_PI_MAX_OUTPUT_BYTES, pi/* DEFAULT_MAX_OUTPUT_BYTES */.n9),
+            maxToolCalls: budgetOrFallback(process.env.AI_REVIEW_PI_MAX_TOOL_CALLS, pi/* DEFAULT_MAX_TOOL_CALLS */.Ko),
+            maxAssistantBytes: budgetOrFallback(process.env.AI_REVIEW_PI_MAX_ASSISTANT_BYTES, pi/* DEFAULT_MAX_ASSISTANT_BYTES */.uI),
+            repairAttempts: budgetOrFallback(process.env.AI_REVIEW_PI_REPAIR_ATTEMPTS, 1),
+            model: llmConfig.model,
+            apiKey: llmConfig.apiKey,
+            includeFullContent: legacyOptions.includeFullContent,
+            maxContextChars: legacyOptions.maxContextChars,
+            extraRules: reviewRules,
+            provider: llmConfig.provider,
+            toolFindings: prelintResult.findings,
+        });
+        const result = await runReview(reviewContext, harness, {
+            minConfidence: envLimits.minConfidence,
+            extraRules: reviewRules,
+            minSeverity: legacyOptions.minSeverity,
+        });
+        // Opt-in second LLM pass (env-only; V1 contract frozen, no new
+        // input): challenges high/critical findings, drops hallucinations.
+        if (process.env.AI_REVIEW_VERIFY_PASS === 'true') {
+            try {
+                const verifyProvider = new openai_compatible.OpenAiCompatibleProvider(llmConfig);
+                await applyVerifyPass(result, {
+                    toolFindings: prelintResult.findings,
+                    title: reviewContext.pullRequest.title,
+                    body: reviewContext.pullRequest.body,
+                    verify: async (prompt) => (await verifyProvider.complete([{ role: 'user', content: prompt }], { temperature: 0, maxOutputTokens: 2048 })).content,
+                    budgetUsd: envLimits.verifyBudgetUsd,
+                });
+                trackPhase('harness', `Verify pass done: ${result.findings.length} findings`, { enabled: trackEnabled });
+            }
+            catch (error) {
+                core.warning(`[review] verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+        // Surface tool findings + prelint diagnostics in the result
+        // so they render in the GitHub review summary
+        // (collapsible section, see docs/index.md).
+        result.toolFindings = prelintResult.findings;
+        result.diagnostics = {
+            ...result.diagnostics,
+            toolFindingsTotal: prelintResult.findings.length,
+            prelintRan: prelintResult.ran,
+            prelintSkipped: prelintResult.skipped,
+        };
+        await appendAgentDebugToSummary(harness.runs);
+        trackPhase('harness', `Pi review done: ${result.findings.length} findings`, { enabled: trackEnabled });
+        // Post-filter count, not filesReviewed: the latter shrinks when a
+        // harness group fails, which would misreport an outage as a filter
+        // exclusion. Shared by the PR comment and the job summary below.
+        const filesExcluded = Math.max(filesTotal - filesSelected, 0);
+        // Report emission is attempted even when publishing fails: the
+        // JSON describes the analysis result, which exists either way.
+        // `buildReport` runs after publishReview settles, so a `stale`
+        // status set while publishing is included. Redaction runs on a
+        // serialized copy; the engine result is not mutated. Emission is
+        // best effort: if building or writing the report also fails, the
+        // publish error stays primary. See docs/v1-interface-contract.md.
+        await withReviewReportOutput(async () => {
+            await publishReview(octokit, {
+                owner: repoInfo.owner,
+                repo: repoInfo.repo,
+                prNumber,
+                headSha: reviewContext.pullRequest.headSha,
+                result,
+                model: llmConfig.model,
+                filesTotal,
+                filesExcluded,
+                filesSelected,
+                blockOnIssues: legacyOptions.blockOnIssues,
+                minSeverity: legacyOptions.minSeverity,
+                requireWritePermissions: core.getInput('require-write-permissions') === 'true',
+                stickySummary: core.getInput('sticky-summary') !== 'false',
+                bufferInlineComments: core.getInput('buffer-inline-comments') !== 'false' &&
+                    core.getInput('classify-inline-comments') !== 'false',
+                autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
+                actor: process.env.GITHUB_ACTOR ??
+                    github.context.payload.pull_request?.user?.login ??
+                    github.context.actor,
+            });
+            trackPhase('publish', 'review published', { enabled: trackEnabled });
+        }, () => serializeReviewReport(buildReviewReport({
+            result,
+            filesTotal,
+            filesExcluded,
+            fileCoverage: buildFileCoverage({
+                files: allPrFiles,
+                filteredPaths: filtered,
+                selectedPaths: reviewContext.diff.files.map((file) => file.filename),
+                reviewedPaths: result.filesReviewed,
+                failedGroups: result.diagnostics?.failedGroups ?? 0,
+            }),
+        })), (serialized) => core.setOutput('review-report', serialized));
+        await core.summary
+            .addRaw(buildJobSummary({
+            model: llmConfig.model,
+            durationMs: external_node_perf_hooks_.performance.now() - reviewStarted,
+            filesReviewed: result.filesReviewed,
+            filesTotal,
+            filesExcluded,
+            filesSelected,
+            result,
+            toolFindings: result.toolFindings,
+            diagnostics: result.diagnostics,
+        }))
+            .write();
+        // Opt-in raw harness dump: the only way to see what the model
+        // actually returned when a group fails.
+        const dumpBudget = rawHarnessDumpEnabled();
+        if (dumpBudget && harness) {
+            const section = buildRawHarnessSection(harness.runs, dumpBudget);
+            if (section)
+                await core.summary.addRaw(section).write();
+        }
+        core.setOutput('review-summary', `${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`);
+        // A crashed group or an unanalyzed file used to leave the step green
+        // while the summary looked like a clean review. Fail the step so the
+        // run is visible; set AI_REVIEW_FAIL_ON_INCOMPLETE=false to keep the
+        // old lenient behavior.
+        const failure = incompleteReviewFailure({ result, filesSelected });
+        if (failure && process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false') {
+            core.setFailed(failure);
+        }
+        else if (failure) {
+            core.warning(failure);
+        }
+    }
+    finally {
+        // Ensure agent debug log attached even if review/publish failed
+        try {
+            if (harness)
+                await appendAgentDebugToSummary(harness.runs);
+        }
+        catch { }
+        await runtimeConfig.cleanup();
+        if (previousConfigDir === undefined)
+            Reflect.deleteProperty(process.env, 'PI_CODING_AGENT_DIR');
+        else
+            process.env.PI_CODING_AGENT_DIR = previousConfigDir;
+    }
+}
+function normalizeIncludeDir(dir) {
+    return dir
+        .trim()
+        .replace(/\\/g, '/')
+        .replace(/^(\.\/)+/, '')
+        .replace(/^\/+/, '')
+        .replace(/\/+$/, '');
+}
+/**
+ * Numeric env ceilings read by `main()`. Invalid values warn and fall back,
+ * so a typo can never switch a safety limit off.
+ */
+function readReviewEnvLimits(env) {
+    return {
+        maxFiles: parsePositiveInt(env.AI_REVIEW_MAX_FILES, config/* REVIEW_OPTION_DEFAULTS */.Ag.aiReviewMaxFiles, { name: 'AI_REVIEW_MAX_FILES' }),
+        minConfidence: parseBoundedFloat(env.AI_REVIEW_MIN_CONFIDENCE, 0.8, {
+            name: 'AI_REVIEW_MIN_CONFIDENCE',
+            min: 0,
+            max: 1,
+        }),
+        verifyBudgetUsd: parseBoundedFloat(env.AI_REVIEW_VERIFY_BUDGET_USD, 0.5, {
+            name: 'AI_REVIEW_VERIFY_BUDGET_USD',
+            min: 0,
+        }),
+    };
+}
+/**
+ * An empty selection is only worth a warning when a filter the user set
+ * (include-dir, or exclude patterns other than the default) removed every
+ * changed file. Lockfile-only, docs-only, and patch-less PRs are legitimate.
+ */
+function classifyEmptySelection(args) {
+    if (args.filesTotal === 0 || args.filteredCount > 0)
+        return 'notice';
+    const effectiveDirs = (args.includeDirs ?? [])
+        .map(normalizeIncludeDir)
+        .filter((dir) => dir !== '' && dir !== '.');
+    if (effectiveDirs.length > 0)
+        return 'warning';
+    const sorted = (list) => [...list].sort().join(',');
+    const isDefault = sorted(args.excludePatterns) === sorted(DEFAULT_EXCLUDE_PATTERNS);
+    return isDefault ? 'notice' : 'warning';
+}
+function applyLegacyFilters(filenames, options) {
+    const excludeRegexes = options.excludePatterns.map((pattern) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
+    const requestedDirs = options.includeDirs
+        ?.map(normalizeIncludeDir)
+        .filter((dir) => dir !== '' && dir !== '.');
+    // A `..` segment can never match a repository path: keep the include
+    // filter active (matching nothing) rather than widening it to every file.
+    const includeDirs = requestedDirs?.filter((dir) => {
+        if (!dir.split('/').includes('..'))
+            return true;
+        core.warning(`[review] include-dir "${dir}" contains ".." and is ignored (matches no files)`);
+        return false;
+    });
+    for (const dir of includeDirs ?? []) {
+        if (!filenames.some((f) => f === dir || f.startsWith(`${dir}/`))) {
+            core.warning(`[review] include-dir "${dir}" matches no changed files`);
+        }
+    }
+    return filenames.filter((filename) => {
+        if (excludeRegexes.some((regex) => regex.test(filename)))
+            return false;
+        if (requestedDirs?.length)
+            return (includeDirs ?? []).some((dir) => filename.startsWith(`${dir}/`) || filename === dir);
+        return true;
+    });
 }
 
 ;// CONCATENATED MODULE: ./src/security/completion.ts
@@ -43157,11 +43848,7 @@ async function fetchExistingSecurityCommentIds(octokit, owner, repo, prNumber) {
     return ids;
 }
 
-// EXTERNAL MODULE: ./src/security/skills/registry.ts
-var registry = __nccwpck_require__(3677);
-// EXTERNAL MODULE: ./src/security/skills/selector.ts
-var selector = __nccwpck_require__(9347);
-;// CONCATENATED MODULE: ./src/cli.ts
+;// CONCATENATED MODULE: ./src/runners/security.ts
 
 
 
@@ -43170,309 +43857,6 @@ var selector = __nccwpck_require__(9347);
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-function positiveTimeout(value, fallback) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-/**
- * Like {@link positiveTimeout} but explicit `0` is honored (it disables the
- * corresponding cap), so an operator can opt out of a budget instead of
- * silently getting the default.
- */
-function budgetOrFallback(value, fallback) {
-    if (value === undefined || value.trim() === '')
-        return fallback;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-}
-function recordArgs(args) {
-    if (!args || typeof args !== 'object')
-        throw new Error('Invalid request arguments');
-    return args;
-}
-function requiredString(args, key) {
-    const value = args[key];
-    if (typeof value !== 'string')
-        throw new Error(`Missing ${key}`);
-    return value;
-}
-function requiredNumber(args, key) {
-    const value = args[key];
-    if (typeof value !== 'number')
-        throw new Error(`Missing ${key}`);
-    return value;
-}
-function repositoryArgs(args) {
-    return {
-        owner: requiredString(args, 'owner'),
-        repo: requiredString(args, 'repo'),
-        pull_number: requiredNumber(args, 'pull_number'),
-    };
-}
-function toPublisherOctokit(client) {
-    const pulls = {
-        get: (args) => client.rest.pulls.get(repositoryArgs(recordArgs(args))),
-        update: (args) => client.rest.pulls.update({
-            ...repositoryArgs(args),
-            title: requiredString(args, 'title'),
-            body: requiredString(args, 'body'),
-        }),
-        listFiles: (args) => client.rest.pulls.listFiles({
-            ...repositoryArgs(args),
-            page: requiredNumber(args, 'page'),
-            per_page: requiredNumber(args, 'per_page'),
-        }),
-        createReview: (args) => {
-            const event = requiredString(args, 'event');
-            if (!['REQUEST_CHANGES', 'COMMENT', 'APPROVE'].includes(event))
-                throw new Error('Invalid event');
-            if (args.comments !== undefined && !Array.isArray(args.comments))
-                throw new Error('comments must be array');
-            return client.rest.pulls.createReview({
-                ...repositoryArgs(args),
-                commit_id: requiredString(args, 'commit_id'),
-                event: event,
-                comments: args.comments,
-            });
-        },
-        createReviewComment: (args) => client.rest.pulls.createReviewComment({
-            ...repositoryArgs(args),
-            body: requiredString(args, 'body'),
-            commit_id: requiredString(args, 'commit_id'),
-            path: requiredString(args, 'path'),
-            line: requiredNumber(args, 'line'),
-            side: (() => {
-                const side = requiredString(args, 'side');
-                if (side !== 'RIGHT' && side !== 'LEFT')
-                    throw new Error('Invalid side');
-                return side;
-            })(),
-        }),
-        createReplyForReviewComment: (args) => client.rest.pulls.createReplyForReviewComment(args),
-        getReviewComment: (args) => client.rest.pulls.getReviewComment({
-            ...repositoryArgs(args),
-            comment_id: requiredNumber(args, 'comment_id'),
-        }),
-        listReviews: async (args) => {
-            const response = await client.rest.pulls.listReviews({
-                ...repositoryArgs(args),
-                page: requiredNumber(args, 'page'),
-                per_page: requiredNumber(args, 'per_page'),
-            });
-            return {
-                data: response.data.map((review) => ({
-                    id: review.id,
-                    user: review.user ? { login: review.user.login ?? undefined } : null,
-                })),
-            };
-        },
-        listCommentsForReview: async (args) => {
-            const response = await client.rest.pulls.listCommentsForReview({
-                ...repositoryArgs(args),
-                review_id: requiredNumber(args, 'review_id'),
-                page: requiredNumber(args, 'page'),
-                per_page: requiredNumber(args, 'per_page'),
-            });
-            return {
-                data: response.data.map((comment) => ({
-                    body: comment.body ?? null,
-                    pull_request_url: comment.pull_request_url ?? null,
-                    user: comment.user
-                        ? { login: comment.user.login ?? undefined }
-                        : null,
-                })),
-            };
-        },
-        listThreads: async (args) => {
-            return listReviewThreads((query, variables) => client.graphql(query, variables), {
-                owner: requiredString(args, 'owner'),
-                repo: requiredString(args, 'repo'),
-                pullNumber: requiredNumber(args, 'pull_number'),
-            });
-        },
-    };
-    return {
-        rest: {
-            pulls,
-            repos: {
-                getCollaboratorPermissionLevel: (args) => client.rest.repos.getCollaboratorPermissionLevel({
-                    owner: requiredString(args, 'owner'),
-                    repo: requiredString(args, 'repo'),
-                    username: requiredString(args, 'username'),
-                }),
-            },
-            issues: {
-                listComments: (args) => client.rest.issues.listComments({
-                    owner: requiredString(args, 'owner'),
-                    repo: requiredString(args, 'repo'),
-                    issue_number: requiredNumber(args, 'issue_number'),
-                    page: requiredNumber(args, 'page'),
-                    per_page: requiredNumber(args, 'per_page'),
-                }),
-                updateComment: (args) => client.rest.issues.updateComment({
-                    owner: requiredString(args, 'owner'),
-                    repo: requiredString(args, 'repo'),
-                    comment_id: requiredNumber(args, 'comment_id'),
-                    body: requiredString(args, 'body'),
-                }),
-                createComment: (args) => client.rest.issues.createComment({
-                    owner: requiredString(args, 'owner'),
-                    repo: requiredString(args, 'repo'),
-                    issue_number: requiredNumber(args, 'issue_number'),
-                    body: requiredString(args, 'body'),
-                }),
-            },
-            users: {
-                getAuthenticated: () => client.rest.users.getAuthenticated(),
-            },
-        },
-        users: { getAuthenticated: () => client.rest.users.getAuthenticated() },
-    };
-}
-function parseArgs(args) {
-    return {
-        action: (args[0] ?? 'pr-review') === 'pr-content' ? 'pr-content' : 'pr-review',
-    };
-}
-let agentDebugWritten = false;
-async function appendAgentDebugToSummary(runs) {
-    if (!core.isDebug() || agentDebugWritten)
-        return;
-    const section = (0,pi/* buildAgentDebugSection */.IM)(runs);
-    if (!section)
-        return;
-    core.info(`[debug] agent runtime log: ${runs.length} run(s), ${section.length} chars`);
-    try {
-        core.summary.addRaw(`\n\n${section}\n`);
-        await core.summary.write();
-        agentDebugWritten = true;
-    }
-    catch (error) {
-        core.warning(`[debug] failed to write agent log to summary: ${error instanceof Error ? error.message : String(error)}`);
-    }
-}
-const DEFAULT_PR_CONTENT_MAX_TOKENS = 4096;
-const PR_CONTENT_RETRY_CEILING = 32_768;
-/**
- * Retry budget after a truncated, empty, or unparseable answer. Reasoning
- * models spend output tokens on thinking before the JSON, so repeating the
- * same budget fails the same way; double it up to a ceiling.
- */
-function escalateMaxTokens(current) {
-    return Math.min(current * 2, PR_CONTENT_RETRY_CEILING);
-}
-async function runPrContent(options) {
-    const started = external_node_perf_hooks_.performance.now();
-    const context = github.context;
-    const prNumber = context.payload.pull_request?.number;
-    if (!prNumber) {
-        core.setFailed('This action only runs on pull requests');
-        return;
-    }
-    const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
-    const client = github.getOctokit(options.githubToken);
-    const octokit = toPublisherOctokit(client);
-    const prContext = await fetchPrContext(octokit, repoInfo, prNumber);
-    let templateContent = '';
-    try {
-        const template = await client.rest.repos.getContent({
-            ...repoInfo,
-            path: options.templatePath,
-        });
-        if ('content' in template.data &&
-            typeof template.data.content === 'string') {
-            templateContent = external_node_buffer_namespaceObject.Buffer.from(template.data.content, 'base64').toString('utf8');
-        }
-    }
-    catch {
-        // Missing template is valid and matches V1 behavior.
-    }
-    const config = resolveEngineConfig(options);
-    const provider = new openai_compatible.OpenAiCompatibleProvider(config);
-    const diffs = prContext.diff.files
-        .filter((file) => file.patch)
-        .map((file) => ({
-        filename: file.filename,
-        status: file.status,
-        patch: file.patch ?? '',
-    }));
-    const messages = [
-        {
-            role: 'system',
-            content: createSystemPrompt(options.customInstructions, templateContent),
-        },
-        {
-            role: 'user',
-            content: buildUserPrompt(prContext.pullRequest.title, prContext.pullRequest.body, diffs, options.includeFileList),
-        },
-    ];
-    const complete = (maxOutputTokens) => provider.complete(messages, { temperature: 0.3, maxOutputTokens });
-    let budget = options.maxTokens || DEFAULT_PR_CONTENT_MAX_TOKENS;
-    // Transient failures (429/5xx/network) are retried inside the provider.
-    let completion = await complete(budget);
-    if (!completion.content || completion.finishReason === 'length') {
-        budget = escalateMaxTokens(budget);
-        core.warning(`AI response truncated or empty; retrying with max_tokens=${budget}`);
-        completion = await complete(budget);
-    }
-    try {
-        await updatePrContent(octokit, repoInfo.owner, repoInfo.repo, prNumber, {
-            response: completion.content,
-            templateContent,
-        });
-    }
-    catch (error) {
-        budget = escalateMaxTokens(budget);
-        core.warning(`First parse failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=${budget}`);
-        completion = await complete(budget);
-        await updatePrContent(octokit, repoInfo.owner, repoInfo.repo, prNumber, {
-            response: completion.content,
-            templateContent,
-        });
-    }
-    const durationMs = external_node_perf_hooks_.performance.now() - started;
-    const summary = `${buildJobSummary({
-        model: options.model,
-        durationMs,
-        filesReviewed: diffs.map((diff) => diff.filename),
-        result: {
-            findings: [],
-            counts: { critical: 0, high: 0, medium: 0, low: 0 },
-            risk: 'none',
-        },
-    })}
-- **Token usage:** ${completion.usage ? `${completion.usage.inputTokens} input / ${completion.usage.outputTokens} output` : 'n/a'}
-- **Status:** updated`;
-    core.info(summary);
-    await core.summary.addRaw(summary).write();
-    core.setOutput('pr-content-summary', summary);
-}
 async function runSecurity(options, octokit, repoInfo, prNumber) {
     let changedFiles = [];
     let headSha = github.context.payload.pull_request?.head?.sha || github.context.sha;
@@ -43524,6 +43908,61 @@ async function runSecurity(options, octokit, repoInfo, prNumber) {
     if (failureMessage)
         core.setFailed(failureMessage);
 }
+/** Reads the security-mode action inputs and runs the security flow. */
+async function runSecurityAction() {
+    const githubToken = core.getInput('github-token') ||
+        core.getInput('github_token') ||
+        process.env.GITHUB_TOKEN ||
+        '';
+    const octokit = toPublisherOctokit(github.getOctokit(githubToken));
+    const repoInfo = {
+        owner: github.context.repo?.owner || '',
+        repo: github.context.repo?.repo || '',
+    };
+    const prNumber = github.context.payload.pull_request?.number;
+    const secOptions = mapSecurityInputs({
+        'github-token': githubToken,
+        'openai-api-key': core.getInput('openai-api-key') || core.getInput('api_key'),
+        'openai-base-url': core.getInput('openai-base-url') || core.getInput('base_url'),
+        'openai-model': core.getInput('openai-model') || core.getInput('model'),
+        mode: 'security',
+        security_profile: core.getInput('security_profile') || core.getInput('security-profile'),
+        security_min_severity: core.getInput('security_min_severity') ||
+            core.getInput('security-min-severity'),
+        security_fail_on: core.getInput('security_fail_on') || core.getInput('security-fail-on'),
+        security_confirm_findings: core.getInput('security_confirm_findings') ||
+            core.getInput('security-confirm-findings'),
+        security_inline_comments: core.getInput('security_inline_comments') ||
+            core.getInput('security-inline-comments'),
+        security_sticky_comment: core.getInput('security_sticky_comment') ||
+            core.getInput('security-sticky-comment'),
+        security_sarif: core.getInput('security_sarif') || core.getInput('security-sarif'),
+        security_max_findings: core.getInput('security_max_findings') ||
+            core.getInput('security-max-findings'),
+        security_risk_threshold: core.getInput('security_risk_threshold') ||
+            core.getInput('security-risk-threshold'),
+        'pi-args': core.getInput('pi-args'),
+        'pi-binary-path': core.getInput('pi-binary-path'),
+        'track-progress': core.getInput('track-progress'),
+    });
+    await runSecurity(secOptions, octokit, repoInfo, prNumber);
+}
+
+;// CONCATENATED MODULE: ./src/cli.ts
+
+
+
+
+
+
+
+
+
+function parseArgs(args) {
+    return {
+        action: (args[0] ?? 'pr-review') === 'pr-content' ? 'pr-content' : 'pr-review',
+    };
+}
 async function main(argv) {
     try {
         const mode = resolveReviewMode(core.getInput('mode') || undefined);
@@ -43549,417 +43988,18 @@ async function main(argv) {
             return;
         }
         if (options.action === 'pr-content') {
-            const contentOptions = mapPrContentInputs({
-                'github-token': core.getInput('github-token'),
-                'openai-api-key': core.getInput('openai-api-key'),
-                'openai-base-url': core.getInput('openai-base-url'),
-                'openai-model': core.getInput('openai-model'),
-                'max-tokens': core.getInput('max-tokens'),
-                'include-file-list': core.getInput('include-file-list'),
-                'custom-instructions': core.getInput('custom-instructions'),
-                'template-path': core.getInput('template-path'),
-            });
-            await runPrContent(contentOptions);
+            await runPrContentAction();
             return;
         }
         if (mode === 'security') {
-            const githubToken = core.getInput('github-token') ||
-                core.getInput('github_token') ||
-                process.env.GITHUB_TOKEN ||
-                '';
-            const octokit = toPublisherOctokit(github.getOctokit(githubToken));
-            const repoInfo = {
-                owner: github.context.repo?.owner || '',
-                repo: github.context.repo?.repo || '',
-            };
-            const prNumber = github.context.payload.pull_request?.number;
-            const secOptions = mapSecurityInputs({
-                'github-token': githubToken,
-                'openai-api-key': core.getInput('openai-api-key') || core.getInput('api_key'),
-                'openai-base-url': core.getInput('openai-base-url') || core.getInput('base_url'),
-                'openai-model': core.getInput('openai-model') || core.getInput('model'),
-                mode: 'security',
-                security_profile: core.getInput('security_profile') ||
-                    core.getInput('security-profile'),
-                security_min_severity: core.getInput('security_min_severity') ||
-                    core.getInput('security-min-severity'),
-                security_fail_on: core.getInput('security_fail_on') ||
-                    core.getInput('security-fail-on'),
-                security_confirm_findings: core.getInput('security_confirm_findings') ||
-                    core.getInput('security-confirm-findings'),
-                security_inline_comments: core.getInput('security_inline_comments') ||
-                    core.getInput('security-inline-comments'),
-                security_sticky_comment: core.getInput('security_sticky_comment') ||
-                    core.getInput('security-sticky-comment'),
-                security_sarif: core.getInput('security_sarif') || core.getInput('security-sarif'),
-                security_max_findings: core.getInput('security_max_findings') ||
-                    core.getInput('security-max-findings'),
-                security_risk_threshold: core.getInput('security_risk_threshold') ||
-                    core.getInput('security-risk-threshold'),
-                'pi-args': core.getInput('pi-args'),
-                'pi-binary-path': core.getInput('pi-binary-path'),
-                'track-progress': core.getInput('track-progress'),
-            });
-            await runSecurity(secOptions, octokit, repoInfo, prNumber);
+            await runSecurityAction();
             return;
         }
-        const context = github.context;
-        if (!context.payload.pull_request) {
-            core.setFailed('This action only runs on pull requests');
-            return;
-        }
-        const legacyOptions = mapPrReviewInputs({
-            'github-token': core.getInput('github-token'),
-            'openai-api-key': core.getInput('openai-api-key'),
-            'openai-base-url': core.getInput('openai-base-url'),
-            'openai-model': core.getInput('openai-model'),
-            'review-prompt': core.getInput('review-prompt'),
-            'max-files': core.getInput('max-files'),
-            'exclude-patterns': core.getInput('exclude-patterns'),
-            'include-dir': core.getInput('include-dir'),
-            'auto-approve-when-resolved': core.getInput('auto-approve-when-resolved'),
-            'min-severity': core.getInput('min-severity'),
-            'block-on-issues': core.getInput('block-on-issues'),
-            'include-full-content': core.getInput('include-full-content'),
-            'max-context-chars': core.getInput('max-context-chars'),
-        });
-        const llmConfig = resolveEngineConfig(legacyOptions);
-        const octokit = toPublisherOctokit(github.getOctokit(legacyOptions.githubToken));
-        const prNumber = context.payload.pull_request.number;
-        const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
-        const trackEnabled = core.getInput('track-progress') === 'true';
-        const reviewStarted = external_node_perf_hooks_.performance.now();
-        trackPhase('fetch', `PR #${prNumber}`, { enabled: trackEnabled });
-        const reviewContext = await fetchPrContext(octokit, repoInfo, prNumber);
-        if (shouldSkipDraft(reviewContext.pullRequest.draft)) {
-            core.info(`[review] PR #${prNumber} is a draft and AI_REVIEW_SKIP_DRAFTS=true — skipping review`);
-            core.setOutput('review-summary', 'skipped: draft pull request');
-            return;
-        }
-        reviewContext.repositoryPath =
-            process.env.GITHUB_WORKSPACE || process.cwd();
-        const allPrFiles = reviewContext.diff.files;
-        const filtered = applyLegacyFilters(allPrFiles.map((f) => f.filename), legacyOptions);
-        const envLimits = readReviewEnvLimits(process.env);
-        const maxFiles = Math.min(legacyOptions.maxFiles, envLimits.maxFiles);
-        // Captured before filtering so the summary can report
-        // "N of M (X excluded by filter)" (src/github/comments.ts).
-        const filesTotal = allPrFiles.length;
-        reviewContext.diff.files = prioritizeFiles(allPrFiles.filter((f) => filtered.includes(f.filename) && Boolean(f.patch)), maxFiles);
-        const filesSelected = reviewContext.diff.files.length;
-        trackPhase('filter', `${reviewContext.diff.files.length} files after filter`, { enabled: trackEnabled });
-        if (reviewContext.diff.files.length === 0) {
-            const emptyMessage = `[review] No files to review after filtering (${filesTotal} changed, include-dir=${legacyOptions.includeDirs?.join(',') ?? '(none)'}, exclude-patterns=${legacyOptions.excludePatterns.join(',')})`;
-            if (classifyEmptySelection({
-                filesTotal,
-                filteredCount: filtered.length,
-                includeDirs: legacyOptions.includeDirs,
-                excludePatterns: legacyOptions.excludePatterns,
-            }) === 'warning')
-                core.warning(emptyMessage);
-            else
-                core.notice(emptyMessage);
-            core.setOutput('review-summary', 'skipped: no files to review');
-            return;
-        }
-        const detected = resolveProfiles(reviewContext.repositoryPath, process.env.AI_REVIEW_PROFILE);
-        // Detected profiles by default: loading every stack's rules for a repo
-        // that uses one stack buries the relevant rules in ~6k chars of noise and
-        // measurably degrades review quality. `AI_REVIEW_PROFILE=all` keeps the
-        // old load-everything behavior; an explicit comma list still pins stacks.
-        const loadAllProfiles = process.env.AI_REVIEW_PROFILE === 'all';
-        const profiles = loadAllProfiles
-            ? profilesWithSkills().map((id) => ({
-                id,
-                evidence: ['AI_REVIEW_PROFILE=all'],
-            }))
-            : detected;
-        reviewContext.profiles = profiles;
-        trackPhase('profiles', profiles.length > 0
-            ? profiles.map((p) => p.id).join(', ')
-            : 'none detected', { enabled: trackEnabled });
-        const previousConfigDir = process.env.PI_CODING_AGENT_DIR;
-        let harness;
-        const runtimeConfig = await preparePiRuntimeConfig(llmConfig, {
-            profiles: profiles.map((p) => p.id),
-        });
-        process.env.PI_CODING_AGENT_DIR = runtimeConfig.configDir;
-        try {
-            // Run deterministic static analyzers when opted in via env
-            // var. Cannot add a new action input because the V1
-            // contract (docs/v1-interface-contract.md) is frozen.
-            const enablePrelint = process.env.AI_REVIEW_ENABLE_PRELINT === 'true';
-            const prelintResult = enablePrelint
-                ? await (0,prelint/* runPrelint */.MA)({
-                    repositoryPath: reviewContext.repositoryPath,
-                    changedFiles: reviewContext.diff.files,
-                })
-                : { findings: [], ran: [], skipped: [] };
-            if (prelintResult.skipped.length > 0) {
-                core.info(`[prelint] Skipped tools: ${prelintResult.skipped.join(', ')}`);
-            }
-            if (prelintResult.ran.length > 0) {
-                core.info(`[prelint] Ran ${prelintResult.ran.join(', ')} — ${prelintResult.findings.length} findings`);
-            }
-            trackPhase('harness', 'Pi review start', { enabled: trackEnabled });
-            const piBinaryRaw = core.getInput('pi-binary-path');
-            let piBinaryPath;
-            if (piBinaryRaw) {
-                try {
-                    const { accessSync, constants } = await Promise.resolve(/* import() */).then(__nccwpck_require__.t.bind(__nccwpck_require__, 3024, 23));
-                    accessSync(piBinaryRaw, constants.X_OK);
-                    piBinaryPath = piBinaryRaw;
-                }
-                catch {
-                    core.warning(`[review] pi-binary-path ${piBinaryRaw} not executable — falling back to pi`);
-                }
-            }
-            // ponytail: all security skills into default review (12 domains + validation gate); filter by domain when cost matters.
-            const allSecurityPrompt = (0,selector/* renderSkillsForPrompt */.a)(registry/* CURATED_SECURITY_SKILLS */.J);
-            const promptFile = await loadReviewPromptFile({
-                repoPath: reviewContext.repositoryPath,
-                file: core.getInput('review-prompt-file'),
-                baseSha: reviewContext.pullRequest.baseSha,
-                filesTruncated: reviewContext.diff.filesTruncated,
-                fetchBase: async (path, ref) => {
-                    try {
-                        const res = await github.getOctokit(legacyOptions.githubToken)
-                            .rest.repos.getContent({ ...repoInfo, path, ref });
-                        return res.data;
-                    }
-                    catch (error) {
-                        if (error.status === 404)
-                            return undefined;
-                        throw error;
-                    }
-                },
-                changedPaths: new Set(allPrFiles.flatMap((f) => f.previousFilename ? [f.filename, f.previousFilename] : [f.filename])),
-            });
-            const reviewRules = [
-                promptFile,
-                allSecurityPrompt,
-                legacyOptions.reviewPrompt,
-                rulesForProfiles(profiles),
-            ]
-                .filter(Boolean)
-                .join('\n\n');
-            harness = new pi/* PiHarness */._7({
-                binaryPath: piBinaryPath,
-                piArgs: core.getInput('pi-args'),
-                timeoutMs: positiveTimeout(process.env.AI_REVIEW_PI_TIMEOUT_MS, 15 * 60_000),
-                maxOutputBytes: budgetOrFallback(process.env.AI_REVIEW_PI_MAX_OUTPUT_BYTES, pi/* DEFAULT_MAX_OUTPUT_BYTES */.n9),
-                maxToolCalls: budgetOrFallback(process.env.AI_REVIEW_PI_MAX_TOOL_CALLS, pi/* DEFAULT_MAX_TOOL_CALLS */.Ko),
-                maxAssistantBytes: budgetOrFallback(process.env.AI_REVIEW_PI_MAX_ASSISTANT_BYTES, pi/* DEFAULT_MAX_ASSISTANT_BYTES */.uI),
-                repairAttempts: budgetOrFallback(process.env.AI_REVIEW_PI_REPAIR_ATTEMPTS, 1),
-                model: llmConfig.model,
-                apiKey: llmConfig.apiKey,
-                includeFullContent: legacyOptions.includeFullContent,
-                maxContextChars: legacyOptions.maxContextChars,
-                extraRules: reviewRules,
-                provider: llmConfig.provider,
-                toolFindings: prelintResult.findings,
-            });
-            const result = await runReview(reviewContext, harness, {
-                minConfidence: envLimits.minConfidence,
-                extraRules: reviewRules,
-                minSeverity: legacyOptions.minSeverity,
-            });
-            // Opt-in second LLM pass (env-only; V1 contract frozen, no new
-            // input): challenges high/critical findings, drops hallucinations.
-            if (process.env.AI_REVIEW_VERIFY_PASS === 'true') {
-                try {
-                    const verifyProvider = new openai_compatible.OpenAiCompatibleProvider(llmConfig);
-                    await applyVerifyPass(result, {
-                        toolFindings: prelintResult.findings,
-                        title: reviewContext.pullRequest.title,
-                        body: reviewContext.pullRequest.body,
-                        verify: async (prompt) => (await verifyProvider.complete([{ role: 'user', content: prompt }], { temperature: 0, maxOutputTokens: 2048 })).content,
-                        budgetUsd: envLimits.verifyBudgetUsd,
-                    });
-                    trackPhase('harness', `Verify pass done: ${result.findings.length} findings`, { enabled: trackEnabled });
-                }
-                catch (error) {
-                    core.warning(`[review] verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`);
-                }
-            }
-            // Surface tool findings + prelint diagnostics in the result
-            // so they render in the GitHub review summary
-            // (collapsible section, see docs/index.md).
-            result.toolFindings = prelintResult.findings;
-            result.diagnostics = {
-                ...result.diagnostics,
-                toolFindingsTotal: prelintResult.findings.length,
-                prelintRan: prelintResult.ran,
-                prelintSkipped: prelintResult.skipped,
-            };
-            await appendAgentDebugToSummary(harness.runs);
-            trackPhase('harness', `Pi review done: ${result.findings.length} findings`, { enabled: trackEnabled });
-            // Post-filter count, not filesReviewed: the latter shrinks when a
-            // harness group fails, which would misreport an outage as a filter
-            // exclusion. Shared by the PR comment and the job summary below.
-            const filesExcluded = Math.max(filesTotal - filesSelected, 0);
-            // Report emission is attempted even when publishing fails: the
-            // JSON describes the analysis result, which exists either way.
-            // `buildReport` runs after publishReview settles, so a `stale`
-            // status set while publishing is included. Redaction runs on a
-            // serialized copy; the engine result is not mutated. Emission is
-            // best effort: if building or writing the report also fails, the
-            // publish error stays primary. See docs/v1-interface-contract.md.
-            await withReviewReportOutput(async () => {
-                await publishReview(octokit, {
-                    owner: repoInfo.owner,
-                    repo: repoInfo.repo,
-                    prNumber,
-                    headSha: reviewContext.pullRequest.headSha,
-                    result,
-                    model: llmConfig.model,
-                    filesTotal,
-                    filesExcluded,
-                    filesSelected,
-                    blockOnIssues: legacyOptions.blockOnIssues,
-                    minSeverity: legacyOptions.minSeverity,
-                    requireWritePermissions: core.getInput('require-write-permissions') === 'true',
-                    stickySummary: core.getInput('sticky-summary') !== 'false',
-                    bufferInlineComments: core.getInput('buffer-inline-comments') !== 'false' &&
-                        core.getInput('classify-inline-comments') !== 'false',
-                    autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
-                    actor: process.env.GITHUB_ACTOR ??
-                        github.context.payload.pull_request?.user?.login ??
-                        github.context.actor,
-                });
-                trackPhase('publish', 'review published', { enabled: trackEnabled });
-            }, () => serializeReviewReport(buildReviewReport({
-                result,
-                filesTotal,
-                filesExcluded,
-                fileCoverage: buildFileCoverage({
-                    files: allPrFiles,
-                    filteredPaths: filtered,
-                    selectedPaths: reviewContext.diff.files.map((file) => file.filename),
-                    reviewedPaths: result.filesReviewed,
-                    failedGroups: result.diagnostics?.failedGroups ?? 0,
-                }),
-            })), (serialized) => core.setOutput('review-report', serialized));
-            await core.summary
-                .addRaw(buildJobSummary({
-                model: llmConfig.model,
-                durationMs: external_node_perf_hooks_.performance.now() - reviewStarted,
-                filesReviewed: result.filesReviewed,
-                filesTotal,
-                filesExcluded,
-                filesSelected,
-                result,
-                toolFindings: result.toolFindings,
-                diagnostics: result.diagnostics,
-            }))
-                .write();
-            // Opt-in raw harness dump: the only way to see what the model
-            // actually returned when a group fails.
-            const dumpBudget = rawHarnessDumpEnabled();
-            if (dumpBudget && harness) {
-                const section = buildRawHarnessSection(harness.runs, dumpBudget);
-                if (section)
-                    await core.summary.addRaw(section).write();
-            }
-            core.setOutput('review-summary', `${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`);
-            // A crashed group or an unanalyzed file used to leave the step green
-            // while the summary looked like a clean review. Fail the step so the
-            // run is visible; set AI_REVIEW_FAIL_ON_INCOMPLETE=false to keep the
-            // old lenient behavior.
-            const failure = incompleteReviewFailure({ result, filesSelected });
-            if (failure && process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false') {
-                core.setFailed(failure);
-            }
-            else if (failure) {
-                core.warning(failure);
-            }
-        }
-        finally {
-            // Ensure agent debug log attached even if review/publish failed
-            try {
-                if (harness)
-                    await appendAgentDebugToSummary(harness.runs);
-            }
-            catch { }
-            await runtimeConfig.cleanup();
-            if (previousConfigDir === undefined)
-                Reflect.deleteProperty(process.env, 'PI_CODING_AGENT_DIR');
-            else
-                process.env.PI_CODING_AGENT_DIR = previousConfigDir;
-        }
+        await runPrReviewAction();
     }
     catch (error) {
         core.setFailed(`Action failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-}
-function normalizeIncludeDir(dir) {
-    return dir
-        .trim()
-        .replace(/\\/g, '/')
-        .replace(/^(\.\/)+/, '')
-        .replace(/^\/+/, '')
-        .replace(/\/+$/, '');
-}
-/**
- * Numeric env ceilings read by `main()`. Invalid values warn and fall back,
- * so a typo can never switch a safety limit off.
- */
-function readReviewEnvLimits(env) {
-    return {
-        maxFiles: parsePositiveInt(env.AI_REVIEW_MAX_FILES, config/* REVIEW_OPTION_DEFAULTS */.Ag.aiReviewMaxFiles, { name: 'AI_REVIEW_MAX_FILES' }),
-        minConfidence: parseBoundedFloat(env.AI_REVIEW_MIN_CONFIDENCE, 0.8, {
-            name: 'AI_REVIEW_MIN_CONFIDENCE',
-            min: 0,
-            max: 1,
-        }),
-        verifyBudgetUsd: parseBoundedFloat(env.AI_REVIEW_VERIFY_BUDGET_USD, 0.5, {
-            name: 'AI_REVIEW_VERIFY_BUDGET_USD',
-            min: 0,
-        }),
-    };
-}
-/**
- * An empty selection is only worth a warning when a filter the user set
- * (include-dir, or exclude patterns other than the default) removed every
- * changed file. Lockfile-only, docs-only, and patch-less PRs are legitimate.
- */
-function classifyEmptySelection(args) {
-    if (args.filesTotal === 0 || args.filteredCount > 0)
-        return 'notice';
-    const effectiveDirs = (args.includeDirs ?? [])
-        .map(normalizeIncludeDir)
-        .filter((dir) => dir !== '' && dir !== '.');
-    if (effectiveDirs.length > 0)
-        return 'warning';
-    const sorted = (list) => [...list].sort().join(',');
-    const isDefault = sorted(args.excludePatterns) === sorted(DEFAULT_EXCLUDE_PATTERNS);
-    return isDefault ? 'notice' : 'warning';
-}
-function applyLegacyFilters(filenames, options) {
-    const excludeRegexes = options.excludePatterns.map((pattern) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`));
-    const requestedDirs = options.includeDirs
-        ?.map(normalizeIncludeDir)
-        .filter((dir) => dir !== '' && dir !== '.');
-    // A `..` segment can never match a repository path: keep the include
-    // filter active (matching nothing) rather than widening it to every file.
-    const includeDirs = requestedDirs?.filter((dir) => {
-        if (!dir.split('/').includes('..'))
-            return true;
-        core.warning(`[review] include-dir "${dir}" contains ".." and is ignored (matches no files)`);
-        return false;
-    });
-    for (const dir of includeDirs ?? []) {
-        if (!filenames.some((f) => f === dir || f.startsWith(`${dir}/`))) {
-            core.warning(`[review] include-dir "${dir}" matches no changed files`);
-        }
-    }
-    return filenames.filter((filename) => {
-        if (excludeRegexes.some((regex) => regex.test(filename)))
-            return false;
-        if (requestedDirs?.length)
-            return (includeDirs ?? []).some((dir) => filename.startsWith(`${dir}/`) || filename === dir);
-        return true;
-    });
 }
 
 ;// CONCATENATED MODULE: ./src/entry/pr-content.ts

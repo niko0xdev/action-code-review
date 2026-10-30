@@ -27,7 +27,9 @@ action-code-review/
 ├── pr-content/          # thin action (action.yml + dist, public surface frozen)
 ├── pr-review/           # thin action (action.yml + dist, public surface frozen)
 ├── src/                 # the engine
-│   ├── cli.ts                 # pr-review orchestration entry
+│   ├── cli.ts                 # main(): event/actor gates, then dispatch to a runner
+│   ├── runners/               # review.ts (PR review + include/exclude filters),
+│   │                          # pr-content.ts, security.ts, octokit.ts (shared adapter)
 │   ├── adapter/               # legacy-inputs, engine-config, runtime
 │   ├── context/               # pr, diff, files, repository, prelint
 │   ├── harness/               # ReviewHarness interface + Pi wrapper
@@ -50,7 +52,7 @@ GitHub PR event
   ↓
 pr-review action (composite: harness setup + dist/index.js)
   ↓  dist entry (src/entry/pr-review.ts, ncc-built)
-engine CLI (src/cli.ts)
+engine CLI (src/cli.ts dispatches to src/runners/review.ts)
   ├─ mapPrReviewInputs      — frozen inputs → engine options
   ├─ resolveEngineConfig    — inputs or OPENAI_API_* env fallback
   ├─ fetchPrContext         — PR metadata + paginated file list
@@ -167,6 +169,15 @@ Properties:
   error paths redact `sk-*` material before logging (spec §37).
 - Prompt-injection defense is restated verbatim in every review prompt:
   repository content is untrusted data, never instructions (spec §24).
+
+## Test coverage floor
+
+`pnpm test:coverage` enforces the thresholds in `vitest.config.ts` (lines and
+statements 87, functions 83, branches 82), set just below the totals measured
+when `src/cli.ts` was split into `src/runners/`. Raise them as coverage grows;
+never lower them to make a change pass. CI runs `pnpm test:coverage`, so a
+pull request that drops below the floor fails. `tests/cli-main.test.ts` pins the
+observable behaviour of each `main()` flow.
 
 ## Running
 

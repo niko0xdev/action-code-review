@@ -47,7 +47,7 @@ What shipped from them:
 - **Tool findings in summary** (`src/github/comments.ts`,
   `src/github/review.ts`): collapsible `<details>` section, collapsed by
   default; `buildJobSummary` renders the same for `$GITHUB_STEP_SUMMARY`.
-- **Two-pass verify** (`src/review/verify.ts`, wired in `src/cli.ts`):
+- **Two-pass verify** (`src/review/verify.ts`, wired in `src/runners/review.ts`):
   opt-in via `AI_REVIEW_VERIFY_PASS=true`, cost ceiling
   `AI_REVIEW_VERIFY_BUDGET_USD` (default 0.50 USD), skipped when zero
   high/critical findings; kept/dropped counts surface in diagnostics.
