@@ -203,11 +203,13 @@ EOF
 		const bin = writeFakePi(
 			`#!/bin/sh\nhead -c ${DEFAULT_MAX_OUTPUT_BYTES + 1} /dev/zero\n`
 		);
-		const harness = new PiHarness({ binaryPath: bin, timeoutMs: 20_000 });
+		// 64 MiB of output is slow on shared CI runners; the cap, not the timeout,
+		// must be what stops the process.
+		const harness = new PiHarness({ binaryPath: bin, timeoutMs: 80_000 });
 		await expect(harness.review(makeContext())).rejects.toThrow(
 			new RegExp(`stdout output exceeded ${DEFAULT_MAX_OUTPUT_BYTES} byte cap`)
 		);
-	});
+	}, 90_000);
 
 	it('honors a caller-supplied output cap', async () => {
 		const bin = writeFakePi('#!/bin/sh\nhead -c 4097 /dev/zero\n');

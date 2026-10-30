@@ -4,7 +4,7 @@
 	"description": "AI code review engine: repository-aware review via a coding harness over an OpenAI-compatible endpoint",
 	"type": "module",
 	"scripts": {
-		"build": "npx ncc build src/entry/pr-review.ts -o pr-review/dist-tmp --no-cache --quiet && mv pr-review/dist-tmp/index.js pr-review/dist/index.js && rm -rf pr-review/dist-tmp && npx ncc build src/entry/pr-content.ts -o pr-content/dist-tmp --no-cache --quiet && mv pr-content/dist-tmp/index.js pr-content/dist/index.js && rm -rf pr-content/dist-tmp && echo 'Build complete'",
+		"build": "ncc build src/entry/pr-review.ts -o pr-review/dist-tmp --no-cache --quiet && mv pr-review/dist-tmp/index.js pr-review/dist/index.js && rm -rf pr-review/dist-tmp && ncc build src/entry/pr-content.ts -o pr-content/dist-tmp --no-cache --quiet && mv pr-content/dist-tmp/index.js pr-content/dist/index.js && rm -rf pr-content/dist-tmp && echo 'Build complete'",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",

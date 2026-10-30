@@ -873,9 +873,13 @@ function runPi(params: RunPiParams): Promise<PiRunLog> {
 		child.stderr.on('data', (chunk: Buffer) => {
 			[stderr, stderrBytes] = append(stderr, stderrBytes, chunk, 'stderr');
 		});
-		child.stdin.on('error', (error) =>
-			finish(new Error(`Failed to write harness prompt: ${error.message}`))
-		);
+		child.stdin.on('error', (error: NodeJS.ErrnoException) => {
+			// A child that exits before reading the prompt closes the pipe (EPIPE).
+			// Let the 'close' handler report its exit code and stderr instead of
+			// racing it with a less useful write error.
+			if (error.code === 'EPIPE') return;
+			finish(new Error(`Failed to write harness prompt: ${error.message}`));
+		});
 		child.on('error', (error) => {
 			clearTimeout(timer);
 			finish(new Error(`Failed to start harness: ${error.message}`));

@@ -167,7 +167,7 @@ pnpm install
 pnpm test          # full suite
 pnpm typecheck
 pnpm lint          # biome
-pnpm build         # ncc → pr-*/dist/index.js
+pnpm build         # pinned ncc (devDependency) → pr-*/dist/index.js; CI diffs the result
 ```
 
 ## Optional configuration (spec §8)
