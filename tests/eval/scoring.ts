@@ -229,11 +229,11 @@ export function formatScoreTable(summary: ScoreSummary): string {
 			`>= ${percent(t.severePrecision.min)}, lower bound >= ${percent(t.severePrecision.minLowerBound)}, n >= ${t.severePrecision.minSamples}`,
 		],
 		[
-			'Recall (seeded)',
+			'Recall (all seeded severities)',
 			percent(summary.recall.value),
 			`${summary.recall.numerator}/${summary.recall.denominator}`,
 			interval(summary.recall.interval),
-			`>= ${percent(t.recall.min)} (severe, holdout)`,
+			`>= ${percent(t.recall.min)} (all severities)`,
 		],
 		[
 			'False-block rate',

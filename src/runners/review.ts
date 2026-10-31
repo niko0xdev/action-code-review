@@ -31,6 +31,7 @@ import {
 	buildRawHarnessSection,
 	incompleteReviewFailure,
 	rawHarnessDumpEnabled,
+	reviewSummaryText,
 } from '../review/execution.js';
 import type { BaseFileData } from '../review/prompt-file.js';
 import { loadReviewPromptFile } from '../review/prompt-file.js';
@@ -429,15 +430,15 @@ export async function runPrReviewAction(): Promise<void> {
 			const section = buildRawHarnessSection(harness.runs, dumpBudget);
 			if (section) await core.summary.addRaw(section).write();
 		}
+		const failure = incompleteReviewFailure({ result, filesSelected });
 		core.setOutput(
 			'review-summary',
-			`${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`
+			reviewSummaryText({ result, filesSelected }, failure)
 		);
 		// A crashed group or an unanalyzed file used to leave the step green
 		// while the summary looked like a clean review. Fail the step so the
 		// run is visible; set AI_REVIEW_FAIL_ON_INCOMPLETE=false to keep the
 		// old lenient behavior.
-		const failure = incompleteReviewFailure({ result, filesSelected });
 		if (failure && process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false') {
 			core.setFailed(failure);
 		} else if (failure) {

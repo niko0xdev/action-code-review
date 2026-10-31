@@ -70,6 +70,15 @@ function finding(overrides: Partial<Finding> = {}): Finding {
 }
 
 describe('buildReviewReport', () => {
+	it('never reports complete for a truncated file list', () => {
+		const report = buildReviewReport({
+			result: emptyResult({ reviewStatus: 'complete', filesTruncated: true }),
+			filesTotal: 1,
+			filesExcluded: 0,
+		});
+		expect(report.status).toBe('incomplete');
+	});
+
 	it('keeps an incomplete review incomplete and carries failed-group diagnostics', async () => {
 		const harness: ReviewHarness = {
 			name: 'flaky',

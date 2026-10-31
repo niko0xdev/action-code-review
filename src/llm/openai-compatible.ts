@@ -214,6 +214,27 @@ export function stripReasoningArtifacts(
 	);
 }
 
+/**
+ * Make untrusted text safe to place on a single prompt line. Line breaks and
+ * other control characters (a git path may contain them) are written as
+ * escapes, so attacker text cannot start a new line outside a fenced block.
+ */
+export function escapeControlChars(text: string): string {
+	return Array.from(text, (ch) => {
+		const code = ch.charCodeAt(0);
+		if (ch === '\n') return '\\n';
+		if (ch === '\r') return '\\r';
+		if (
+			code < 0x20 ||
+			(code >= 0x7f && code <= 0x9f) ||
+			code === 0x2028 ||
+			code === 0x2029
+		)
+			return `\\u${code.toString(16).padStart(4, '0')}`;
+		return ch;
+	}).join('');
+}
+
 export function scrubSecrets(text: string): string {
 	return text.replace(
 		/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+|(?:sk-|gh[oprsu]_|xox[abprs]-|AIza|github_pat_)[A-Za-z0-9._~+/=-]*/gi,

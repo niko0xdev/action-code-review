@@ -68,8 +68,14 @@ no `APPROVE` is sent, the summary says incomplete, and the report status is not
 A fixture can list `knownDefects`: a map from property name to a precise
 description of a real pipeline defect. That property runs as `it.fails`: it
 passes while the defect exists and turns red the moment it is fixed, which is
-the cue to delete the entry. Search the fixtures for `knownDefects` for the
-current list.
+the cue to delete the entry. If a `[known defect]` test fails with `Expect test
+to fail`, the defect is fixed: remove that property's `knownDefects` entry.
+Search the fixtures for `knownDefects` for the current list.
+
+The prompt-fence, file-name, and truncated-file-list defects have been fixed
+and run as normal tests. The remaining entries are the redaction defects
+(secrets reaching inline comments, the summary comment, and the report or debug
+dump).
 
 ## Adding a case
 

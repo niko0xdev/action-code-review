@@ -134,7 +134,9 @@ export async function runReview(
 		...(context.diff.filesTruncated ? { filesTruncated: true } : {}),
 		ruleCoverage: deriveRuleCoverage(context, findings),
 		reviewStatus:
-			failedGroups > 0 || truncatedFiles > 0 ? 'incomplete' : 'complete',
+			failedGroups > 0 || truncatedFiles > 0 || context.diff.filesTruncated
+				? 'incomplete'
+				: 'complete',
 		// Read after every group settled so failed processes that still emitted
 		// usage before exiting are included in the aggregate.
 		...(harness.usage ? { usage: harness.usage } : {}),
