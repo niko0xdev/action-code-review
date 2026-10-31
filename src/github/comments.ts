@@ -244,7 +244,7 @@ export function buildChecksTable(
 			? ruleCoverage.failedRules
 					.map(
 						(rule) =>
-							`- ${mdSafe(rule)
+							`- ${mdSafe(redactSecrets(rule))
 								.replaceAll('|', '\\|')
 								.replaceAll(/[\r\n]/g, ' ')}`
 					)
@@ -283,11 +283,13 @@ function findingLines(findings: Finding[] = []): string[] {
 		...sorted.flatMap((finding) => {
 			const icon = SEVERITY_ICON[finding.severity] ?? '•';
 			const lines = [
-				`- ${icon} **${finding.severity.toUpperCase()}** \`${mdSafe(finding.path)}:${finding.line}\` — ${mdSafe(finding.title)} (confidence ${finding.confidence.toFixed(2)})`,
-				`  > ${mdSafe(finding.description).split('\n')[0] || 'No description provided.'}`,
+				`- ${icon} **${finding.severity.toUpperCase()}** \`${mdSafe(redactSecrets(finding.path))}:${finding.line}\` — ${mdSafe(redactSecrets(finding.title))} (confidence ${finding.confidence.toFixed(2)})`,
+				`  > ${mdSafe(redactSecrets(finding.description)).split('\n')[0] || 'No description provided.'}`,
 			];
 			if (finding.suggestion)
-				lines.push(`  > **Suggested fix:** ${mdSafe(finding.suggestion)}`);
+				lines.push(
+					`  > **Suggested fix:** ${mdSafe(redactSecrets(finding.suggestion))}`
+				);
 			return lines;
 		}),
 	];
@@ -348,7 +350,7 @@ export function buildSummaryBody(result: SummaryResult): string {
 		describeApproval(result.approval),
 		`**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,
 	];
-	if (result.summary) lines.push('', result.summary);
+	if (result.summary) lines.push('', redactSecrets(result.summary));
 	lines.push(
 		'',
 		'## Findings',
@@ -375,9 +377,9 @@ export function buildSummaryBody(result: SummaryResult): string {
 					...result.toolFindings.slice(0, 20).map((finding) => {
 						const sev = mdSafe(finding.severity);
 						const code = mdSafe(finding.code);
-						const path = mdSafe(finding.path);
+						const path = mdSafe(redactSecrets(finding.path));
 						const line = finding.line;
-						const message = mdSafe(finding.message);
+						const message = mdSafe(redactSecrets(finding.message));
 						return `- [\`${mdSafe(finding.tool)}/${code}\`] \`${path}:${line}\` (${sev}) ${message}`;
 					}),
 					result.toolFindings.length > 20

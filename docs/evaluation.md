@@ -79,10 +79,9 @@ the cue to delete the entry. If a `[known defect]` test fails with `Expect test
 to fail`, the defect is fixed: remove that property's `knownDefects` entry.
 Search the fixtures for `knownDefects` for the current list.
 
-The prompt-fence, file-name, and truncated-file-list defects have been fixed
-and run as normal tests. The remaining entries are the redaction defects
-(secrets reaching inline comments, the summary comment, and the report or debug
-dump).
+The prompt-fence, file-name, truncated-file-list, and redaction defects (summary
+comment, JSON-escaped quotes, and invisible characters inside a token) have been
+fixed and run as normal tests.
 
 ## Adding a case
 

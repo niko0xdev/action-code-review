@@ -61,6 +61,14 @@ Questions) lives in `docs/v3-decisions.md`.
   the longest backtick run in a patch, so markdown context lines can no longer
   close it early, and control characters in file names (including in analyser
   evidence) are escaped so a name cannot start a new prompt line.
+- **Secrets are now redacted in the sticky summary comment, the debug dump, and
+  invisible-character splits.** The summary comment redacts the model summary and
+  each top finding's path, title, description, and suggestion, as inline comments
+  already did. The raw harness debug dump now redacts password and AWS secret
+  assignments whose quotes are JSON-escaped (`\"`), without breaking the JSON.
+  A token split by zero-width characters (U+200B, U+200C, U+200D, U+2060,
+  U+FEFF) is redacted in every sink. The same redaction covers static analyser
+  messages in the job summary and the AI-written PR title and description.
 - **Re-runs no longer add a `REQUEST_CHANGES` review per run.** When
   nothing new needs posting and the action's latest review is already
   `CHANGES_REQUESTED` on the current head commit, the body-only review is

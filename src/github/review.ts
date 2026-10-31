@@ -905,7 +905,7 @@ export function renderToolFindingsSection(
 		const top = toolFindings.slice(0, 20);
 		for (const finding of top) {
 			lines.push(
-				`- [${finding.tool}/${finding.code}] \`${finding.path}:${finding.line}\` (${finding.severity}) ${finding.message}`
+				`- [${finding.tool}/${finding.code}] \`${redactSecrets(finding.path)}:${finding.line}\` (${finding.severity}) ${redactSecrets(finding.message)}`
 			);
 		}
 		if (toolFindings.length > top.length) {

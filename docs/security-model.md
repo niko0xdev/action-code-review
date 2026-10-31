@@ -19,7 +19,7 @@
 ### 2.2 Secret Exfiltration & Leakage
 - **Threat**: Repository code contains secrets, or malicious code attempts to trigger reflection/echo of GitHub Action runner tokens or API keys into PR comments, GitHub Step Summaries, or SARIF files.
 - **Mitigation**:
-  1. Pre-publication Redactor: `redactSecrets` scrubs GitHub tokens, OpenAI keys, AWS credentials, Slack tokens, private keys, bearer tokens, and JWTs before any string is posted to GitHub API or written to disk.
+  1. Pre-publication Redactor: `redactSecrets` scrubs GitHub tokens, OpenAI keys, AWS credentials, Slack tokens, private keys, bearer tokens, and JWTs before any string is posted to GitHub API or written to disk. Redaction covers the inline comments, the sticky summary comment (model summary plus the path, title, description, and suggestion of each top finding), static analyser messages, the job summary, the review report, the raw debug dump, and the AI-written PR title and description. Quoted assignments (`password = "..."`, `aws_secret_access_key = "..."`) are matched with raw or JSON-escaped quotes, so serialised JSON is covered and stays valid. Matching ignores zero-width characters (U+200B, U+200C, U+200D, U+2060, U+FEFF): patterns run on a copy of the text without them and the matching span of the original is replaced, so a token split by invisible characters is redacted and text without a match is never altered. Invisible characters inside a redacted span disappear with it.
   2. Environment Isolation: Pi session configuration directories are created in ephemeral temporary paths (`/tmp/...`) and wiped on completion.
 
 ### 2.3 Command & Expression Injection

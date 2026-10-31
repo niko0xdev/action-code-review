@@ -34845,7 +34845,7 @@ const SECRET_PATTERNS = [
     // AWS Secret Access Key (heuristic assignment)
     {
         name: 'aws_secret_key',
-        pattern: /(?:aws_secret_access_key|aws_secret_key)\s*[:=]\s*["']?([a-zA-Z0-9/+=]{40})["']?/gi,
+        pattern: /(?:aws_secret_access_key|aws_secret_key)\s*[:=]\s*(?:\\?["'])?([a-zA-Z0-9/+=]{40})(?:\\?["'])?/gi,
     },
     // Private Keys (RSA, EC, OpenSSH, PGP)
     {
@@ -34870,9 +34870,55 @@ const SECRET_PATTERNS = [
     // Generic passwords in URLs or assignments
     {
         name: 'password_assignment',
-        pattern: /(?:password|passwd|secret)\s*[:=]\s*["']([^"'\s]{8,})["']/gi,
+        // The quote may be JSON-escaped (`\"`); a backslash that starts that
+        // escape is not part of the value, so the escape survives redaction.
+        pattern: /(?:password|passwd|secret)\s*[:=]\s*\\?["']((?:[^"'\s\\]|\\(?!["'])){8,})\\?["']/gi,
     },
 ];
+/** Characters that render as nothing and so can hide a token from a pattern. */
+const ZERO_WIDTH = /\u200b|\u200c|\u200d|\u2060|\ufeff/;
+const ZERO_WIDTH_ALL = new RegExp(ZERO_WIDTH.source, 'g');
+const ZERO_WIDTH_CHARS = new Set([
+    '\u200b',
+    '\u200c',
+    '\u200d',
+    '\u2060',
+    '\ufeff',
+]);
+function replacement(name, match, captured) {
+    const label = `[REDACTED_${name.toUpperCase()}]`;
+    return typeof captured === 'string' && captured
+        ? match.replace(captured, label)
+        : label;
+}
+/**
+ * Match against a copy of the text without zero-width characters, then replace
+ * the matching span of the original. Text that does not match is unchanged;
+ * invisible characters inside a redacted span are removed with it.
+ */
+function redactPattern(text, name, pattern) {
+    if (!ZERO_WIDTH.test(text))
+        return text.replace(pattern, (match, captured) => replacement(name, match, captured));
+    const kept = [];
+    const offsets = [];
+    for (let i = 0; i < text.length; i++) {
+        if (ZERO_WIDTH_CHARS.has(text[i]))
+            continue;
+        kept.push(text[i]);
+        offsets.push(i);
+    }
+    let out = '';
+    let cursor = 0;
+    // matchAll starts at lastIndex, which containsSecret leaves non-zero.
+    pattern.lastIndex = 0;
+    for (const m of kept.join('').matchAll(pattern)) {
+        const first = m.index ?? 0;
+        out += text.slice(cursor, offsets[first]);
+        out += replacement(name, m[0], m[1]);
+        cursor = offsets[first + m[0].length - 1] + 1;
+    }
+    return out + text.slice(cursor);
+}
 /**
  * Redact sensitive secrets from raw text.
  */
@@ -34880,14 +34926,8 @@ function redactSecrets(text) {
     if (!text)
         return text;
     let redacted = text;
-    for (const { name, pattern } of SECRET_PATTERNS) {
-        redacted = redacted.replace(pattern, (match, captured) => {
-            if (captured && typeof captured === 'string') {
-                return match.replace(captured, `[REDACTED_${name.toUpperCase()}]`);
-            }
-            return `[REDACTED_${name.toUpperCase()}]`;
-        });
-    }
+    for (const { name, pattern } of SECRET_PATTERNS)
+        redacted = redactPattern(redacted, name, pattern);
     return redacted;
 }
 /**
@@ -34896,9 +34936,10 @@ function redactSecrets(text) {
 function containsSecret(text) {
     if (!text)
         return false;
+    const visible = text.replace(ZERO_WIDTH_ALL, '');
     return SECRET_PATTERNS.some(({ pattern }) => {
         pattern.lastIndex = 0;
-        return pattern.test(text);
+        return pattern.test(visible);
     });
 }
 
@@ -37800,7 +37841,10 @@ async function fetchFilePage(octokit, repository, prNumber, pageSize, page) {
 
 // EXTERNAL MODULE: ./src/llm/openai-compatible.ts + 1 modules
 var openai_compatible = __nccwpck_require__(8251);
+// EXTERNAL MODULE: ./src/security/redaction/redactor.ts
+var redactor = __nccwpck_require__(8759);
 ;// CONCATENATED MODULE: ./src/github/pr-content.ts
+
 
 
 function parseUpdate(response) {
@@ -37830,8 +37874,10 @@ function applyTemplate(description, templateContent) {
     return result;
 }
 async function updatePrContent(octokit, owner, repo, prNumber, options) {
-    const update = parseUpdate(options.response);
-    const description = applyTemplate(update.description, options.templateContent);
+    const parsed = parseUpdate(options.response);
+    // The description is written to the PR: a secret echoed from the diff must not be.
+    const update = { ...parsed, title: (0,redactor/* redactSecrets */.f)(parsed.title) };
+    const description = (0,redactor/* redactSecrets */.f)(applyTemplate(parsed.description, options.templateContent));
     const current = await octokit.rest.pulls.get({
         owner,
         repo,
@@ -37967,8 +38013,6 @@ function dedupe_normalizeCommentId(finding) {
         .slice(0, 12);
 }
 
-// EXTERNAL MODULE: ./src/security/redaction/redactor.ts
-var redactor = __nccwpck_require__(8759);
 // EXTERNAL MODULE: external "node:fs"
 var external_node_fs_ = __nccwpck_require__(3024);
 ;// CONCATENATED MODULE: ./src/github/buffer.ts
@@ -38192,7 +38236,7 @@ function buildChecksTable(findings, _counts, ruleCoverage) {
         : 'N/A';
     const failedCell = ruleCoverage && ruleCoverage.failedRules.length > 0
         ? ruleCoverage.failedRules
-            .map((rule) => `- ${mdSafe(rule)
+            .map((rule) => `- ${mdSafe((0,redactor/* redactSecrets */.f)(rule))
             .replaceAll('|', '\\|')
             .replaceAll(/[\r\n]/g, ' ')}`)
             .join('<br>')
@@ -38227,11 +38271,11 @@ function findingLines(findings = []) {
         ...sorted.flatMap((finding) => {
             const icon = SEVERITY_ICON[finding.severity] ?? '•';
             const lines = [
-                `- ${icon} **${finding.severity.toUpperCase()}** \`${mdSafe(finding.path)}:${finding.line}\` — ${mdSafe(finding.title)} (confidence ${finding.confidence.toFixed(2)})`,
-                `  > ${mdSafe(finding.description).split('\n')[0] || 'No description provided.'}`,
+                `- ${icon} **${finding.severity.toUpperCase()}** \`${mdSafe((0,redactor/* redactSecrets */.f)(finding.path))}:${finding.line}\` — ${mdSafe((0,redactor/* redactSecrets */.f)(finding.title))} (confidence ${finding.confidence.toFixed(2)})`,
+                `  > ${mdSafe((0,redactor/* redactSecrets */.f)(finding.description)).split('\n')[0] || 'No description provided.'}`,
             ];
             if (finding.suggestion)
-                lines.push(`  > **Suggested fix:** ${mdSafe(finding.suggestion)}`);
+                lines.push(`  > **Suggested fix:** ${mdSafe((0,redactor/* redactSecrets */.f)(finding.suggestion))}`);
             return lines;
         }),
     ];
@@ -38279,7 +38323,7 @@ function buildSummaryBody(result) {
         `**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,
     ];
     if (result.summary)
-        lines.push('', result.summary);
+        lines.push('', (0,redactor/* redactSecrets */.f)(result.summary));
     lines.push('', '## Findings', '', '| Severity | Count | Status |', '|----------|------:|:------:|', `| 🚨 Critical | ${result.counts.critical} | ${result.counts.critical ? '❌' : '✅'} |`, `| 🔥 High | ${result.counts.high} | ${result.counts.high ? '❌' : '✅'} |`, `| ⚠️ Medium | ${result.counts.medium} | ${result.counts.medium ? '❌' : '✅'} |`, `| ✅ Low | ${result.counts.low} | ${result.counts.low ? '❌' : '✅'} |`, '', '## Decision', '', decision, '', ...findingLines(findings), '', ...buildChecksTable(findings, result.counts, result.ruleCoverage), '', ...(result.toolFindings && result.toolFindings.length > 0
         ? [
             '<details><summary>Static analyzer findings</summary>',
@@ -38287,9 +38331,9 @@ function buildSummaryBody(result) {
             ...result.toolFindings.slice(0, 20).map((finding) => {
                 const sev = mdSafe(finding.severity);
                 const code = mdSafe(finding.code);
-                const path = mdSafe(finding.path);
+                const path = mdSafe((0,redactor/* redactSecrets */.f)(finding.path));
                 const line = finding.line;
-                const message = mdSafe(finding.message);
+                const message = mdSafe((0,redactor/* redactSecrets */.f)(finding.message));
                 return `- [\`${mdSafe(finding.tool)}/${code}\`] \`${path}:${line}\` (${sev}) ${message}`;
             }),
             result.toolFindings.length > 20
@@ -38999,7 +39043,7 @@ function renderToolFindingsSection(toolFindings, diagnostics) {
         lines.push('### Static analyzer findings', '');
         const top = toolFindings.slice(0, 20);
         for (const finding of top) {
-            lines.push(`- [${finding.tool}/${finding.code}] \`${finding.path}:${finding.line}\` (${finding.severity}) ${finding.message}`);
+            lines.push(`- [${finding.tool}/${finding.code}] \`${(0,redactor/* redactSecrets */.f)(finding.path)}:${finding.line}\` (${finding.severity}) ${(0,redactor/* redactSecrets */.f)(finding.message)}`);
         }
         if (toolFindings.length > top.length) {
             lines.push(`- ... and ${toolFindings.length - top.length} more`);

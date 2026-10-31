@@ -70,4 +70,21 @@ describe('updatePrContent', () => {
 			expect.objectContaining({ body: '## Summary\nReal change\n' })
 		);
 	});
+
+	it('redacts secrets echoed into the title and description', async () => {
+		const secret = ['gh', 'p_', 'Zq8Lm2Xv4Rt7Yw1Bn5Cd9Fg3Hj6Kp0Sa8Ue'].join('');
+		const client = octokit();
+		await updatePrContent(client, 'acme', 'repo', 1, {
+			response: JSON.stringify({
+				title: `Use ${secret}`,
+				description: `Token ${secret}`,
+			}),
+		});
+		const args = client.rest.pulls.update.mock.calls[0][0] as {
+			title: string;
+			body: string;
+		};
+		expect(`${args.title}${args.body}`).not.toContain(secret);
+		expect(args.body).toContain('[REDACTED_GITHUB_TOKEN]');
+	});
 });

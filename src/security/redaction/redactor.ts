@@ -24,7 +24,7 @@ const SECRET_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
 	{
 		name: 'aws_secret_key',
 		pattern:
-			/(?:aws_secret_access_key|aws_secret_key)\s*[:=]\s*["']?([a-zA-Z0-9/+=]{40})["']?/gi,
+			/(?:aws_secret_access_key|aws_secret_key)\s*[:=]\s*(?:\\?["'])?([a-zA-Z0-9/+=]{40})(?:\\?["'])?/gi,
 	},
 	// Private Keys (RSA, EC, OpenSSH, PGP)
 	{
@@ -51,9 +51,60 @@ const SECRET_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
 	// Generic passwords in URLs or assignments
 	{
 		name: 'password_assignment',
-		pattern: /(?:password|passwd|secret)\s*[:=]\s*["']([^"'\s]{8,})["']/gi,
+		// The quote may be JSON-escaped (`\"`); a backslash that starts that
+		// escape is not part of the value, so the escape survives redaction.
+		pattern:
+			/(?:password|passwd|secret)\s*[:=]\s*\\?["']((?:[^"'\s\\]|\\(?!["'])){8,})\\?["']/gi,
 	},
 ];
+
+/** Characters that render as nothing and so can hide a token from a pattern. */
+const ZERO_WIDTH = /\u200b|\u200c|\u200d|\u2060|\ufeff/;
+const ZERO_WIDTH_ALL = new RegExp(ZERO_WIDTH.source, 'g');
+const ZERO_WIDTH_CHARS = new Set([
+	'\u200b',
+	'\u200c',
+	'\u200d',
+	'\u2060',
+	'\ufeff',
+]);
+
+function replacement(name: string, match: string, captured: unknown): string {
+	const label = `[REDACTED_${name.toUpperCase()}]`;
+	return typeof captured === 'string' && captured
+		? match.replace(captured, label)
+		: label;
+}
+
+/**
+ * Match against a copy of the text without zero-width characters, then replace
+ * the matching span of the original. Text that does not match is unchanged;
+ * invisible characters inside a redacted span are removed with it.
+ */
+function redactPattern(text: string, name: string, pattern: RegExp): string {
+	if (!ZERO_WIDTH.test(text))
+		return text.replace(pattern, (match, captured) =>
+			replacement(name, match, captured)
+		);
+	const kept: string[] = [];
+	const offsets: number[] = [];
+	for (let i = 0; i < text.length; i++) {
+		if (ZERO_WIDTH_CHARS.has(text[i])) continue;
+		kept.push(text[i]);
+		offsets.push(i);
+	}
+	let out = '';
+	let cursor = 0;
+	// matchAll starts at lastIndex, which containsSecret leaves non-zero.
+	pattern.lastIndex = 0;
+	for (const m of kept.join('').matchAll(pattern)) {
+		const first = m.index ?? 0;
+		out += text.slice(cursor, offsets[first]);
+		out += replacement(name, m[0], m[1]);
+		cursor = offsets[first + m[0].length - 1] + 1;
+	}
+	return out + text.slice(cursor);
+}
 
 /**
  * Redact sensitive secrets from raw text.
@@ -61,16 +112,8 @@ const SECRET_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
 export function redactSecrets(text: string): string {
 	if (!text) return text;
 	let redacted = text;
-
-	for (const { name, pattern } of SECRET_PATTERNS) {
-		redacted = redacted.replace(pattern, (match, captured) => {
-			if (captured && typeof captured === 'string') {
-				return match.replace(captured, `[REDACTED_${name.toUpperCase()}]`);
-			}
-			return `[REDACTED_${name.toUpperCase()}]`;
-		});
-	}
-
+	for (const { name, pattern } of SECRET_PATTERNS)
+		redacted = redactPattern(redacted, name, pattern);
 	return redacted;
 }
 
@@ -79,8 +122,9 @@ export function redactSecrets(text: string): string {
  */
 export function containsSecret(text: string): boolean {
 	if (!text) return false;
+	const visible = text.replace(ZERO_WIDTH_ALL, '');
 	return SECRET_PATTERNS.some(({ pattern }) => {
 		pattern.lastIndex = 0;
-		return pattern.test(text);
+		return pattern.test(visible);
 	});
 }
