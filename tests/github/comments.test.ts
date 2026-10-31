@@ -443,7 +443,7 @@ describe('buildSummaryBody - hidden footer and checks table (Rules)', () => {
 					severity: 'high',
 					confidence: 0.9,
 					category: 'security',
-					path: 'src/app.ts',
+					path: `src/${secret}.ts`,
 					line: 2,
 					title: `Leak ${secret}`,
 					description: `Token ${secret}`,
@@ -455,7 +455,7 @@ describe('buildSummaryBody - hidden footer and checks table (Rules)', () => {
 				{
 					tool: 'lint',
 					code: 'x',
-					path: 'src/app.ts',
+					path: `src/${secret}.ts`,
 					line: 1,
 					severity: 'error',
 					message: `bad ${secret}`,
@@ -463,6 +463,6 @@ describe('buildSummaryBody - hidden footer and checks table (Rules)', () => {
 			],
 		} as never);
 		expect(body).not.toContain(secret);
-		expect(body.match(/\[REDACTED_GITHUB_TOKEN\]/g)).toHaveLength(5);
+		expect(body.match(/\[REDACTED_GITHUB_TOKEN\]/g)).toHaveLength(7);
 	});
 });

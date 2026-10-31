@@ -66,9 +66,16 @@ Questions) lives in `docs/v3-decisions.md`.
   each top finding's path, title, description, and suggestion, as inline comments
   already did. The raw harness debug dump now redacts password and AWS secret
   assignments whose quotes are JSON-escaped (`\"`), without breaking the JSON.
-  A token split by zero-width characters (U+200B, U+200C, U+200D, U+2060,
-  U+FEFF) is redacted in every sink. The same redaction covers static analyser
-  messages in the job summary and the AI-written PR title and description.
+  A token split by invisible characters (zero-width, bidi, soft hyphen, tag, and
+  variation selectors, Hangul fillers) is redacted in every sink. The same
+  redaction covers static analyser messages in the job summary, the AI-written PR
+  title and description, and error text in warnings.
+- **Redaction no longer stalls on hostile input.** The JWT and private-key
+  detectors were quadratic (a repeated `eyJ` took minutes at 400 KB); they now
+  scan in linear time. `password="password"` redacts the value, not the key.
+- **A suggestion containing a secret-like value is withheld** from the inline
+  comment, with a note, instead of rendering a redaction placeholder that a
+  reader could apply as code.
 - **Re-runs no longer add a `REQUEST_CHANGES` review per run.** When
   nothing new needs posting and the action's latest review is already
   `CHANGES_REQUESTED` on the current head commit, the body-only review is

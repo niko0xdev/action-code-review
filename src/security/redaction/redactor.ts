@@ -1,120 +1,279 @@
 /**
  * Secret redaction utility for security logs, summaries, SARIF, and comments.
  * Spec reference: §21.
+ *
+ * Every detector is linear in the input size: regexes use bounded or
+ * non-overlapping quantifiers, and the JWT and private-key detectors scan by
+ * hand so that a hostile input cannot trigger quadratic backtracking.
  */
 
-const SECRET_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
-	// GitHub Tokens (PAT, OAuth, fine-grained, app)
-	{
-		name: 'github_token',
-		pattern: /(?:ghp|gho|ghu|ghs|ghr|github_pat)_[a-zA-Z0-9_]{16,255}/g,
-	},
-	// OpenAI API Key
-	{
-		name: 'openai_key',
-		pattern: /sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,80}/g,
-	},
-	// AWS Access Key ID
-	{
-		name: 'aws_access_key',
-		pattern:
-			/(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}/g,
-	},
-	// AWS Secret Access Key (heuristic assignment)
-	{
-		name: 'aws_secret_key',
-		pattern:
-			/(?:aws_secret_access_key|aws_secret_key)\s*[:=]\s*(?:\\?["'])?([a-zA-Z0-9/+=]{40})(?:\\?["'])?/gi,
-	},
-	// Private Keys (RSA, EC, OpenSSH, PGP)
-	{
-		name: 'private_key',
-		pattern:
-			/-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g,
-	},
-	// Slack Tokens
-	{
-		name: 'slack_token',
-		pattern: /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/g,
-	},
-	// JWT Tokens
-	{
-		name: 'jwt_token',
-		pattern:
-			/eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}/g,
-	},
-	// Generic API keys and Bearer tokens
-	{
-		name: 'bearer_token',
-		pattern: /Bearer\s+([a-zA-Z0-9\-._~+/]+=*)/gi,
-	},
-	// Generic passwords in URLs or assignments
-	{
-		name: 'password_assignment',
-		// The quote may be JSON-escaped (`\"`); a backslash that starts that
-		// escape is not part of the value, so the escape survives redaction.
-		pattern:
-			/(?:password|passwd|secret)\s*[:=]\s*\\?["']((?:[^"'\s\\]|\\(?!["'])){8,})\\?["']/gi,
-	},
-];
+interface Span {
+	start: number;
+	end: number;
+	label: string;
+}
 
-/** Characters that render as nothing and so can hide a token from a pattern. */
-const ZERO_WIDTH = /\u200b|\u200c|\u200d|\u2060|\ufeff/;
-const ZERO_WIDTH_ALL = new RegExp(ZERO_WIDTH.source, 'g');
-const ZERO_WIDTH_CHARS = new Set([
-	'\u200b',
-	'\u200c',
-	'\u200d',
-	'\u2060',
-	'\ufeff',
-]);
-
-function replacement(name: string, match: string, captured: unknown): string {
-	const label = `[REDACTED_${name.toUpperCase()}]`;
-	return typeof captured === 'string' && captured
-		? match.replace(captured, label)
-		: label;
+interface Detector {
+	name: string;
+	find(text: string): Span[];
 }
 
 /**
- * Match against a copy of the text without zero-width characters, then replace
- * the matching span of the original. Text that does not match is unchanged;
- * invisible characters inside a redacted span are removed with it.
+ * Regex detector. With a capture group only the capture is redacted, by its
+ * own offsets (`d` flag), so a key that equals its value is not mistaken for
+ * the value.
  */
-function redactPattern(text: string, name: string, pattern: RegExp): string {
-	if (!ZERO_WIDTH.test(text))
-		return text.replace(pattern, (match, captured) =>
-			replacement(name, match, captured)
-		);
-	const kept: string[] = [];
-	const offsets: number[] = [];
-	for (let i = 0; i < text.length; i++) {
-		if (ZERO_WIDTH_CHARS.has(text[i])) continue;
-		kept.push(text[i]);
-		offsets.push(i);
+function regexDetector(name: string, pattern: RegExp): Detector {
+	const label = `[REDACTED_${name.toUpperCase()}]`;
+	return {
+		name,
+		find(text) {
+			const spans: Span[] = [];
+			pattern.lastIndex = 0;
+			for (const m of text.matchAll(pattern)) {
+				const [start, end] = m.indices?.[1] ?? m.indices?.[0] ?? [0, 0];
+				if (end > start) spans.push({ start, end, label });
+			}
+			return spans;
+		},
+	};
+}
+
+const isBase64Url = (code: number): boolean =>
+	(code >= 48 && code <= 57) ||
+	(code >= 65 && code <= 90) ||
+	(code >= 97 && code <= 122) ||
+	code === 45 ||
+	code === 95;
+
+function runEnd(text: string, from: number): number {
+	let i = from;
+	while (i < text.length && isBase64Url(text.charCodeAt(i))) i++;
+	return i;
+}
+
+/** `eyJ<10+>.eyJ<10+>.<10+>`, scanned by hand; each segment is read at most three times. */
+const jwtDetector: Detector = {
+	name: 'jwt_token',
+	find(text) {
+		const spans: Span[] = [];
+		let from = 0;
+		for (;;) {
+			const i = text.indexOf('eyJ', from);
+			if (i < 0) break;
+			const r1 = runEnd(text, i + 3);
+			let matched = -1;
+			if (
+				r1 - (i + 3) >= 10 &&
+				text[r1] === '.' &&
+				text.startsWith('eyJ', r1 + 1)
+			) {
+				const r2 = runEnd(text, r1 + 4);
+				if (r2 - (r1 + 4) >= 10 && text[r2] === '.') {
+					const r3 = runEnd(text, r2 + 1);
+					if (r3 - (r2 + 1) >= 10) matched = r3;
+				}
+			}
+			if (matched >= 0) {
+				spans.push({ start: i, end: matched, label: '[REDACTED_JWT_TOKEN]' });
+				from = matched;
+			} else {
+				// Every later start inside this run ends at r1 and fails the same way.
+				from = Math.max(i + 1, r1);
+			}
+		}
+		return spans;
+	},
+};
+
+const PEM_BEGIN =
+	/-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/y;
+const PEM_END = /-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/y;
+/** Longest key block redacted; the END search is bounded by this. */
+const PEM_MAX_BODY = 64 * 1024;
+
+/**
+ * BEGIN marker, then the nearest END marker within a bounded window. The next
+ * END position is cached, so a run of BEGIN markers costs linear time overall.
+ */
+const privateKeyDetector: Detector = {
+	name: 'private_key',
+	find(text) {
+		const spans: Span[] = [];
+		let cursor = 0;
+		let nextEnd = -1;
+		let noMoreEnds = false;
+		for (;;) {
+			const begin = text.indexOf('-----BEGIN ', cursor);
+			if (begin < 0) break;
+			PEM_BEGIN.lastIndex = begin;
+			const header = PEM_BEGIN.exec(text);
+			if (!header) {
+				cursor = begin + 1;
+				continue;
+			}
+			const bodyStart = begin + header[0].length;
+			if (nextEnd >= 0 && nextEnd < bodyStart) nextEnd = -1;
+			let found = -1;
+			for (;;) {
+				if (nextEnd < 0 && !noMoreEnds) {
+					nextEnd = text.indexOf('-----END ', bodyStart);
+					noMoreEnds = nextEnd < 0;
+				}
+				if (nextEnd < 0 || nextEnd - bodyStart > PEM_MAX_BODY) break;
+				PEM_END.lastIndex = nextEnd;
+				const tail = PEM_END.exec(text);
+				if (tail) {
+					found = nextEnd + tail[0].length;
+					break;
+				}
+				nextEnd = text.indexOf('-----END ', nextEnd + 1);
+				noMoreEnds = nextEnd < 0;
+			}
+			if (found < 0) {
+				cursor = bodyStart;
+				continue;
+			}
+			spans.push({
+				start: begin,
+				end: found,
+				label: '[REDACTED_PRIVATE_KEY]',
+			});
+			cursor = found;
+		}
+		return spans;
+	},
+};
+
+const DETECTORS: Detector[] = [
+	// GitHub Tokens (PAT, OAuth, fine-grained, app)
+	regexDetector(
+		'github_token',
+		/(?:ghp|gho|ghu|ghs|ghr|github_pat)_[a-zA-Z0-9_]{16,255}/dg
+	),
+	// OpenAI API Key
+	regexDetector(
+		'openai_key',
+		/sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,80}/dg
+	),
+	// AWS Access Key ID
+	regexDetector(
+		'aws_access_key',
+		/(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}/dg
+	),
+	// AWS Secret Access Key (heuristic assignment); the quote may be JSON-escaped.
+	regexDetector(
+		'aws_secret_key',
+		/(?:aws_secret_access_key|aws_secret_key)\s*[:=]\s*(?:\\?["'])?([a-zA-Z0-9/+=]{40})(?:\\?["'])?/dgi
+	),
+	// Private Keys (RSA, EC, OpenSSH, PGP)
+	privateKeyDetector,
+	// Slack Tokens
+	regexDetector(
+		'slack_token',
+		/xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/dg
+	),
+	// JWT Tokens
+	jwtDetector,
+	// Generic API keys and Bearer tokens
+	regexDetector('bearer_token', /Bearer\s+([a-zA-Z0-9\-._~+/]+=*)/dgi),
+	// Generic passwords in URLs or assignments. The quote may be JSON-escaped
+	// (`\"`); the value consumes whole escape pairs, so a trailing `\\` is never
+	// split and the surrounding JSON stays valid after redaction.
+	regexDetector(
+		'password_assignment',
+		/(?:password|passwd|secret)\s*[:=]\s*\\?["']((?:[^"'\s\\]|\\.){8,})\\?["']/dgi
+	),
+];
+
+/**
+ * Characters that render as nothing (or only alter the glyph before them) and
+ * so can hide a token from a pattern: format characters (soft hyphen, zero
+ * width, bidi controls, invisible operators, tag characters), the combining
+ * grapheme joiner, Mongolian and general variation selectors, and Hangul
+ * fillers. Ordinary spaces (U+00A0, U+3000, U+2028) are deliberately kept.
+ */
+const INVISIBLE_SOURCE =
+	'[\\p{Cf}\\u034f\\u115f\\u1160\\u180b-\\u180d\\u3164\\uffa0\\ufe00-\\ufe0f\\u{e0100}-\\u{e01ef}]';
+const INVISIBLE = new RegExp(INVISIBLE_SOURCE, 'u');
+const INVISIBLE_ALL = new RegExp(INVISIBLE_SOURCE, 'gu');
+
+/** Spans in `visible` coordinates, sorted, with overlaps merged (first label wins). */
+function collectSpans(visible: string): Span[] {
+	const all: Array<Span & { order: number }> = [];
+	DETECTORS.forEach((detector, order) => {
+		for (const span of detector.find(visible)) all.push({ ...span, order });
+	});
+	all.sort((a, b) => a.start - b.start || a.order - b.order);
+	const merged: Span[] = [];
+	for (const span of all) {
+		const last = merged[merged.length - 1];
+		if (last && span.start < last.end) last.end = Math.max(last.end, span.end);
+		else merged.push({ start: span.start, end: span.end, label: span.label });
 	}
-	let out = '';
-	let cursor = 0;
-	// matchAll starts at lastIndex, which containsSecret leaves non-zero.
-	pattern.lastIndex = 0;
-	for (const m of kept.join('').matchAll(pattern)) {
-		const first = m.index ?? 0;
-		out += text.slice(cursor, offsets[first]);
-		out += replacement(name, m[0], m[1]);
-		cursor = offsets[first + m[0].length - 1] + 1;
-	}
-	return out + text.slice(cursor);
+	return merged;
 }
 
 /**
  * Redact sensitive secrets from raw text.
+ *
+ * Matching runs on a copy without invisible characters; the matching spans of
+ * the original are replaced. Text without a match is returned unchanged, and
+ * invisible characters inside a redacted span go with it.
  */
 export function redactSecrets(text: string): string {
 	if (!text) return text;
-	let redacted = text;
-	for (const { name, pattern } of SECRET_PATTERNS)
-		redacted = redactPattern(redacted, name, pattern);
-	return redacted;
+	if (!INVISIBLE.test(text)) return applySpans(text, collectSpans(text));
+	// removedAt[k]: visible characters before the k-th invisible one;
+	// removedTotal[k]: code units removed up to and including it.
+	const removedAt: number[] = [];
+	const removedTotal: number[] = [];
+	let removed = 0;
+	const chunks: string[] = [];
+	let last = 0;
+	let visibleLength = 0;
+	for (const m of text.matchAll(INVISIBLE_ALL)) {
+		const at = m.index ?? 0;
+		chunks.push(text.slice(last, at));
+		visibleLength += at - last;
+		removedAt.push(visibleLength);
+		removed += m[0].length;
+		removedTotal.push(removed);
+		last = at + m[0].length;
+	}
+	chunks.push(text.slice(last));
+	const spans = collectSpans(chunks.join(''));
+	if (spans.length === 0) return text;
+	// Original index of the visible character at `index`.
+	const original = (index: number): number => {
+		let lo = 0;
+		let hi = removedAt.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >>> 1;
+			if (removedAt[mid] <= index) lo = mid + 1;
+			else hi = mid;
+		}
+		return index + (lo > 0 ? removedTotal[lo - 1] : 0);
+	};
+	return applySpans(
+		text,
+		spans.map((s) => ({
+			...s,
+			start: original(s.start),
+			end: original(s.end - 1) + 1,
+		}))
+	);
+}
+
+function applySpans(text: string, spans: Span[]): string {
+	if (spans.length === 0) return text;
+	let out = '';
+	let cursor = 0;
+	for (const span of spans) {
+		out += text.slice(cursor, span.start) + span.label;
+		cursor = span.end;
+	}
+	return out + text.slice(cursor);
 }
 
 /**
@@ -122,9 +281,5 @@ export function redactSecrets(text: string): string {
  */
 export function containsSecret(text: string): boolean {
 	if (!text) return false;
-	const visible = text.replace(ZERO_WIDTH_ALL, '');
-	return SECRET_PATTERNS.some(({ pattern }) => {
-		pattern.lastIndex = 0;
-		return pattern.test(visible);
-	});
+	return collectSpans(text.replace(INVISIBLE_ALL, '')).length > 0;
 }

@@ -46,19 +46,28 @@ const CATEGORY_LABEL: Record<string, string> = {
 
 /** Full inline-comment body for a finding, ending with its id marker. */
 export function buildFindingBody(finding: Finding): string {
+	// A suggestion block is applied verbatim, so a replacement that redaction
+	// would change is withheld rather than committed with a placeholder in it.
+	const withheld =
+		!!finding.replacement &&
+		redactSecrets(finding.replacement) !== finding.replacement;
 	const safeFinding = {
 		...finding,
 		title: mdSafe(redactSecrets(finding.title)),
 		description: mdSafe(redactSecrets(finding.description)),
 		impact: mdSafe(redactSecrets(finding.impact)),
-		suggestion: finding.suggestion
-			? mdSafe(redactSecrets(finding.suggestion))
-			: undefined,
+		suggestion:
+			[
+				finding.suggestion ? mdSafe(redactSecrets(finding.suggestion)) : '',
+				withheld
+					? '_A suggested code change was withheld because it contained a secret-like value._'
+					: '',
+			]
+				.filter(Boolean)
+				.join(' ') || undefined,
 		// Replacement is code inside a fenced suggestion block. Escaping it as
 		// HTML text changes the bytes GitHub applies (e.g. `<T>` or `&&`).
-		replacement: finding.replacement
-			? redactSecrets(finding.replacement)
-			: finding.replacement,
+		replacement: withheld ? undefined : finding.replacement,
 	};
 	const body = commentIdentityBody(safeFinding);
 	return `${body}\n\n<!-- ai-review-id:${normalizeCommentId(finding)} -->`;

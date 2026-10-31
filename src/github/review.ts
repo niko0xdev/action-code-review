@@ -198,7 +198,7 @@ export async function publishReview(
 			}
 		} catch (error) {
 			core.warning(
-				`[review] Could not recheck PR head; refusing to publish: ${error instanceof Error ? error.message : String(error)}`
+				`[review] Could not recheck PR head; refusing to publish: ${redactDetail(error)}`
 			);
 			result.reviewStatus = 'stale';
 			return;
@@ -282,9 +282,7 @@ export async function publishReview(
 				...(payload.comments.length === 0 ? { body: eventOnlyBody } : {}),
 			});
 		} catch (error) {
-			core.warning(
-				`Batch review failed: ${error instanceof Error ? error.message : String(error)}`
-			);
+			core.warning(`Batch review failed: ${redactDetail(error)}`);
 			for (const comment of payload.comments) {
 				try {
 					await octokit.rest.pulls.createReviewComment({
@@ -302,7 +300,7 @@ export async function publishReview(
 						owner,
 						repo,
 						issue_number: prNumber,
-						body: `## Review for ${comment.path}\n\n**Line ${comment.line}:** ${comment.body}`,
+						body: `## Review for ${redactSecrets(comment.path)}\n\n**Line ${comment.line}:** ${comment.body}`,
 					});
 				}
 			}
