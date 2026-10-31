@@ -39032,17 +39032,16 @@ function createSystemPrompt(customInstructions, templateContent) {
     return prompt.join(' ');
 }
 function buildUserPrompt(currentTitle, currentDescription, diffs, includeFileList) {
-    let prompt = `Current PR Title: ${currentTitle}\n\n`;
-    prompt += `Current PR Description:\n${currentDescription || '(No description)'}\n\n`;
+    let prompt = `Current PR Title: ${(0,prompt_safety/* escapeControlChars */._s)(currentTitle)}\n\n`;
+    prompt += `Current PR Description:\n${currentDescription ? (0,prompt_safety/* fenced */.OF)(currentDescription) : '(No description)'}\n\n`;
     if (includeFileList) {
         prompt += `Changed Files:\n${diffs.map((d) => `${(0,prompt_safety/* escapeControlChars */._s)(d.status)}: ${(0,prompt_safety/* escapeControlChars */._s)(d.filename)}`).join('\n')}\n\n`;
     }
     prompt += 'Code Changes:';
     diffs.forEach((diff, index) => {
         prompt += `\n\n--- File ${index + 1}: ${(0,prompt_safety/* escapeControlChars */._s)(diff.filename)} (${(0,prompt_safety/* escapeControlChars */._s)(diff.status)}) ---\n`;
-        prompt += diff.patch.substring(0, 2000);
-        if (diff.patch.length > 2000)
-            prompt += '\n... (truncated)';
+        const excerpt = diff.patch.substring(0, 2000);
+        prompt += (0,prompt_safety/* fenced */.OF)(diff.patch.length > 2000 ? `${excerpt}\n... (truncated)` : excerpt);
     });
     return `${prompt}\n\nPlease provide an improved title and description for this pull request.`;
 }

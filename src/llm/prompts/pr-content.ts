@@ -1,4 +1,4 @@
-import { escapeControlChars } from '../../shared/prompt-safety.js';
+import { escapeControlChars, fenced } from '../../shared/prompt-safety.js';
 
 export function createSystemPrompt(
 	customInstructions?: string,
@@ -32,16 +32,18 @@ export function buildUserPrompt(
 	diffs: Array<{ filename: string; status: string; patch: string }>,
 	includeFileList: boolean
 ): string {
-	let prompt = `Current PR Title: ${currentTitle}\n\n`;
-	prompt += `Current PR Description:\n${currentDescription || '(No description)'}\n\n`;
+	let prompt = `Current PR Title: ${escapeControlChars(currentTitle)}\n\n`;
+	prompt += `Current PR Description:\n${currentDescription ? fenced(currentDescription) : '(No description)'}\n\n`;
 	if (includeFileList) {
 		prompt += `Changed Files:\n${diffs.map((d) => `${escapeControlChars(d.status)}: ${escapeControlChars(d.filename)}`).join('\n')}\n\n`;
 	}
 	prompt += 'Code Changes:';
 	diffs.forEach((diff, index) => {
 		prompt += `\n\n--- File ${index + 1}: ${escapeControlChars(diff.filename)} (${escapeControlChars(diff.status)}) ---\n`;
-		prompt += diff.patch.substring(0, 2000);
-		if (diff.patch.length > 2000) prompt += '\n... (truncated)';
+		const excerpt = diff.patch.substring(0, 2000);
+		prompt += fenced(
+			diff.patch.length > 2000 ? `${excerpt}\n... (truncated)` : excerpt
+		);
 	});
 	return `${prompt}\n\nPlease provide an improved title and description for this pull request.`;
 }
