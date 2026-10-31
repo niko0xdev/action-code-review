@@ -46,6 +46,11 @@ Questions) lives in `docs/v3-decisions.md`.
   controls, and zero-width characters as visible escapes (the review prompt
   gains the bidi and zero-width escapes too). The helpers moved to
   `src/shared/prompt-safety.ts`. Diff bodies are unchanged.
+- **The PR-content prompt now fences its untrusted text.** Each patch excerpt
+  and the current PR description sit in a fence longer than any backtick run
+  inside them, with the per-file header outside the fence; the current PR title
+  is written on one line with hidden characters as `\uXXXX` escapes. The
+  instruction line stays after the last fence. Output parsing is unchanged.
 - **A truncated changed-file list now makes the review incomplete.** When
   GitHub pagination stopped at the 1000-file cap, the review used to report
   `complete`, show an APPROVED banner, and could submit an approval. It now has
