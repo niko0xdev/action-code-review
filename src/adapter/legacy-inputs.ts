@@ -25,6 +25,7 @@ export interface PrReviewEngineOptions {
 	blockOnIssues: boolean;
 	includeFullContent: boolean;
 	maxContextChars: number;
+	scorecardContext: boolean;
 }
 
 export interface PrContentEngineOptions {
@@ -83,6 +84,7 @@ const PR_REVIEW_DEFAULTS = {
 	blockOnIssues: 'true',
 	includeFullContent: 'false',
 	maxContextChars: '30000',
+	scorecardContext: 'false',
 } as const;
 
 const PR_CONTENT_DEFAULTS = {
@@ -270,6 +272,10 @@ function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 			get(inputs, 'max-context-chars'),
 			PR_REVIEW_DEFAULTS.maxContextChars,
 			'max-context-chars'
+		),
+		scorecardContext: bool(
+			get(inputs, 'scorecard-context'),
+			PR_REVIEW_DEFAULTS.scorecardContext
 		),
 	};
 }

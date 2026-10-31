@@ -11,6 +11,7 @@ import { preparePiRuntimeConfig } from '../adapter/runtime.js';
 import { prioritizeFiles } from '../context/files.js';
 import { fetchPrContext } from '../context/pr.js';
 import { runPrelint } from '../context/prelint.js';
+import { loadScorecardContext } from '../context/scorecard.js';
 import { trackPhase } from '../github/progress.js';
 import { buildJobSummary, publishReview } from '../github/review.js';
 import {
@@ -105,6 +106,7 @@ export async function runPrReviewAction(): Promise<void> {
 		'block-on-issues': core.getInput('block-on-issues'),
 		'include-full-content': core.getInput('include-full-content'),
 		'max-context-chars': core.getInput('max-context-chars'),
+		'scorecard-context': core.getInput('scorecard-context'),
 	});
 	const llmConfig = resolveEngineConfig(legacyOptions);
 	const octokit = toPublisherOctokit(
@@ -208,6 +210,13 @@ export async function runPrReviewAction(): Promise<void> {
 				`[prelint] Ran ${prelintResult.ran.join(', ')} — ${prelintResult.findings.length} findings`
 			);
 		}
+		const scorecardContext = await loadScorecardContext({
+			enabled: legacyOptions.scorecardContext,
+			owner: repoInfo.owner,
+			repo: repoInfo.repo,
+			isPrivate: context.payload.repository?.private,
+			log: core.info,
+		});
 		trackPhase('harness', 'Pi review start', { enabled: trackEnabled });
 		const piBinaryRaw = core.getInput('pi-binary-path');
 		let piBinaryPath: string | undefined;
@@ -284,6 +293,7 @@ export async function runPrReviewAction(): Promise<void> {
 			extraRules: reviewRules,
 			provider: llmConfig.provider,
 			toolFindings: prelintResult.findings,
+			scorecardContext,
 		});
 		const result = await runReview(reviewContext, harness, {
 			minConfidence: envLimits.minConfidence,

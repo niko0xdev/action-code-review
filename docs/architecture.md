@@ -189,6 +189,24 @@ pnpm lint          # biome
 pnpm build         # pinned ncc (devDependency) → pr-*/dist/index.js; CI diffs the result
 ```
 
+## Scorecard context (opt-in)
+
+Input `scorecard-context` (default `'false'`; see `src/context/scorecard.ts`). When
+`'true'` and the repository is public, one unauthenticated GET is made to
+`https://api.securityscorecards.dev/projects/github.com/{owner}/{repo}` (5 s timeout,
+256 KiB cap, no secrets sent). The response is untrusted third-party data: only the
+overall score (clamped 0 to 10) and the scores (clamped -1 to 10) of a fixed list of
+checks (`Branch-Protection`, `Pinned-Dependencies`, `Token-Permissions`, `SAST`,
+`Dangerous-Workflow`, `Vulnerabilities`, `Code-Review`, `Dependency-Update-Tool`,
+`Security-Policy`, `Binary-Artifacts`) are kept. No reason strings, URLs, or other text
+reach the prompt; the table is rendered from a fixed template next to the static analyser
+evidence, never in the trusted rules slot, with an instruction that the scores are
+advisory context and not findings. Any failure (404, timeout, bad JSON, oversize, private
+repository) logs one `[scorecard]` line and the review continues without it.
+
+**Privacy:** when enabled, the owner and repository name are sent to
+`api.securityscorecards.dev`, a third-party service.
+
 ## Optional configuration (spec §8)
 
 Numeric variables are validated by `src/shared/numeric.ts`: an invalid value logs a warning and falls back to the default, so it can never disable a limit.

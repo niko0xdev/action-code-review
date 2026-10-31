@@ -103,6 +103,7 @@ export function buildReviewPromptWithCoverage(
 		includeFullContent?: boolean;
 		maxContextChars?: number;
 		toolFindings?: ToolFinding[];
+		scorecardContext?: string;
 	} = {}
 ): { prompt: string; includedFiles: string[] } {
 	const { pullRequest, diff, profiles } = context;
@@ -113,6 +114,10 @@ export function buildReviewPromptWithCoverage(
 	const profileLine = profiles.map((p: DetectedProfile) => p.id).join(', ');
 	const toolSection = options.toolFindings?.length
 		? `\nStatic analyzer evidence (deterministic tools already ran; treat as evidence, not as your output):\n${renderToolFindingsForPrompt(options.toolFindings, 50)}\n- Cite these in your findings when they confirm or contradict LLM review.\n- You MAY add findings the tools missed (logical bugs, design issues, security flaws).\n- You SHOULD drop or downgrade findings the tools already caught unless you add meaningful context.`
+		: '';
+	// Deliberately unfenced: only clamped numbers from a fixed template.
+	const scorecardSection = options.scorecardContext
+		? `\n${options.scorecardContext}`
 		: '';
 	const prompt = [
 		'SECURITY NOTICE (highest priority):',
@@ -133,6 +138,7 @@ export function buildReviewPromptWithCoverage(
 		'- High signal over comment count.',
 		extraRules ? `\nProfile-specific rules:\n${extraRules}` : '',
 		toolSection,
+		scorecardSection,
 		'',
 		'Changed files:',
 		boundedFileLines || '(no text patches available)',
