@@ -1,0 +1,125 @@
+{
+	"scenarios": [
+		{
+			"knownDefects": {},
+			"id": "api-failure",
+			"description": "Provider returns 503; the only review group throws.",
+			"fault": "api-failure"
+		},
+		{
+			"knownDefects": {},
+			"id": "schema-refusal-prose",
+			"description": "Model refuses in plain prose.",
+			"fault": "schema-refusal",
+			"modelOutput": "I'm sorry, but I can't help with that request."
+		},
+		{
+			"knownDefects": {},
+			"id": "schema-refusal-empty",
+			"description": "Empty completion.",
+			"fault": "schema-refusal",
+			"modelOutput": ""
+		},
+		{
+			"knownDefects": {},
+			"id": "schema-error-object",
+			"description": "Content-filter error object instead of a review.",
+			"fault": "schema-refusal",
+			"modelOutput": "{\"error\":{\"type\":\"content_filter\",\"message\":\"blocked\"}}"
+		},
+		{
+			"knownDefects": {},
+			"id": "schema-truncated-json",
+			"description": "Output cut off mid-object by the token limit.",
+			"fault": "schema-refusal",
+			"modelOutput": "{\"findings\":[{\"severity\":\"high\",\"confidence\":0.9,\"path\":\"src/app.ts\",\"line\":2,\"title\":\"x\""
+		},
+		{
+			"knownDefects": {},
+			"id": "truncated-diff-file-omitted",
+			"description": "Second file does not fit the context budget and is omitted.",
+			"fault": "truncated-diff",
+			"files": [
+				{
+					"filename": "src/app.ts"
+				},
+				{
+					"filename": "src/big.ts",
+					"patch": "@@ -1,3 +1,4 @@\n context 0\n+added line 0 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n context\n context"
+				}
+			],
+			"maxContextChars": 260,
+			"modelOutput": "{\"findings\":[],\"summary\":\"No issues.\",\"risk\":\"none\"}"
+		},
+		{
+			"knownDefects": {},
+			"id": "truncated-diff-partial-hunks",
+			"description": "Only the first hunks of a file fit; the rest was never analysed.",
+			"fault": "truncated-diff",
+			"files": [
+				{
+					"filename": "src/big.ts",
+					"patch": "@@ -1,3 +1,4 @@\n context 0\n+added line 0 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n context\n context\n@@ -11,3 +11,4 @@\n context 1\n+added line 1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n context\n context\n@@ -21,3 +21,4 @@\n context 2\n+added line 2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n context\n context\n@@ -31,3 +31,4 @@\n context 3\n+added line 3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n context\n context\n@@ -41,3 +41,4 @@\n context 4\n+added line 4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n context\n context\n@@ -51,3 +51,4 @@\n context 5\n+added line 5 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n context\n context"
+				}
+			],
+			"maxContextChars": 500,
+			"modelOutput": "{\"findings\":[],\"summary\":\"No issues.\",\"risk\":\"none\"}"
+		},
+		{
+			"knownDefects": {},
+			"id": "group-failure-partial",
+			"description": "One of two review groups fails while the other returns a clean empty review.",
+			"fault": "group-failure",
+			"files": [
+				{
+					"filename": "src/a.ts"
+				},
+				{
+					"filename": "src/b.ts"
+				}
+			],
+			"modelOutput": "{\"findings\":[],\"summary\":\"No issues.\",\"risk\":\"none\"}"
+		},
+		{
+			"knownDefects": {},
+			"id": "verify-call-fails",
+			"description": "Verify pass throws after a high finding was produced.",
+			"fault": "verify-error",
+			"modelOutput": "{\"findings\":[{\"severity\":\"high\",\"confidence\":0.95,\"category\":\"correctness\",\"path\":\"src/app.ts\",\"line\":2,\"title\":\"Noisy finding\",\"description\":\"Canned description.\",\"impact\":\"Canned impact.\",\"suggestion\":\"Canned suggestion.\",\"replacement\":null}],\"summary\":\"One issue.\",\"risk\":\"high\"}"
+		},
+		{
+			"knownDefects": {},
+			"id": "verify-malformed",
+			"description": "Verify pass answers with prose.",
+			"fault": "verify-malformed",
+			"modelOutput": "{\"findings\":[{\"severity\":\"high\",\"confidence\":0.95,\"category\":\"correctness\",\"path\":\"src/app.ts\",\"line\":2,\"title\":\"Noisy finding\",\"description\":\"Canned description.\",\"impact\":\"Canned impact.\",\"suggestion\":\"Canned suggestion.\",\"replacement\":null}],\"summary\":\"One issue.\",\"risk\":\"high\"}"
+		},
+		{
+			"knownDefects": {
+				"status-not-complete": "runReview sets filesTruncated on the result but reviewStatus stays \"complete\" (only failedGroups and truncatedFiles are considered), so describeReviewExecution and incompleteReviewFailure report a complete run for a partial file list.",
+				"no-approval": "reviewFailed() in publishReview ignores filesTruncated, so with auto-approve enabled and all AI threads resolved a review over a truncated file list is APPROVED.",
+				"failure-surfaced": "incompleteReviewFailure returns null for this run, so the step does not fail even though the changed-file list is partial.",
+				"summary-says-incomplete": "The summary shows the APPROVED banner (with only a small FILE LIST TRUNCATED notice) because the decision banner keys off reviewStatus, which is complete.",
+				"report-status": "buildReviewReport derives status from reviewStatus and failedGroups only, so the machine-readable report says complete while coverage.filesTruncated is true."
+			},
+			"id": "pagination-truncated",
+			"description": "GitHub file listing hit the safety cap, so the diff is partial; the model saw only what was listed and found nothing.",
+			"fault": "pagination-truncated",
+			"modelOutput": "{\"findings\":[],\"summary\":\"No issues.\",\"risk\":\"none\"}"
+		},
+		{
+			"knownDefects": {},
+			"id": "stale-head",
+			"description": "PR head moved while the review ran.",
+			"fault": "stale-head",
+			"modelOutput": "{\"findings\":[{\"severity\":\"high\",\"confidence\":0.95,\"category\":\"correctness\",\"path\":\"src/app.ts\",\"line\":2,\"title\":\"Noisy finding\",\"description\":\"Canned description.\",\"impact\":\"Canned impact.\",\"suggestion\":\"Canned suggestion.\",\"replacement\":null}],\"summary\":\"One issue.\",\"risk\":\"high\"}"
+		},
+		{
+			"knownDefects": {},
+			"id": "stale-head-recheck-error",
+			"description": "Head recheck call fails, so freshness cannot be proven.",
+			"fault": "stale-head-recheck-error",
+			"modelOutput": "{\"findings\":[],\"summary\":\"No issues.\",\"risk\":\"none\"}"
+		}
+	]
+}
