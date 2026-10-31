@@ -42,11 +42,11 @@ export interface VerifyPassOptions {
 		body: string;
 		filenames: string[];
 	};
-	/** Function that runs the verify LLM call. */
-	verify: (prompt: string) => Promise<string>;
+	/** Function that runs the verify LLM call with its output token ceiling. */
+	verify: (prompt: string, maxOutputTokens: number) => Promise<string>;
 	/** Estimated input tokens for the verify prompt. */
 	inputTokenEstimate: number;
-	/** Estimated output tokens (capped by the model). */
+	/** Output tokens requested for the reply; part of the pre-call estimate. */
 	outputTokenBudget: number;
 	/** Cost ceiling in USD. Default 0.50. */
 	budgetUsd?: number;
@@ -80,16 +80,22 @@ function isVerifyTarget(severity: Severity, min: Severity): boolean {
 	return SEVERITY_ORDER[severity] >= SEVERITY_ORDER[min];
 }
 
+/** Candidate id used to match a verdict to a finding: `c1`..`cN` by position. */
+function candidateId(index: number): string {
+	return `c${index + 1}`;
+}
+
 /**
- * Build the verify prompt. The model is asked to challenge each
- * high/critical finding with three yes/no questions. The model must
- * return JSON in the same shape, but each finding either survives
- * (verified) or is dropped.
+ * Build the verify prompt. The model gets each candidate with a unique id and
+ * must return exactly one verdict object per id, `verified` true or false,
+ * with a short reason. Rejected candidates are marked false, never omitted;
+ * the pass matches verdicts by id only and keeps everything otherwise.
  */
 export function buildVerifyPrompt(
-	highCritical: Finding[],
+	candidates: Finding[],
 	toolFindings: ToolFinding[],
-	context: { title: string; body: string; filenames: string[] }
+	context: { title: string; body: string; filenames: string[] },
+	minSeverity: Severity = VERIFY_MIN_SEVERITY_DEFAULT
 ): string {
 	const toolSection = toolFindings.length
 		? `\nStatic analyzer evidence (from prelint):\n${toolFindings
@@ -100,16 +106,21 @@ export function buildVerifyPrompt(
 				)
 				.join('\n')}\n`
 		: '';
+	const withIds = candidates.map((f, i) => ({ ...f, id: candidateId(i) }));
+	const floor =
+		minSeverity === VERIFY_MIN_SEVERITY_DEFAULT
+			? 'high-severity'
+			: `${minSeverity}-or-higher severity`;
 
 	return `You are reviewing your OWN findings from a prior code-review pass.
-Your job is to challenge each high-severity finding before it ships to a human reviewer.
+Your job is to challenge each ${floor} finding before it ships to a human reviewer.
 
 PR title: ${escapeControlChars(context.title)}
 PR body (truncated):
 ${fenced(context.body.slice(0, 500))}
 
-Candidate findings to verify (${highCritical.length}):
-${fenced(jsonForPrompt(highCritical), 'json')}
+Candidate findings to verify (${candidates.length}), each with a unique "id":
+${fenced(jsonForPrompt(withIds), 'json')}
 ${toolSection}
 
 For each finding, answer 3 questions:
@@ -117,14 +128,32 @@ For each finding, answer 3 questions:
 2. Is the line number plausible (between 1 and a reasonable file length)?
 3. Would a senior engineer agree this is a real bug?
 
-If ALL THREE answers are YES, keep the finding with "verified": true.
-Otherwise, DROP the finding from the output.
+Return exactly ONE verdict object per candidate, using the candidate's "id".
+Set "verified": true only if ALL THREE answers are YES, otherwise "verified": false.
+Add a short "reason". Do NOT omit any candidate: a rejected finding gets
+"verified": false, it is never left out. Do not add ids that were not given.
 
 Return ONLY JSON:
-{"findings": [...same shape, with verified:true on each survivor...]}
+{"verdicts": [{"id": "c1", "verified": true, "reason": "short reason"}, ...]}
 
 Do not invent new findings. Do not change severity. Do not change titles.
 This pass exists only to catch hallucinated paths/lines and reasoning shortcuts.`;
+}
+
+/** Output tokens per candidate verdict (id, boolean, short reason), generous. */
+const VERIFY_TOKENS_PER_CANDIDATE = 120;
+const VERIFY_OUTPUT_TOKEN_BASE = 256;
+const VERIFY_OUTPUT_TOKEN_CAP = 8192;
+
+/**
+ * Output ceiling for `candidates` verdicts: a per-candidate allowance with a
+ * base and a cap, so a long candidate list is not truncated into bad JSON.
+ */
+export function verifyOutputTokenBudget(candidates: number): number {
+	return Math.min(
+		VERIFY_OUTPUT_TOKEN_CAP,
+		VERIFY_OUTPUT_TOKEN_BASE + VERIFY_TOKENS_PER_CANDIDATE * candidates
+	);
 }
 
 /**
@@ -171,7 +200,8 @@ export async function runVerifyPass(
 	const prompt = buildVerifyPrompt(
 		highCritical,
 		options.toolFindings,
-		options.context
+		options.context,
+		minSeverity
 	);
 
 	// Cost gate, checked before the call. The caller's estimate is raised to
@@ -195,7 +225,7 @@ export async function runVerifyPass(
 
 	let raw: string;
 	try {
-		raw = await options.verify(prompt);
+		raw = await options.verify(prompt, options.outputTokenBudget);
 	} catch (error) {
 		return {
 			findings: options.findings,
@@ -210,7 +240,7 @@ export async function runVerifyPass(
 		};
 	}
 
-	const parsed = parseVerifyOutput(raw, highCritical);
+	const parsed = parseVerifyOutput(raw, highCritical.length);
 	if (parsed.status !== 'complete') {
 		return {
 			findings: options.findings,
@@ -225,25 +255,26 @@ export async function runVerifyPass(
 
 	// Build verified output: keep highCritical that survived verification,
 	// plus all other findings (unchanged).
-	const verifiedSet = new Set(parsed.verified.map((f) => identifyFinding(f)));
-	const surviving = options.findings.filter((f) => {
-		if (!isTarget(f)) return true;
-		return verifiedSet.has(identifyFinding(f));
+	const rejected = new Set<Finding>();
+	let verifiedCount = 0;
+	highCritical.forEach((f, i) => {
+		if (parsed.verdicts.get(candidateId(i))) verifiedCount += 1;
+		else rejected.add(f);
 	});
+	const surviving = options.findings.filter((f) => !rejected.has(f));
 
 	return {
 		findings: surviving,
-		verifiedCount: parsed.verified.length,
-		droppedCount: highCritical.length - parsed.verified.length,
+		verifiedCount,
+		droppedCount: rejected.size,
 		skipped: false,
 		estimatedCostUsd,
 		verificationStatus: 'complete',
 	};
 }
 
-/** Default budget (USD) and output token budget for the pipeline verify pass. */
+/** Default budget (USD) for the pipeline verify pass. */
 export const VERIFY_BUDGET_USD_DEFAULT = 0.5;
-export const VERIFY_OUTPUT_TOKEN_BUDGET = 2048;
 
 /**
  * Apply `runVerifyPass` to a pipeline `ReviewResult` in place: replaces
@@ -257,7 +288,7 @@ export async function applyVerifyPass(
 		toolFindings: ToolFinding[];
 		title: string;
 		body: string;
-		verify: (prompt: string) => Promise<string>;
+		verify: (prompt: string, maxOutputTokens: number) => Promise<string>;
 		budgetUsd?: number;
 		minSeverity?: Severity;
 	}
@@ -275,7 +306,14 @@ export async function applyVerifyPass(
 			result.findings,
 			args.toolFindings
 		),
-		outputTokenBudget: VERIFY_OUTPUT_TOKEN_BUDGET,
+		outputTokenBudget: verifyOutputTokenBudget(
+			result.findings.filter((f) =>
+				isVerifyTarget(
+					f.severity,
+					args.minSeverity ?? VERIFY_MIN_SEVERITY_DEFAULT
+				)
+			).length
+		),
 		budgetUsd: args.budgetUsd ?? VERIFY_BUDGET_USD_DEFAULT,
 		minSeverity: args.minSeverity,
 	});
@@ -315,46 +353,32 @@ function estimateVerifyInputTokens(
 	return Math.ceil(chars / 4);
 }
 
-/**
- * Stable identity for a finding used to match verify-pass survivors to
- * the original findings list. Uses path + line + category + first 4
- * title words, matching the dedupe key in `dedupe.ts`.
- */
-function identifyFinding(finding: Finding): string {
-	const titlePrefix = finding.title
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, ' ')
-		.trim()
-		.split(' ')
-		.slice(0, 4)
-		.join(' ');
-	return [
-		finding.path,
-		finding.line,
-		finding.category,
-		finding.ruleId ?? titlePrefix,
-	].join('|');
-}
-
 interface VerifyOutput {
-	findings: Array<Partial<Finding> & { verified?: boolean }>;
+	verdicts?: unknown;
 }
 
+/**
+ * Strict parser. A verdict counts only when it is an object with a known
+ * candidate id that appears exactly once and a boolean `verified`. Anything
+ * else is ignored, and unless every candidate ends up with a valid verdict the
+ * result is `incomplete` and the caller keeps every finding.
+ */
 function parseVerifyOutput(
 	raw: string,
-	expected: Finding[]
+	candidateCount: number
 ): {
-	verified: Finding[];
+	verdicts: Map<string, boolean>;
 	status: 'complete' | 'error' | 'incomplete';
 	reason?: string;
 } {
+	const none = new Map<string, boolean>();
 	// Best-effort JSON extraction. The LLM may include prose; we look for
 	// the first {...} block.
 	const jsonStart = raw.indexOf('{');
 	const jsonEnd = raw.lastIndexOf('}');
 	if (jsonStart < 0 || jsonEnd <= jsonStart)
 		return {
-			verified: [],
+			verdicts: none,
 			status: 'error',
 			reason: 'verify output was not JSON; findings retained',
 		};
@@ -363,58 +387,38 @@ function parseVerifyOutput(
 		parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
 	} catch {
 		return {
-			verified: [],
+			verdicts: none,
 			status: 'error',
 			reason: 'verify output JSON was malformed; findings retained',
 		};
 	}
-	if (
-		!parsed ||
-		!Array.isArray(parsed.findings) ||
-		parsed.findings.length === 0
-	)
+	if (!parsed || !Array.isArray(parsed.verdicts))
 		return {
-			verified: [],
+			verdicts: none,
 			status: 'incomplete',
 			reason:
-				'verify output did not include a verdict for each candidate; findings retained',
+				'verify output did not include a verdicts list; findings retained',
 		};
 
-	// Coerce + filter to verified entries.
-	const verified: Finding[] = [];
-	const expectedByKey = new Map<string, Finding>();
-	for (const f of expected) expectedByKey.set(identifyFinding(f), f);
-	const seen = new Set<string>();
-	for (const item of parsed.findings) {
-		if (!item || typeof item.verified !== 'boolean')
-			return {
-				verified: [],
-				status: 'incomplete',
-				reason:
-					'verify output contained an incomplete verdict; findings retained',
-			};
-		// Find original via identity.
-		const candidate: Finding = {
-			...expected[0],
-			...item,
-		} as Finding;
-		const key = identifyFinding(candidate);
-		const original = expectedByKey.get(key);
-		if (!original)
-			return {
-				verified: [],
-				status: 'incomplete',
-				reason:
-					'verify output referenced an unknown candidate; findings retained',
-			};
-		seen.add(key);
-		if (item.verified) verified.push(original);
+	const known = new Set(
+		Array.from({ length: candidateCount }, (_, i) => candidateId(i))
+	);
+	const verdicts = new Map<string, boolean>();
+	const duplicated = new Set<string>();
+	for (const item of parsed.verdicts as unknown[]) {
+		const v = item as { id?: unknown; verified?: unknown } | null;
+		if (!v || typeof v.id !== 'string' || !known.has(v.id)) continue;
+		if (typeof v.verified !== 'boolean') continue;
+		if (verdicts.has(v.id)) duplicated.add(v.id);
+		else verdicts.set(v.id, v.verified);
 	}
-	if (seen.size !== expectedByKey.size)
+	for (const id of duplicated) verdicts.delete(id);
+	if (verdicts.size !== candidateCount)
 		return {
-			verified: [],
+			verdicts: none,
 			status: 'incomplete',
-			reason: 'verify output omitted one or more candidates; findings retained',
+			reason:
+				'verify output lacked one valid verdict per candidate; findings retained',
 		};
-	return { verified, status: 'complete' };
+	return { verdicts, status: 'complete' };
 }

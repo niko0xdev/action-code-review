@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
 	publishSecurityReview: vi.fn(async () => {}),
 	updatePrContent: vi.fn(async () => {}),
 	complete: vi.fn(),
+	applyVerify: undefined as undefined | ((...args: unknown[]) => Promise<void>),
 }));
 
 vi.mock('@actions/github', () => ({
@@ -79,6 +80,18 @@ vi.mock('../src/github/pr-content.js', () => ({
 	updatePrContent: state.updatePrContent,
 }));
 
+vi.mock('../src/review/verify.js', async (importOriginal) => {
+	const original =
+		await importOriginal<typeof import('../src/review/verify.js')>();
+	return {
+		...original,
+		applyVerifyPass: (...args: Parameters<typeof original.applyVerifyPass>) =>
+			state.applyVerify
+				? state.applyVerify(...args)
+				: original.applyVerifyPass(...args),
+	};
+});
+
 vi.mock('../src/llm/openai-compatible.js', () => ({
 	OpenAiCompatibleProvider: class {
 		complete = state.complete;
@@ -94,6 +107,7 @@ const ENV_KEYS = [
 	'AI_REVIEW_SKIP_DRAFTS',
 	'AI_REVIEW_FAIL_ON_INCOMPLETE',
 	'AI_REVIEW_VERIFY_PASS',
+	'AI_REVIEW_VERIFY_MIN_SEVERITY',
 	'AI_REVIEW_ENABLE_PRELINT',
 	'AI_REVIEW_PROFILE',
 	'PI_CODING_AGENT_DIR',
@@ -155,6 +169,7 @@ describe('main: top-level flows', () => {
 		state.runReview.mockReset().mockResolvedValue(cleanResult());
 		state.publishReview.mockClear();
 		state.cleanup.mockClear();
+		state.applyVerify = undefined;
 		state.runSecurityWorkflow.mockReset();
 		state.publishSecurityReview.mockClear();
 		state.updatePrContent.mockReset().mockResolvedValue(undefined);
@@ -281,6 +296,99 @@ describe('main: top-level flows', () => {
 		expect(warning).toHaveBeenCalledWith(
 			expect.stringContaining('Review incomplete')
 		);
+	});
+
+	describe('verify pass', () => {
+		const finding = (severity: string, title: string, line: number) => ({
+			severity,
+			confidence: 0.9,
+			category: 'correctness',
+			path: 'src/a.ts',
+			line,
+			title,
+			description: 'd',
+			impact: 'i',
+		});
+		const withFindings = () =>
+			cleanResult({
+				findings: [
+					finding('high', 'High finding title', 1),
+					finding('medium', 'Medium finding title', 2),
+				],
+				counts: { critical: 0, high: 1, medium: 1, low: 0 },
+			});
+		/** Approves every candidate named in the prompt that was sent. */
+		const approveAll = async (messages: Array<{ content: string }>) => {
+			const prompt = messages[0]?.content ?? '';
+			const block = /```json\n([\s\S]*?)\n```/.exec(prompt)?.[1] ?? '[]';
+			const verdicts = (JSON.parse(block) as Array<{ id: string }>).map(
+				(c) => ({
+					id: c.id,
+					verified: true,
+					reason: 'ok',
+				})
+			);
+			return { content: JSON.stringify({ verdicts }), finishReason: 'stop' };
+		};
+		const sentPrompt = () =>
+			(state.complete.mock.calls[0]?.[0] as Array<{ content: string }>)[0]
+				.content;
+
+		it('marks the review incomplete and fails the step when the verify pass throws', async () => {
+			process.env.AI_REVIEW_VERIFY_PASS = 'true';
+			state.runReview.mockResolvedValue(withFindings());
+			state.applyVerify = async () => {
+				throw new Error('verify exploded\nwith detail');
+			};
+			await main(['pr-review']);
+			expect(setFailed).toHaveBeenCalledWith(
+				expect.stringContaining('Review incomplete')
+			);
+			expect(warning).toHaveBeenCalledWith(
+				expect.stringContaining('verify pass failed')
+			);
+			const summary = vi
+				.mocked(core.summary.addRaw)
+				.mock.calls.map((c) => String(c[0]))
+				.join('\n');
+			expect(summary).toContain(
+				'verify pass failed: verify exploded with detail'
+			);
+			expect(state.publishReview).toHaveBeenCalledTimes(1);
+		});
+
+		it('only warns about a verify outage when AI_REVIEW_FAIL_ON_INCOMPLETE=false', async () => {
+			process.env.AI_REVIEW_VERIFY_PASS = 'true';
+			process.env.AI_REVIEW_FAIL_ON_INCOMPLETE = 'false';
+			state.runReview.mockResolvedValue(withFindings());
+			state.applyVerify = async () => {
+				throw new Error('verify exploded');
+			};
+			await main(['pr-review']);
+			expect(setFailed).not.toHaveBeenCalled();
+			expect(state.publishReview).toHaveBeenCalledTimes(1);
+		});
+
+		it('sends only high and critical findings to verify by default', async () => {
+			process.env.AI_REVIEW_VERIFY_PASS = 'true';
+			state.runReview.mockResolvedValue(withFindings());
+			state.complete.mockImplementation(approveAll);
+			await main(['pr-review']);
+			expect(state.complete).toHaveBeenCalledTimes(1);
+			expect(sentPrompt()).toContain('High finding title');
+			expect(sentPrompt()).not.toContain('Medium finding title');
+		});
+
+		it('honours AI_REVIEW_VERIFY_MIN_SEVERITY=medium end to end', async () => {
+			process.env.AI_REVIEW_VERIFY_PASS = 'true';
+			process.env.AI_REVIEW_VERIFY_MIN_SEVERITY = 'medium';
+			state.runReview.mockResolvedValue(withFindings());
+			state.complete.mockImplementation(approveAll);
+			await main(['pr-review']);
+			expect(sentPrompt()).toContain('High finding title');
+			expect(sentPrompt()).toContain('Medium finding title');
+			expect(setFailed).not.toHaveBeenCalled();
+		});
 	});
 
 	it('reports a publish failure as an action failure and still cleans up', async () => {

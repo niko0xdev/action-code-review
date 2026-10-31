@@ -48,8 +48,17 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Fixed
 
-- The verify-pass budget gate now counts the real prompt size, and an exception
-  escaping the verify pass marks the review `incomplete` instead of only logging.
+- **The verify pass can now drop a finding.** The prompt asked the model to omit
+  rejected findings while the parser required a verdict for every candidate, so a
+  compliant reply was `incomplete` and nothing was ever dropped. Candidates now
+  carry ids and the model returns one `verified` true or false verdict per id;
+  verdicts match by id only (a verdict without a valid id can no longer drop a
+  finding, and two findings sharing path, line, and title prefix are no longer
+  confused). The output token ceiling scales with the candidate count. Verify is
+  still opt-in.
+- The verify-pass budget gate now counts the real prompt size. An exception
+  escaping the verify pass marks the review `incomplete` with the reason in the
+  summary instead of only logging.
 - **Prompt hardening now covers the security engine, the verify pass, and the
   PR-content prompt.** Diffs and code excerpts in the security engine's diff and
   confirmation prompts, and the finding list and PR body in the verify prompt, use a fence

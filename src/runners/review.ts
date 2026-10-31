@@ -325,11 +325,11 @@ export async function runPrReviewAction(): Promise<void> {
 					toolFindings: prelintResult.findings,
 					title: reviewContext.pullRequest.title,
 					body: reviewContext.pullRequest.body,
-					verify: async (prompt: string) =>
+					verify: async (prompt: string, maxOutputTokens: number) =>
 						(
 							await verifyProvider.complete(
 								[{ role: 'user', content: prompt }],
-								{ temperature: 0, maxOutputTokens: 2048 }
+								{ temperature: 0, maxOutputTokens }
 							)
 						).content,
 					budgetUsd: envLimits.verifyBudgetUsd,
@@ -345,7 +345,11 @@ export async function runPrReviewAction(): Promise<void> {
 					`[review] verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`
 				);
 				result.reviewStatus = 'incomplete';
-				result.diagnostics = { ...result.diagnostics, verifyStatus: 'error' };
+				result.diagnostics = {
+					...result.diagnostics,
+					verifyStatus: 'error',
+					verifySkippedReason: `verify pass failed: ${(error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').slice(0, 200)}`,
+				};
 			}
 		}
 		// Surface tool findings + prelint diagnostics in the result

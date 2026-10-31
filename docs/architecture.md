@@ -264,8 +264,13 @@ Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic alrea
    finding-quality evals remain future work.
 4. **~~Verify pass wiring~~ — DONE.** `src/review/verify.ts` runs in the
    pipeline behind `AI_REVIEW_VERIFY_PASS=true` (default off); kept/dropped
-   counts surface in the diagnostics block. A failed or unusable verify reply
-   keeps every finding and marks the review incomplete.
+   counts surface in the diagnostics block. Candidates carry ids (`c1`..`cN`) and the model
+   returns one `verified` verdict per id; verdicts match by id only. A failed,
+   unusable, or partial reply keeps every finding, marks the review incomplete,
+   and records the reason in the summary, so a verify outage fails the step by
+   default while findings are still published (`AI_REVIEW_FAIL_ON_INCOMPLETE=false`
+   downgrades it to a warning). The output ceiling scales with the candidate
+   count.
 5. **Review decision on re-runs** — `REQUEST_CHANGES` is decided from every
    valid finding, including ones already commented, and is submitted separately
    from the inline comments so it survives the per-comment fallback. When

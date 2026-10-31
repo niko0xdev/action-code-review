@@ -81,10 +81,26 @@ what exists and what is missing.
 gates, one extra model call (temperature 0) is shown the candidate findings, the
 PR title, a truncated body, the changed file names, and any analyser findings.
 For each candidate it asks three questions: is the path real, is the line
-plausible, and would a senior engineer agree it is a bug. A candidate with a
-`verified: false` verdict is removed; survivors are unchanged and counted in
-`diagnostics.verifyVerified`. By default only `high` and `critical` findings are
-challenged. Counts and risk are recomputed afterwards.
+plausible, and would a senior engineer agree it is a bug.
+
+The protocol the prompt actually sends: every candidate carries a unique id
+(`c1`..`cN`, by position), and the model must return
+`{"verdicts": [{"id": "c1", "verified": true, "reason": "..."}, ...]}` with
+exactly one verdict per candidate and no candidate omitted; a rejected finding
+is `verified: false`, never left out. Verdicts are matched by id only. A verdict
+with a missing, unknown, or duplicated id, or a non-boolean `verified`, is
+ignored, and unless every candidate ends up with one valid verdict the pass is
+`incomplete` and keeps every finding. Only a valid `verified: false` removes a
+finding; survivors are unchanged and counted in `diagnostics.verifyVerified`.
+By default only `high` and `critical` findings are challenged. Counts and risk
+are recomputed afterwards.
+
+An earlier version told the model to drop rejected findings from its output
+while the parser required a verdict for every candidate, so a model that
+followed the prompt produced an `incomplete` result and could never drop
+anything. It also identified findings by path, line, category, and the first
+four title words, so one rejection could remove a different finding on the same
+line. Both are fixed by the id protocol above.
 
 **What a triage pass in the literature adds.** Published triage designs
 re-examine each finding against retrieved code context, give a calibrated
@@ -98,8 +114,8 @@ this repository supports a specific reduction figure.
 | Gap | Status |
 |-----|--------|
 | Only `high` and `critical` are checked | Closed behind a switch: `AI_REVIEW_VERIFY_MIN_SEVERITY` (`critical`, `high`, `medium`, `low`; default `high`; invalid values warn and fall back). Lower floors cost more tokens. |
-| Verify error, malformed JSON, or a partial verdict | Already safe: every finding is kept and the review is marked `incomplete` (`diagnostics.verifyStatus`). One hole closed: an exception escaping the pass in the runner now also marks the review `incomplete`. |
-| Budget checked before the call | The estimate was only the findings JSON; it now also counts the real prompt size, so the gate cannot undercount what is sent. It remains a token estimate at a flat rate, not billed cost. |
+| Verify error, malformed JSON, or a partial verdict | Every finding is kept and the review is marked `incomplete` (`diagnostics.verifyStatus`, with the reason in the summary as `skipped (...)`). An exception escaping the pass in the runner is now handled the same way. |
+| Budget checked before the call | The estimate was only the findings JSON; it now also counts the real prompt size, so the gate cannot undercount what is sent. It remains a token estimate at a flat rate, not billed cost. The output ceiling now scales with the number of candidates (256 plus 120 per candidate, capped at 8192) and is part of that estimate, so a long candidate list is not truncated into malformed JSON. Lowering the floor therefore increases both the prompt and the output, and the cost. |
 | Verdict is binary and uncalibrated | Open. No supported, refuted, or uncertain state and no confidence update. |
 | The verifier sees no code beyond the finding and file names | Open. It cannot check a claim against the source, so a confident wrong claim on a real line can be approved (the canned set includes one). |
 | No per-finding evidence gate for blocking claims | Open. |
@@ -110,8 +126,9 @@ this repository supports a specific reduction figure.
 `tests/eval/verify-measurement.test.ts` runs the real `applyVerifyPass` with a
 scripted provider that approves or rejects each labelled finding (true
 positives, false positives, and seeded defects, including a false positive the
-verifier wrongly approves). It scores the same cases before and after with
-`scoring.ts`; set `EVAL_VERBOSE=1` to print both tables.
+verifier wrongly approves). The scripted verifier reads the candidates from the
+real prompt and answers in the documented one-verdict-per-id shape. It scores
+the same cases before and after with `scoring.ts`; set `EVAL_VERBOSE=1` to print both tables.
 
 Asserted pipeline properties only: rejected findings are removed, approved ones
 are kept and counted, medium findings are untouched at the default severity and
@@ -125,10 +142,19 @@ the pipeline applies verdicts correctly. They say nothing about how often a real
 model would reject real false positives, or wrongly reject real defects.
 
 To measure a real model, run reviews with the verify pass off and on over a set
-of PRs with seeded or adjudicated defects, label each published finding `tp` or
-`fp`, count unpublished defects as `missed`, and feed each variant through the
-scorer as described in "Feeding real model output through the scorer" below. Compare the two tables, and treat a
-rejected true positive as a recall loss.
+of PRs with seeded or adjudicated defects. Label each published finding `tp` or
+`fp`, and count unpublished defects as `missed`. Feed each variant through the
+scorer as described in "Feeding real model output through the scorer" below.
+Compare the two tables, and treat a rejected true positive as a recall loss.
+
+## Verify outages
+
+If the verify call fails, returns unusable output, or the pass throws, every
+finding is still published, the review is marked `incomplete`, and the summary
+shows `Verify pass: skipped (verify pass failed: ...)`. With the default
+`AI_REVIEW_FAIL_ON_INCOMPLETE=true` the step then fails; with
+`AI_REVIEW_FAIL_ON_INCOMPLETE=false` it only warns and the review is still
+published. Verification is opt-in, so this affects only users who enabled it.
 
 ## Known defects are kept as tests
 

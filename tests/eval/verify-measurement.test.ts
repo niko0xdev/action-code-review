@@ -10,7 +10,8 @@ import {
 } from './scoring.js';
 
 /**
- * Measures the verify pass with a scripted verifier. The numbers describe this
+ * Measures the verify pass with a scripted verifier that answers in the
+ * protocol the real prompt documents (one verdict per candidate id). The numbers describe this
  * canned data, not any model: the verdicts are written by hand, so they only
  * prove that the pipeline removes what the verifier rejects and keeps the rest.
  * To measure a real model, adjudicate its output and feed it to the scorer (see
@@ -97,20 +98,24 @@ function resultOf(c: Case): ReviewResult {
 	};
 }
 
-/** Scripted provider: one verdict per candidate in the prompt. */
+/**
+ * Scripted provider that follows the prompt's own protocol: it reads the
+ * candidates (each with an `id`) from the prompt actually sent and answers
+ * with exactly one verdict per id, `verified` true or false, never omitting.
+ */
 function scripted(c: Case, calls: string[]) {
 	return async (prompt: string) => {
 		calls.push(prompt);
-		const verdicts = c.findings
-			.filter((l) => prompt.includes(`Finding ${l.id}`))
-			.map((l) => ({
-				path: 'src/app.ts',
-				line: 10,
-				category: 'correctness',
-				title: `Finding ${l.id}`,
-				verified: l.approve,
-			}));
-		return JSON.stringify({ findings: verdicts });
+		const block = /```json\n([\s\S]*?)\n```/.exec(prompt)?.[1] ?? '[]';
+		const candidates = JSON.parse(block) as Array<{
+			id: string;
+			title: string;
+		}>;
+		const verdicts = candidates.map((cand) => {
+			const l = c.findings.find((x) => `Finding ${x.id}` === cand.title);
+			return { id: cand.id, verified: l?.approve ?? true, reason: 'scripted' };
+		});
+		return JSON.stringify({ verdicts });
 	};
 }
 
