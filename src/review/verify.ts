@@ -86,7 +86,7 @@ export function buildVerifyPrompt(
 				.slice(0, 30)
 				.map(
 					(f) =>
-						`- [${f.tool}/${f.code}] ${escapeControlChars(f.path)}:${f.line} (${f.severity}) ${escapeControlChars(f.message)}`
+						`- [${escapeControlChars(f.tool)}/${escapeControlChars(f.code)}] ${escapeControlChars(f.path)}:${f.line} (${f.severity}) ${escapeControlChars(f.message)}`
 				)
 				.join('\n')}\n`
 		: '';

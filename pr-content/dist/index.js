@@ -41405,7 +41405,7 @@ function buildVerifyPrompt(highCritical, toolFindings, context) {
     const toolSection = toolFindings.length
         ? `\nStatic analyzer evidence (from prelint):\n${toolFindings
             .slice(0, 30)
-            .map((f) => `- [${f.tool}/${f.code}] ${(0,prompt_safety/* escapeControlChars */._s)(f.path)}:${f.line} (${f.severity}) ${(0,prompt_safety/* escapeControlChars */._s)(f.message)}`)
+            .map((f) => `- [${(0,prompt_safety/* escapeControlChars */._s)(f.tool)}/${(0,prompt_safety/* escapeControlChars */._s)(f.code)}] ${(0,prompt_safety/* escapeControlChars */._s)(f.path)}:${f.line} (${f.severity}) ${(0,prompt_safety/* escapeControlChars */._s)(f.message)}`)
             .join('\n')}\n`
         : '';
     return `You are reviewing your OWN findings from a prior code-review pass.
