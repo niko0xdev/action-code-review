@@ -83,6 +83,17 @@ None declared.
 | `include-full-content` | false | `'false'` |
 | `max-context-chars` | false | `'30000'` |
 
+Additive input (not part of the frozen V1 surface; added after V1, optional, default preserves existing behaviour):
+
+| Input | Required | Default |
+|-------|----------|---------|
+| `scorecard-context` | false | `'false'` |
+
+`scorecard-context` is opt-in. When `'true'` and the repository is public, the
+review fetches the repository's published OSSF Scorecard once from
+`api.securityscorecards.dev` and gives the reviewer a fixed-format table of numeric
+scores as advisory context. Failures never fail or block a review.
+
 ### Outputs
 
 | Output | Description |

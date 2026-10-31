@@ -34,12 +34,19 @@ jobs:
           # review-prompt-file: .github/review-rules.md  # read from the base branch
           # max-files: 10
           # exclude-patterns: '*.md,*.json,*.lock'
+          # scorecard-context: 'true'  # opt-in, default 'false'; see below
 ```
 
 Pin `uses:` to a released tag once published (example `@v1`).
 Full input list: [`pr-review/action.yml`](pr-review/action.yml),
 [`pr-content/action.yml`](pr-content/action.yml). Frozen behavior:
 [`docs/v1-interface-contract.md`](docs/v1-interface-contract.md).
+
+`scorecard-context` (default `'false'`) adds advisory OSSF Scorecard scores for
+public repositories as review context. Privacy note: when enabled, the owner and
+repository name are sent to `api.securityscorecards.dev`, a third-party service.
+Only numeric scores are used, and a failed lookup never affects the review. See
+[`docs/architecture.md`](docs/architecture.md).
 
 `review-prompt-file` must be a repo-relative regular file inside the workspace
 (symlinks are resolved and may not leave it, 50 KiB cap). Because the file feeds

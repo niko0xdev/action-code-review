@@ -13,6 +13,15 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ## [Unreleased]
 
+### Added
+
+- **Opt-in `scorecard-context` input (default `'false'`, additive).** For public
+  repositories, fetches the published OSSF Scorecard once and gives the reviewer
+  clamped numeric scores for a fixed list of checks as advisory context. Third-party
+  data is never pasted into the prompt as text, and any failure degrades silently.
+  Privacy: when enabled, the owner and repository name are sent to
+  `api.securityscorecards.dev`, a third-party service.
+
 ### Changed
 
 - **Behaviour change: `auto-approve-when-resolved` now defaults to `false`.**

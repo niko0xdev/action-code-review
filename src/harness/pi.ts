@@ -69,6 +69,8 @@ export interface PiHarnessOptions {
 	 * compatible with callers that don't run prelint).
 	 */
 	toolFindings?: ToolFinding[];
+	/** Rendered OSSF Scorecard block (untrusted, advisory); see context/scorecard.ts. */
+	scorecardContext?: string;
 }
 const PI_ARGS_ALLOWLIST = new Set([
 	'--max-duration',
@@ -706,6 +708,7 @@ export class PiHarness implements ReviewHarness {
 				includeFullContent: this.options.includeFullContent,
 				maxContextChars: this.options.maxContextChars,
 				toolFindings: this.options.toolFindings,
+				scorecardContext: this.options.scorecardContext,
 			}
 		);
 		let run = await this.run(prompt, context);
