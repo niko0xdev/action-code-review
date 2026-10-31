@@ -47,6 +47,51 @@ describe('buildFindingBody', () => {
 	});
 });
 
+describe('secrets in rendered findings', () => {
+	const secret = ['gh', 'p_', 'Zq8Lm2Xv4Rt7Yw1Bn5Cd9Fg3Hj6Kp0Sa8Ue'].join('');
+
+	it('withholds a suggestion block whose replacement contains a secret-like value', () => {
+		const body = buildFindingBody(
+			finding({ replacement: 'secret = "changeme-please"' })
+		);
+		expect(body).not.toContain('```suggestion');
+		expect(body).not.toContain('REDACTED');
+		expect(body).toContain('suggested code change was withheld');
+	});
+
+	it('keeps a clean suggestion block and adds no note', () => {
+		const body = buildFindingBody(
+			finding({ replacement: 'password = os.environ["X"]' })
+		);
+		expect(body).toContain('```suggestion');
+		expect(body).toContain('password = os.environ["X"]');
+		expect(body).not.toContain('withheld');
+	});
+
+	it('redacts the tool-finding path and message in the job summary', () => {
+		const text = buildJobSummary({
+			filesReviewed: ['a.ts'],
+			result: {
+				findings: [],
+				risk: 'none',
+				counts: { critical: 0, high: 0, medium: 0, low: 0 },
+			},
+			toolFindings: [
+				{
+					tool: 'lint',
+					code: 'x',
+					path: `src/${secret}.ts`,
+					line: 1,
+					severity: 'error',
+					message: `leaked ${secret}`,
+				},
+			] as never,
+		});
+		expect(text).not.toContain(secret);
+		expect(text.match(/\[REDACTED_GITHUB_TOKEN\]/g)).toHaveLength(2);
+	});
+});
+
 describe('buildSummaryBody', () => {
 	const result: ReviewResult = {
 		findings: [finding()],
@@ -233,6 +278,45 @@ describe('publishReview', () => {
 		});
 		expect(octokit.rest.pulls.createReview).toHaveBeenCalledOnce();
 		expect(octokit.rest.issues.createComment).toHaveBeenCalledOnce();
+	});
+
+	it('redacts secrets in the per-comment fallback and in the warning', async () => {
+		const secret = ['gh', 'p_', 'Zq8Lm2Xv4Rt7Yw1Bn5Cd9Fg3Hj6Kp0Sa8Ue'].join('');
+		const octokit = makeOctokit() as any;
+		octokit.rest.pulls.createReview = vi
+			.fn()
+			.mockRejectedValueOnce(new Error(`bad credentials ${secret}`))
+			.mockResolvedValue({ data: {} });
+		octokit.rest.pulls.createReviewComment = vi.fn(async () => {
+			throw new Error('nope');
+		});
+		const warn = vi.fn();
+		const coreMod = await import('@actions/core');
+		const spy = vi.spyOn(coreMod, 'warning').mockImplementation(warn);
+		try {
+			await publishReview(octokit, {
+				owner: 'acme',
+				repo: 'widget',
+				prNumber: 5,
+				headSha: 'sha1',
+				result: {
+					findings: [finding({ path: `src/${secret}.ts` })],
+					summary: '',
+					risk: 'high',
+					counts: { critical: 0, high: 1, medium: 0, low: 0 },
+					filesReviewed: [`src/${secret}.ts`],
+				},
+				blockOnIssues: true,
+			});
+		} finally {
+			spy.mockRestore();
+		}
+		const fallback = octokit.rest.issues.createComment.mock.calls[0][0].body;
+		expect(fallback).toContain('## Review for');
+		expect(fallback).not.toContain(secret);
+		const warnings = warn.mock.calls.map((c) => String(c[0])).join('\n');
+		expect(warnings).toContain('Batch review failed');
+		expect(warnings).not.toContain(secret);
 	});
 
 	it('forwards filesTotal/filesExcluded into the summary comment', async () => {

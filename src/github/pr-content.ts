@@ -1,5 +1,6 @@
 import * as core from '@actions/core';
 import { extractJsonBlock } from '../llm/openai-compatible.js';
+import { redactSecrets } from '../security/redaction/redactor.js';
 
 export interface PrContentOctokit {
 	rest: {
@@ -70,10 +71,11 @@ export async function updatePrContent(
 	prNumber: number,
 	options: Pick<PrContentUpdateOptions, 'response' | 'templateContent'>
 ): Promise<void> {
-	const update = parseUpdate(options.response);
-	const description = applyTemplate(
-		update.description,
-		options.templateContent
+	const parsed = parseUpdate(options.response);
+	// The description is written to the PR: a secret echoed from the diff must not be.
+	const update = { ...parsed, title: redactSecrets(parsed.title) };
+	const description = redactSecrets(
+		applyTemplate(parsed.description, options.templateContent)
 	);
 	const current = await octokit.rest.pulls.get({
 		owner,
