@@ -153,7 +153,11 @@ breaking shape change.
   approval GitHub rejected.
 
 - `status` is derived conservatively: `failedGroups > 0` forces `incomplete`,
-  and an unknown status is reported as `incomplete` rather than assumed clean.
+  a truncated changed-file list (`coverage.filesTruncated: true`) also yields
+  `incomplete`, and an unknown status is reported as `incomplete` rather than
+  assumed clean. An incomplete review never approves, shows the incomplete
+  banner in the sticky summary, and fails the step unless
+  `AI_REVIEW_FAIL_ON_INCOMPLETE=false`.
   `failed` is reserved and accepted defensively, but the current pipeline never
   emits it (failed groups are reported as `incomplete`).
 - `coverage.filesTotal` counts the PR files returned by the listing before any

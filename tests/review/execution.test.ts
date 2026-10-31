@@ -63,6 +63,14 @@ describe('describeReviewExecution', () => {
 });
 
 describe('incompleteReviewFailure', () => {
+	it('names a truncated changed-file list as the reason', () => {
+		const message = incompleteReviewFailure({
+			result: result({ reviewStatus: 'complete', filesTruncated: true }),
+			filesSelected: 2,
+		});
+		expect(message).toContain('changed-file list was truncated');
+	});
+
 	it('returns null for a complete review with no findings', () => {
 		expect(
 			incompleteReviewFailure({
