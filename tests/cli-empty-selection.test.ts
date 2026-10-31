@@ -1,5 +1,5 @@
 import * as core from '@actions/core';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@actions/github', () => ({
 	context: {
@@ -23,9 +23,27 @@ vi.mock('../src/context/pr.js', () => ({
 
 import { main } from '../src/cli.js';
 
+// main() skips any event that is not a pull request, so the tests must set the
+// event themselves instead of inheriting it from the runner (CI on a push to
+// main would otherwise skip the review and fail these assertions).
+const ENV_KEYS = ['GITHUB_EVENT_NAME', 'GITHUB_ACTOR'] as const;
+const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string>> = {};
+
 describe('main: empty file selection', () => {
+	beforeEach(() => {
+		for (const key of ENV_KEYS) {
+			savedEnv[key] = process.env[key];
+			delete process.env[key];
+		}
+		process.env.GITHUB_EVENT_NAME = 'pull_request';
+	});
+
 	afterEach(() => {
 		vi.restoreAllMocks();
+		for (const key of ENV_KEYS) {
+			if (savedEnv[key] === undefined) delete process.env[key];
+			else process.env[key] = savedEnv[key];
+		}
 	});
 
 	it('reports a notice, not a warning, and sets the skipped summary', async () => {
