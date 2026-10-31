@@ -37691,6 +37691,303 @@ function resolveEngineConfig(input) {
     };
 }
 
+;// CONCATENATED MODULE: ./src/security/classifier/risk-classifier.ts
+/**
+ * Deterministic Pre-LLM Risk Classifier.
+ * Spec reference: §6.
+ */
+const SECURITY_DOMAIN_PATTERNS = [
+    // Auth & Authorization & Access Control (Critical)
+    {
+        domain: 'authentication',
+        pathRegex: /(?:auth|login|signin|signup|session|jwt|oauth|sso|token|credential|mfa|2fa)/i,
+        contentRegex: /(?:jwt\.verify|jwt\.sign|bcrypt|argon2|passport|authenticate|session\.|createSession|verifyPassword)/i,
+        weight: 4,
+        reason: 'Changes in authentication / session management files',
+    },
+    {
+        domain: 'authorization',
+        pathRegex: /(?:authz|permission|role|rbac|abac|policy|acl|guard|canAccess|access[_-]?control)/i,
+        contentRegex: /(?:hasPermission|requireRole|checkPermission|canAccess|isAuthorized|isAllowed|authorize)/i,
+        weight: 4,
+        reason: 'Changes in authorization / permission enforcement logic',
+    },
+    // Cryptography & Secrets
+    {
+        domain: 'cryptography',
+        pathRegex: /(?:crypto|cipher|secret|key|vault|signature|encrypt|decrypt)/i,
+        contentRegex: /(?:crypto\.createCipher|crypto\.createDecipher|AES|RSA|HMAC|privateKey|publicKey|crypto\.subtle)/i,
+        weight: 3,
+        reason: 'Cryptographic primitive or key handling changes',
+    },
+    // Payment & Billing
+    {
+        domain: 'payments',
+        pathRegex: /(?:payment|billing|stripe|checkout|subscription|invoice|wallet|pricing)/i,
+        contentRegex: /(?:stripe\.charges|stripe\.paymentIntents|refund|charge|creditCard)/i,
+        weight: 3,
+        reason: 'Payment / financial transaction processing changes',
+    },
+    // File Uploads & Parsers
+    {
+        domain: 'file-handling',
+        pathRegex: /(?:upload|storage|s3|file[_-]?handler|multer|busboy|tar|zip|unzip|extractor)/i,
+        contentRegex: /(?:multipart|upload\.single|createWriteStream|extract|unzip|fs\.writeFile)/i,
+        weight: 3,
+        reason: 'File upload, decompression, or filesystem writing logic',
+    },
+    // Serialization & Deserialization
+    {
+        domain: 'serialization',
+        pathRegex: /(?:deserializ|unmarshal|parser|protobuf|msgpack|yaml[_-]?parser)/i,
+        contentRegex: /(?:eval\(|pickle\.loads|yaml\.load\(|JSON\.parse\(|unserialize)/i,
+        weight: 3,
+        reason: 'Data parsing / deserialization boundary changes',
+    },
+    // Client-side rendering (XSS surfaces)
+    {
+        domain: 'client-xss',
+        pathRegex: /(?:template|renderer|markdown|sanitiz|dompurify|rich-text|wysiwyg)/i,
+        contentRegex: /(?:dangerouslySetInnerHTML|innerHTML|outerHTML|insertAdjacentHTML|document\.write|v-html|\[innerHTML\]|bypassSecurityTrustHtml)/i,
+        weight: 3,
+        reason: 'Client-side HTML rendering / DOM sink changes (potential XSS surface)',
+    },
+    // Secrets & credentials in diffs
+    {
+        domain: 'secrets',
+        pathRegex: /(?:\.env|secret|credential|token|keyvault|keystore)/i,
+        contentRegex: /(?:api[_-]?key|secret[_-]?key|BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|xox[bap]-|AKIA[0-9A-Z]{16})/i,
+        weight: 4,
+        reason: 'Potential secret / credential material in changed files',
+    },
+    // Network & HTTP client (SSRF surfaces)
+    {
+        domain: 'network-boundary',
+        pathRegex: /(?:proxy|gateway|fetcher|http[_-]?client|webhook|redirect|crawler)/i,
+        contentRegex: /(?:axios\.|fetch\(|http\.request|needle|got\(|urllib|curl)/i,
+        weight: 3,
+        reason: 'Outbound HTTP client or reverse proxy changes (potential SSRF surface)',
+    },
+    // Database & SQL query construction (SQLi)
+    {
+        domain: 'database-security',
+        pathRegex: /(?:repository|query[_-]?builder|dao|database|sql|migration)/i,
+        contentRegex: /(?:raw\(|\$queryRaw|SELECT .* FROM|\.query\(["'`].*\$\{)/i,
+        weight: 3,
+        reason: 'Dynamic database query construction / raw SQL execution',
+    },
+    // Shell & Command execution (RCE)
+    {
+        domain: 'process-execution',
+        pathRegex: /(?:exec|process|runner|subprocess|terminal|command)/i,
+        contentRegex: /(?:child_process|exec\(|spawn\(|execSync|system\(|shell_exec|execFile)/i,
+        weight: 4,
+        reason: 'Shell / OS process execution changes (potential command injection surface)',
+    },
+    // CI/CD & GitHub Actions Workflows
+    {
+        domain: 'cicd-security',
+        pathRegex: /(?:\.github\/workflows\/.*\.ya?ml|Dockerfile|docker-compose.*\.ya?ml|\.gitlab-ci\.yml|Jenkinsfile)/i,
+        contentRegex: /(?:pull_request_target|permissions:|GITHUB_TOKEN|secrets\.|eval|bash -c)/i,
+        weight: 4,
+        reason: 'CI/CD pipeline, GitHub Action workflow, or container build changes',
+    },
+    // Infrastructure as Code / Kubernetes / Terraform
+    {
+        domain: 'cloud-infrastructure',
+        pathRegex: /(?:terraform|k8s|helm|cloudformation|pulumi|\.tf$|values\.ya?ml)/i,
+        weight: 3,
+        reason: 'Infrastructure as Code / deployment topology changes',
+    },
+    // Dependencies & Lockfiles (Supply Chain)
+    {
+        domain: 'supply-chain',
+        pathRegex: /(?:package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements\.txt|Pipfile|go\.mod|Cargo\.toml|pom\.xml|build\.gradle)/i,
+        weight: 2,
+        reason: 'Dependency manifest or package lockfile modifications',
+    },
+    // AI / LLM / Agent permissions / Tool execution
+    {
+        domain: 'ai-security',
+        pathRegex: /(?:agent|mcp|tool|prompt|openai|anthropic|langchain|llm)/i,
+        contentRegex: /(?:systemPrompt|temperature|tool_choice|executeTool|callTool|modelProvider)/i,
+        weight: 3,
+        reason: 'AI / LLM agent tools, prompts, or MCP integrations',
+    },
+];
+/**
+ * Classifies PR risk level and domain surfaces without calling an LLM.
+ */
+function classifyPrRisk(changedFiles) {
+    const matchedDomains = new Set();
+    const reasons = new Set();
+    let maxWeight = 1;
+    const flaggedFiles = [];
+    for (const file of changedFiles) {
+        let fileMatched = false;
+        const filename = file.filename;
+        const patch = file.patch || '';
+        for (const rule of SECURITY_DOMAIN_PATTERNS) {
+            const pathHit = rule.pathRegex.test(filename);
+            const contentHit = rule.contentRegex
+                ? rule.contentRegex.test(patch)
+                : false;
+            if (pathHit || contentHit) {
+                matchedDomains.add(rule.domain);
+                reasons.add(rule.reason);
+                fileMatched = true;
+                if (rule.weight > maxWeight) {
+                    maxWeight = rule.weight;
+                }
+            }
+        }
+        if (fileMatched) {
+            flaggedFiles.push(filename);
+        }
+    }
+    let level = 'low';
+    if (maxWeight >= 4) {
+        level = 'critical_surface';
+    }
+    else if (maxWeight === 3) {
+        level = 'high';
+    }
+    else if (maxWeight === 2 || matchedDomains.size > 0) {
+        level = 'medium';
+    }
+    return {
+        level,
+        reasons: Array.from(reasons),
+        domains: Array.from(matchedDomains),
+        changedFiles: flaggedFiles,
+    };
+}
+
+// EXTERNAL MODULE: ./src/security/skills/license-clean.ts
+var license_clean = __nccwpck_require__(6615);
+// EXTERNAL MODULE: ./src/security/skills/registry.ts
+var registry = __nccwpck_require__(3677);
+// EXTERNAL MODULE: ./src/security/skills/selector.ts
+var selector = __nccwpck_require__(9347);
+;// CONCATENATED MODULE: ./src/security/skills/auto-select.ts
+
+
+
+
+const SECURITY_SKILLS_MODES = ['all', 'auto'];
+const DOC_EXTENSIONS = new Set(['md', 'mdx', 'txt', 'rst']);
+const CODE_EXTENSIONS = new Set([
+    'ts',
+    'tsx',
+    'js',
+    'jsx',
+    'mjs',
+    'cjs',
+    'py',
+    'go',
+    'rs',
+    'java',
+    'kt',
+    'rb',
+    'php',
+    'cs',
+    'swift',
+    'c',
+    'h',
+    'cpp',
+    'sql',
+    'sh',
+    'json',
+    'yml',
+    'yaml',
+    'toml',
+    'tf',
+    'lock',
+    'css',
+    'html',
+    'vue',
+    'svelte',
+    'gradle',
+    'xml',
+    'mod',
+    'sum',
+]);
+const KNOWN_BASENAMES = new Set([
+    'dockerfile',
+    'jenkinsfile',
+    'makefile',
+    'pipfile',
+    'license',
+    'codeowners',
+    '.gitignore',
+    '.dockerignore',
+    '.env',
+]);
+/** Classifier domains with no skill of their own, mapped to the closest one. */
+const DOMAIN_ALIASES = {
+    'process-execution': 'database-security', // injection skill covers command injection
+    'cloud-infrastructure': 'cicd-security',
+    serialization: 'file-handling', // upload and deserialization skill
+};
+function kindOf(filename) {
+    const base = (filename.split('/').pop() ?? '').toLowerCase();
+    if (KNOWN_BASENAMES.has(base) || base.startsWith('dockerfile.'))
+        return 'code';
+    const ext = base.includes('.') ? base.slice(base.lastIndexOf('.') + 1) : '';
+    if (DOC_EXTENSIONS.has(ext))
+        return 'doc';
+    return CODE_EXTENSIONS.has(ext) ? 'code' : 'unknown';
+}
+/**
+ * Chooses the security skills for the review prompt. `all` is exactly the
+ * historical render. `auto` keeps only the skills for domains the existing
+ * risk classifier flags, and always keeps the validation gate. Anything it
+ * cannot classify (no files, truncated file list, unknown file type, classifier
+ * error) returns the full render: it fails safe, never to nothing.
+ */
+function selectReviewSecuritySkills(mode, files, filesTruncated = false) {
+    const full = (0,selector/* renderSkillsForPrompt */.a)(registry/* CURATED_SECURITY_SKILLS */.J);
+    const all = {
+        prompt: full,
+        domains: registry/* CURATED_SECURITY_SKILLS */.J.map((s) => s.domain),
+        savedChars: 0,
+        fellBackToAll: false,
+    };
+    if (mode === 'all')
+        return all;
+    const fallback = { ...all, fellBackToAll: true };
+    if (files.length === 0 || filesTruncated)
+        return fallback;
+    const kinds = files.map((f) => kindOf(f.filename));
+    if (kinds.includes('unknown'))
+        return fallback;
+    let prompt;
+    let domains;
+    try {
+        // Classify first: a flagged domain always wins over the docs shortcut.
+        const flagged = classifyPrRisk(files).domains.map((d) => DOMAIN_ALIASES[d] ?? d);
+        if (flagged.length === 0 && kinds.every((k) => k === 'doc')) {
+            // Prose only and nothing flagged: no domain skill, the gate still applies.
+            domains = [];
+            prompt = `\n## Targeted Security Review Knowledge\n${license_clean/* REVIEW_VALIDATION_GATE */.F}\n`;
+        }
+        else {
+            const skills = (0,selector/* selectSecuritySkills */.N)(flagged);
+            domains = skills.map((s) => s.domain);
+            prompt = (0,selector/* renderSkillsForPrompt */.a)(skills);
+        }
+    }
+    catch {
+        return fallback;
+    }
+    return {
+        prompt,
+        domains,
+        savedChars: Math.max(0, full.length - prompt.length),
+        fellBackToAll: false,
+    };
+}
+
 ;// CONCATENATED MODULE: ./src/shared/numeric.ts
 
 function fallBack(name, raw, fallback) {
@@ -37750,6 +38047,7 @@ function parseEnum(raw, allowed, fallback, name) {
  */
 
 
+
 const SECURITY_DEFAULTS = {
     mode: 'auto',
     profile: 'diff',
@@ -37774,6 +38072,7 @@ const PR_REVIEW_DEFAULTS = {
     includeFullContent: 'false',
     maxContextChars: '30000',
     scorecardContext: 'false',
+    securitySkills: 'all',
 };
 const PR_CONTENT_DEFAULTS = {
     openaiModel: 'gpt-4',
@@ -37876,6 +38175,7 @@ function mapPrReview(inputs) {
         includeFullContent: bool(get(inputs, 'include-full-content'), PR_REVIEW_DEFAULTS.includeFullContent),
         maxContextChars: legacy_inputs_int(get(inputs, 'max-context-chars'), PR_REVIEW_DEFAULTS.maxContextChars, 'max-context-chars'),
         scorecardContext: bool(get(inputs, 'scorecard-context'), PR_REVIEW_DEFAULTS.scorecardContext),
+        securitySkills: parseEnum(get(inputs, 'security-skills'), SECURITY_SKILLS_MODES, PR_REVIEW_DEFAULTS.securitySkills, 'security-skills'),
     };
 }
 function mapPrContent(inputs) {
@@ -41843,12 +42143,7 @@ function parseVerifyOutput(raw, expected) {
     return { verified, status: 'complete' };
 }
 
-// EXTERNAL MODULE: ./src/security/skills/registry.ts
-var registry = __nccwpck_require__(3677);
-// EXTERNAL MODULE: ./src/security/skills/selector.ts
-var selector = __nccwpck_require__(9347);
 ;// CONCATENATED MODULE: ./src/runners/review.ts
-
 
 
 
@@ -41930,6 +42225,7 @@ async function runPrReviewAction() {
         'include-full-content': core.getInput('include-full-content'),
         'max-context-chars': core.getInput('max-context-chars'),
         'scorecard-context': core.getInput('scorecard-context'),
+        'security-skills': core.getInput('security-skills'),
     });
     const llmConfig = resolveEngineConfig(legacyOptions);
     const octokit = toPublisherOctokit(github.getOctokit(legacyOptions.githubToken));
@@ -42028,8 +42324,12 @@ async function runPrReviewAction() {
                 core.warning(`[review] pi-binary-path ${piBinaryRaw} not executable — falling back to pi`);
             }
         }
-        // ponytail: all security skills into default review (12 domains + validation gate); filter by domain when cost matters.
-        const allSecurityPrompt = (0,selector/* renderSkillsForPrompt */.a)(registry/* CURATED_SECURITY_SKILLS */.J);
+        // Default `all` keeps every skill; opt-in `auto` filters by classified domain.
+        const skillSelection = selectReviewSecuritySkills(legacyOptions.securitySkills, reviewContext.diff.files, reviewContext.diff.filesTruncated);
+        if (legacyOptions.securitySkills === 'auto') {
+            core.info(`[security-skills] auto: ${skillSelection.fellBackToAll ? 'could not classify, using all skills' : `${skillSelection.domains.join(', ') || 'validation gate only'} (saved ${skillSelection.savedChars} chars)`}`);
+        }
+        const allSecurityPrompt = skillSelection.prompt;
         const promptFile = await loadReviewPromptFile({
             repoPath: reviewContext.repositoryPath,
             file: core.getInput('review-prompt-file'),
@@ -42286,178 +42586,6 @@ function securityFailureMessage(conclusion, failOn) {
         return `Security review failed: found vulnerabilities reaching or exceeding fail threshold (${failOn}).`;
     }
     return undefined;
-}
-
-;// CONCATENATED MODULE: ./src/security/classifier/risk-classifier.ts
-/**
- * Deterministic Pre-LLM Risk Classifier.
- * Spec reference: §6.
- */
-const SECURITY_DOMAIN_PATTERNS = [
-    // Auth & Authorization & Access Control (Critical)
-    {
-        domain: 'authentication',
-        pathRegex: /(?:auth|login|signin|signup|session|jwt|oauth|sso|token|credential|mfa|2fa)/i,
-        contentRegex: /(?:jwt\.verify|jwt\.sign|bcrypt|argon2|passport|authenticate|session\.|createSession|verifyPassword)/i,
-        weight: 4,
-        reason: 'Changes in authentication / session management files',
-    },
-    {
-        domain: 'authorization',
-        pathRegex: /(?:authz|permission|role|rbac|abac|policy|acl|guard|canAccess|access[_-]?control)/i,
-        contentRegex: /(?:hasPermission|requireRole|checkPermission|canAccess|isAuthorized|isAllowed|authorize)/i,
-        weight: 4,
-        reason: 'Changes in authorization / permission enforcement logic',
-    },
-    // Cryptography & Secrets
-    {
-        domain: 'cryptography',
-        pathRegex: /(?:crypto|cipher|secret|key|vault|signature|encrypt|decrypt)/i,
-        contentRegex: /(?:crypto\.createCipher|crypto\.createDecipher|AES|RSA|HMAC|privateKey|publicKey|crypto\.subtle)/i,
-        weight: 3,
-        reason: 'Cryptographic primitive or key handling changes',
-    },
-    // Payment & Billing
-    {
-        domain: 'payments',
-        pathRegex: /(?:payment|billing|stripe|checkout|subscription|invoice|wallet|pricing)/i,
-        contentRegex: /(?:stripe\.charges|stripe\.paymentIntents|refund|charge|creditCard)/i,
-        weight: 3,
-        reason: 'Payment / financial transaction processing changes',
-    },
-    // File Uploads & Parsers
-    {
-        domain: 'file-handling',
-        pathRegex: /(?:upload|storage|s3|file[_-]?handler|multer|busboy|tar|zip|unzip|extractor)/i,
-        contentRegex: /(?:multipart|upload\.single|createWriteStream|extract|unzip|fs\.writeFile)/i,
-        weight: 3,
-        reason: 'File upload, decompression, or filesystem writing logic',
-    },
-    // Serialization & Deserialization
-    {
-        domain: 'serialization',
-        pathRegex: /(?:deserializ|unmarshal|parser|protobuf|msgpack|yaml[_-]?parser)/i,
-        contentRegex: /(?:eval\(|pickle\.loads|yaml\.load\(|JSON\.parse\(|unserialize)/i,
-        weight: 3,
-        reason: 'Data parsing / deserialization boundary changes',
-    },
-    // Client-side rendering (XSS surfaces)
-    {
-        domain: 'client-xss',
-        pathRegex: /(?:template|renderer|markdown|sanitiz|dompurify|rich-text|wysiwyg)/i,
-        contentRegex: /(?:dangerouslySetInnerHTML|innerHTML|outerHTML|insertAdjacentHTML|document\.write|v-html|\[innerHTML\]|bypassSecurityTrustHtml)/i,
-        weight: 3,
-        reason: 'Client-side HTML rendering / DOM sink changes (potential XSS surface)',
-    },
-    // Secrets & credentials in diffs
-    {
-        domain: 'secrets',
-        pathRegex: /(?:\.env|secret|credential|token|keyvault|keystore)/i,
-        contentRegex: /(?:api[_-]?key|secret[_-]?key|BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|xox[bap]-|AKIA[0-9A-Z]{16})/i,
-        weight: 4,
-        reason: 'Potential secret / credential material in changed files',
-    },
-    // Network & HTTP client (SSRF surfaces)
-    {
-        domain: 'network-boundary',
-        pathRegex: /(?:proxy|gateway|fetcher|http[_-]?client|webhook|redirect|crawler)/i,
-        contentRegex: /(?:axios\.|fetch\(|http\.request|needle|got\(|urllib|curl)/i,
-        weight: 3,
-        reason: 'Outbound HTTP client or reverse proxy changes (potential SSRF surface)',
-    },
-    // Database & SQL query construction (SQLi)
-    {
-        domain: 'database-security',
-        pathRegex: /(?:repository|query[_-]?builder|dao|database|sql|migration)/i,
-        contentRegex: /(?:raw\(|\$queryRaw|SELECT .* FROM|\.query\(["'`].*\$\{)/i,
-        weight: 3,
-        reason: 'Dynamic database query construction / raw SQL execution',
-    },
-    // Shell & Command execution (RCE)
-    {
-        domain: 'process-execution',
-        pathRegex: /(?:exec|process|runner|subprocess|terminal|command)/i,
-        contentRegex: /(?:child_process|exec\(|spawn\(|execSync|system\(|shell_exec|execFile)/i,
-        weight: 4,
-        reason: 'Shell / OS process execution changes (potential command injection surface)',
-    },
-    // CI/CD & GitHub Actions Workflows
-    {
-        domain: 'cicd-security',
-        pathRegex: /(?:\.github\/workflows\/.*\.ya?ml|Dockerfile|docker-compose.*\.ya?ml|\.gitlab-ci\.yml|Jenkinsfile)/i,
-        contentRegex: /(?:pull_request_target|permissions:|GITHUB_TOKEN|secrets\.|eval|bash -c)/i,
-        weight: 4,
-        reason: 'CI/CD pipeline, GitHub Action workflow, or container build changes',
-    },
-    // Infrastructure as Code / Kubernetes / Terraform
-    {
-        domain: 'cloud-infrastructure',
-        pathRegex: /(?:terraform|k8s|helm|cloudformation|pulumi|\.tf$|values\.ya?ml)/i,
-        weight: 3,
-        reason: 'Infrastructure as Code / deployment topology changes',
-    },
-    // Dependencies & Lockfiles (Supply Chain)
-    {
-        domain: 'supply-chain',
-        pathRegex: /(?:package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements\.txt|Pipfile|go\.mod|Cargo\.toml|pom\.xml|build\.gradle)/i,
-        weight: 2,
-        reason: 'Dependency manifest or package lockfile modifications',
-    },
-    // AI / LLM / Agent permissions / Tool execution
-    {
-        domain: 'ai-security',
-        pathRegex: /(?:agent|mcp|tool|prompt|openai|anthropic|langchain|llm)/i,
-        contentRegex: /(?:systemPrompt|temperature|tool_choice|executeTool|callTool|modelProvider)/i,
-        weight: 3,
-        reason: 'AI / LLM agent tools, prompts, or MCP integrations',
-    },
-];
-/**
- * Classifies PR risk level and domain surfaces without calling an LLM.
- */
-function classifyPrRisk(changedFiles) {
-    const matchedDomains = new Set();
-    const reasons = new Set();
-    let maxWeight = 1;
-    const flaggedFiles = [];
-    for (const file of changedFiles) {
-        let fileMatched = false;
-        const filename = file.filename;
-        const patch = file.patch || '';
-        for (const rule of SECURITY_DOMAIN_PATTERNS) {
-            const pathHit = rule.pathRegex.test(filename);
-            const contentHit = rule.contentRegex
-                ? rule.contentRegex.test(patch)
-                : false;
-            if (pathHit || contentHit) {
-                matchedDomains.add(rule.domain);
-                reasons.add(rule.reason);
-                fileMatched = true;
-                if (rule.weight > maxWeight) {
-                    maxWeight = rule.weight;
-                }
-            }
-        }
-        if (fileMatched) {
-            flaggedFiles.push(filename);
-        }
-    }
-    let level = 'low';
-    if (maxWeight >= 4) {
-        level = 'critical_surface';
-    }
-    else if (maxWeight === 3) {
-        level = 'high';
-    }
-    else if (maxWeight === 2 || matchedDomains.size > 0) {
-        level = 'medium';
-    }
-    return {
-        level,
-        reasons: Array.from(reasons),
-        domains: Array.from(matchedDomains),
-        changedFiles: flaggedFiles,
-    };
 }
 
 // EXTERNAL MODULE: ./src/security/engines/pi-security-engine.ts
