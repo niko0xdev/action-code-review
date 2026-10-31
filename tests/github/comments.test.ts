@@ -103,6 +103,16 @@ describe('decision banner truthfulness', () => {
 		filesReviewed: ['a.ts'],
 	};
 
+	it('never says All clear when the file list was truncated', () => {
+		const body = buildSummaryBody({
+			...clean,
+			reviewStatus: 'complete',
+			filesTruncated: true,
+		});
+		expect(body).toContain('Review incomplete');
+		expect(body).not.toMatch(/All clear|APPROVED/);
+	});
+
 	it('does not claim APPROVED before an approval review exists', () => {
 		const body = buildSummaryBody(clean);
 		expect(body).not.toContain('APPROVED');

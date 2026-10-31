@@ -94,6 +94,15 @@ export function incompleteReviewFailure(
 	return `Review incomplete (${reasons.join('; ')}). No approval was submitted. Re-run the workflow; if it keeps failing, check the harness output above.`;
 }
 
+/** Text of the `review-summary` output; an incomplete run is marked as such. */
+export function reviewSummaryText(
+	input: ReviewExecutionInput,
+	failure: string | null
+): string {
+	const { filesReviewed, findings } = input.result;
+	return `${filesReviewed.length} files reviewed, ${findings.length} issues found${failure ? ' (review incomplete)' : ''}`;
+}
+
 /** Hard cap on the raw dump written to the job summary, in characters. */
 export const RAW_HARNESS_SUMMARY_MAX_CHARS = 60 * 1024;
 

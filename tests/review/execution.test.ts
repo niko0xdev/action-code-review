@@ -5,6 +5,7 @@ import {
 	describeReviewExecution,
 	incompleteReviewFailure,
 	rawHarnessDumpEnabled,
+	reviewSummaryText,
 } from '../../src/review/execution.js';
 import type { ReviewResult } from '../../src/types/finding.js';
 
@@ -59,6 +60,34 @@ describe('describeReviewExecution', () => {
 			filesSelected: 2,
 		});
 		expect(execution.complete).toBe(false);
+	});
+});
+
+describe('reviewSummaryText', () => {
+	const summary = (overrides: Partial<ReviewResult>, selected = 2) => {
+		const input = { result: result(overrides), filesSelected: selected };
+		return reviewSummaryText(input, incompleteReviewFailure(input));
+	};
+
+	it('has no suffix for a complete run', () => {
+		expect(summary({ reviewStatus: 'complete' })).toBe(
+			'2 files reviewed, 0 issues found'
+		);
+	});
+
+	it('marks a truncated file list as incomplete', () => {
+		expect(summary({ reviewStatus: 'complete', filesTruncated: true })).toBe(
+			'2 files reviewed, 0 issues found (review incomplete)'
+		);
+	});
+
+	it('marks a crashed group as incomplete', () => {
+		expect(
+			summary({
+				reviewStatus: 'incomplete',
+				diagnostics: { failedGroups: 1 } as never,
+			})
+		).toBe('2 files reviewed, 0 issues found (review incomplete)');
 	});
 });
 

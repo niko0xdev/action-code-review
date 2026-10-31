@@ -38196,8 +38196,12 @@ function findingLines(findings = []) {
 /** Render rich PR summary while keeping the legacy heading recognizable. */
 function buildSummaryBody(result) {
     const findings = result.findings ?? [];
-    const reviewStatus = result.reviewStatus ??
+    const declaredStatus = result.reviewStatus ??
         (result.diagnostics?.failedGroups ? 'incomplete' : 'complete');
+    // A partial file list can never read as a complete review.
+    const reviewStatus = result.filesTruncated && declaredStatus === 'complete'
+        ? 'incomplete'
+        : declaredStatus;
     const blocking = hasBlockingFindings(findings, result.counts);
     const reviewed = result.filesReviewed.length;
     const excluded = result.filesExcluded ??
@@ -38635,7 +38639,8 @@ async function resolveApproval(octokit, params, state) {
  */
 function reviewFailed(result) {
     return ((result.reviewStatus !== undefined && result.reviewStatus !== 'complete') ||
-        (result.diagnostics?.failedGroups ?? 0) > 0);
+        (result.diagnostics?.failedGroups ?? 0) > 0 ||
+        result.filesTruncated === true);
 }
 /**
  * Resolve whether every AI-authored review thread on the PR is resolved.
@@ -40317,6 +40322,11 @@ function incompleteReviewFailure(input) {
     ].filter(Boolean);
     return `Review incomplete (${reasons.join('; ')}). No approval was submitted. Re-run the workflow; if it keeps failing, check the harness output above.`;
 }
+/** Text of the `review-summary` output; an incomplete run is marked as such. */
+function reviewSummaryText(input, failure) {
+    const { filesReviewed, findings } = input.result;
+    return `${filesReviewed.length} files reviewed, ${findings.length} issues found${failure ? ' (review incomplete)' : ''}`;
+}
 /** Hard cap on the raw dump written to the job summary, in characters. */
 const RAW_HARNESS_SUMMARY_MAX_CHARS = 60 * 1024;
 /**
@@ -40550,7 +40560,7 @@ function deriveStatus(result) {
     const failedGroups = typeof result.diagnostics?.failedGroups === 'number'
         ? result.diagnostics.failedGroups
         : 0;
-    if (failedGroups > 0)
+    if (failedGroups > 0 || result.filesTruncated)
         return 'incomplete';
     const status = result.reviewStatus;
     if (status === 'failed' || status === 'stale' || status === 'incomplete')
@@ -41934,7 +41944,7 @@ async function runPrReviewAction() {
                 await core.summary.addRaw(section).write();
         }
         const failure = incompleteReviewFailure({ result, filesSelected });
-        core.setOutput('review-summary', `${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found${failure ? ' (review incomplete)' : ''}`);
+        core.setOutput('review-summary', reviewSummaryText({ result, filesSelected }, failure));
         // A crashed group or an unanalyzed file used to leave the step green
         // while the summary looked like a clean review. Fail the step so the
         // run is visible; set AI_REVIEW_FAIL_ON_INCOMPLETE=false to keep the

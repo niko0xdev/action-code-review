@@ -98,7 +98,7 @@ scores as advisory context. Failures never fail or block a review.
 
 | Output | Description |
 |--------|-------------|
-| `review-summary` | e.g. `"12 files reviewed, 3 issues found"`, or `"skipped: no files to review"` when filters leave nothing to review |
+| `review-summary` | e.g. `"12 files reviewed, 3 issues found"`, or `"skipped: no files to review"` when filters leave nothing to review. Additive: when the review is incomplete (crashed group, unanalysed files, or a truncated file list) the string ends with ` (review incomplete)`, e.g. `"12 files reviewed, 3 issues found (review incomplete)"`. Consumers must not parse the string; use `review-report` for machine-readable status |
 | `review-report` | Additive machine-readable JSON report (see below) |
 
 #### `review-report` (additive)
@@ -153,8 +153,8 @@ breaking shape change.
   approval GitHub rejected.
 
 - `status` is derived conservatively: `failedGroups > 0` forces `incomplete`,
-  a truncated changed-file list (`coverage.filesTruncated: true`) also yields
-  `incomplete`, and an unknown status is reported as `incomplete` rather than
+  the builder reports `incomplete` whenever the result carries `filesTruncated`
+  (`coverage.filesTruncated: true`), even if the producer declared `complete`, and an unknown status is reported as `incomplete` rather than
   assumed clean. An incomplete review never approves, shows the incomplete
   banner in the sticky summary, and fails the step unless
   `AI_REVIEW_FAIL_ON_INCOMPLETE=false`.

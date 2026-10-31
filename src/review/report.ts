@@ -154,7 +154,7 @@ function deriveStatus(result: ReviewResult): ReviewReportStatus {
 		typeof result.diagnostics?.failedGroups === 'number'
 			? result.diagnostics.failedGroups
 			: 0;
-	if (failedGroups > 0) return 'incomplete';
+	if (failedGroups > 0 || result.filesTruncated) return 'incomplete';
 	const status = result.reviewStatus;
 	if (status === 'failed' || status === 'stale' || status === 'incomplete')
 		return status;

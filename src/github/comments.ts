@@ -296,9 +296,14 @@ function findingLines(findings: Finding[] = []): string[] {
 /** Render rich PR summary while keeping the legacy heading recognizable. */
 export function buildSummaryBody(result: SummaryResult): string {
 	const findings = result.findings ?? [];
-	const reviewStatus =
+	const declaredStatus =
 		result.reviewStatus ??
 		(result.diagnostics?.failedGroups ? 'incomplete' : 'complete');
+	// A partial file list can never read as a complete review.
+	const reviewStatus =
+		result.filesTruncated && declaredStatus === 'complete'
+			? 'incomplete'
+			: declaredStatus;
 	const blocking = hasBlockingFindings(findings, result.counts);
 	const reviewed = result.filesReviewed.length;
 	const excluded =
