@@ -87,7 +87,9 @@ The protocol the prompt actually sends: every candidate carries a unique id
 (`c1`..`cN`, by position), and the model must return
 `{"verdicts": [{"id": "c1", "verified": true, "reason": "..."}, ...]}` with
 exactly one verdict per candidate and no candidate omitted; a rejected finding
-is `verified: false`, never left out. Verdicts are matched by id only. A verdict
+is `verified: false`, never left out. The model's answer is the last top-level JSON object in its reply that has a
+`verdicts` list, so prose, quoted candidates, and fenced blocks around it are
+tolerated; earlier objects never count. Verdicts are matched by id only. A verdict
 with a missing, unknown, or duplicated id, or a non-boolean `verified`, is
 ignored, and unless every candidate ends up with one valid verdict the pass is
 `incomplete` and keeps every finding. Only a valid `verified: false` removes a
@@ -154,7 +156,10 @@ finding is still published, the review is marked `incomplete`, and the summary
 shows `Verify pass: skipped (verify pass failed: ...)`. With the default
 `AI_REVIEW_FAIL_ON_INCOMPLETE=true` the step then fails; with
 `AI_REVIEW_FAIL_ON_INCOMPLETE=false` it only warns and the review is still
-published. Verification is opt-in, so this affects only users who enabled it.
+published. The reason in the summary is passed through secret redaction at the
+source and at each rendering sink, whitespace is collapsed, and it is capped at
+200 characters, because provider errors can echo request details. Verification
+is opt-in, so this affects only users who enabled it.
 
 ## Known defects are kept as tests
 

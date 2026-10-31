@@ -38448,6 +38448,460 @@ function dedupe_normalizeCommentId(finding) {
         .slice(0, 12);
 }
 
+// EXTERNAL MODULE: ./src/shared/prompt-safety.ts
+var prompt_safety = __nccwpck_require__(1877);
+;// CONCATENATED MODULE: ./src/types/finding.ts
+/**
+ * Normalized finding model used across the review pipeline.
+ *
+ * Every harness (Pi, future alternatives) must map its output into this
+ * format before validation and publishing. See docs/design-spec.md §17.
+ */
+const SEVERITY_ORDER = {
+    critical: 3,
+    high: 2,
+    medium: 1,
+    low: 0,
+};
+/** Per-severity publish caps plus the overall cap (spec §19). */
+const FINDING_LIMITS = {
+    critical: 10,
+    high: 10,
+    medium: 10,
+    low: 5,
+    overall: 20,
+};
+
+;// CONCATENATED MODULE: ./src/review/severity.ts
+
+/**
+ * Severity handling (spec §19): per-severity caps plus an overall cap.
+ * Overflow is resolved by severity rank first, confidence second.
+ */
+function computeCounts(findings) {
+    const counts = {
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+    };
+    for (const finding of findings) {
+        counts[finding.severity] += 1;
+    }
+    return counts;
+}
+function capFindings(findings) {
+    const perSeverity = new Map();
+    for (const finding of findings) {
+        const bucket = perSeverity.get(finding.severity) ?? [];
+        bucket.push(finding);
+        perSeverity.set(finding.severity, bucket);
+    }
+    const kept = [];
+    for (const [severity, bucket] of [...perSeverity.entries()].sort((a, b) => SEVERITY_ORDER[b[0]] - SEVERITY_ORDER[a[0]])) {
+        bucket.sort((a, b) => b.confidence - a.confidence);
+        kept.push(...bucket.slice(0, FINDING_LIMITS[severity]));
+    }
+    return kept.slice(0, FINDING_LIMITS.overall);
+}
+/** Overall risk from the surviving findings (spec §20/§21). */
+function riskFromFindings(findings) {
+    let hasCritical = false;
+    let highCount = 0;
+    for (const finding of findings) {
+        switch (finding.severity) {
+            case 'critical':
+                hasCritical = true;
+                break;
+            case 'high':
+                highCount += 1;
+                break;
+            case 'medium':
+            case 'low':
+                break;
+        }
+    }
+    if (hasCritical || highCount >= 2) {
+        return 'critical';
+    }
+    if (highCount === 1) {
+        return 'high';
+    }
+    if (findings.some((f) => f.severity === 'medium')) {
+        return 'medium';
+    }
+    if (findings.some((f) => f.severity === 'low')) {
+        return 'low';
+    }
+    return 'none';
+}
+
+;// CONCATENATED MODULE: ./src/review/verify.ts
+/**
+ * Two-pass verify.
+ *
+ * After the main review pass, optionally runs a second short LLM call
+ * that asks the model to challenge its own high/critical findings.
+ * The verify pass is bounded by:
+ * - Opt-in via `AI_REVIEW_VERIFY_PASS=true` env var (default false).
+ * - Cost ceiling of `AI_REVIEW_VERIFY_BUDGET_USD` (default 0.50 USD).
+ * - Skipped when no finding reaches the minimum severity (default high).
+ * - `AI_REVIEW_VERIFY_MIN_SEVERITY` (default `high`) widens the set at the
+ *   user's own cost.
+ *
+ * Output: a copy of the input findings without the candidates the model
+ * rejected. Survivors are unchanged (the count is recorded in
+ * `diagnostics.verifyVerified`). Any error, malformed or partial verdict keeps
+ * every finding and marks the review incomplete. Cost is a token estimate
+ * (input + output) at a per-1K-token rate, checked before the call.
+ */
+
+
+
+
+const DEFAULT_BUDGET_USD = 0.5;
+const DEFAULT_RATE_PER_1K = 0.001;
+/**
+ * Default floor for a verify pass: high and critical only. Lower severities
+ * cost more than they save by default; users can lower the floor with
+ * `AI_REVIEW_VERIFY_MIN_SEVERITY`.
+ */
+const VERIFY_MIN_SEVERITY_DEFAULT = 'high';
+function isVerifyTarget(severity, min) {
+    return SEVERITY_ORDER[severity] >= SEVERITY_ORDER[min];
+}
+const REASON_MAX_CHARS = 200;
+/**
+ * Make a failure reason safe to render: redact secret-shaped text, collapse
+ * whitespace, and cap the length. Provider errors can echo request details.
+ */
+function sanitiseVerifyReason(text) {
+    return (0,redactor/* redactSecrets */.f)(text)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, REASON_MAX_CHARS);
+}
+/** Candidate id used to match a verdict to a finding: `c1`..`cN` by position. */
+function candidateId(index) {
+    return `c${index + 1}`;
+}
+/**
+ * Build the verify prompt. The model gets each candidate with a unique id and
+ * must return exactly one verdict object per id, `verified` true or false,
+ * with a short reason. Rejected candidates are marked false, never omitted;
+ * the pass matches verdicts by id only and keeps everything otherwise.
+ */
+function buildVerifyPrompt(candidates, toolFindings, context, minSeverity = VERIFY_MIN_SEVERITY_DEFAULT) {
+    const toolSection = toolFindings.length
+        ? `\nStatic analyzer evidence (from prelint):\n${toolFindings
+            .slice(0, 30)
+            .map((f) => `- [${(0,prompt_safety/* escapeControlChars */._s)(f.tool)}/${(0,prompt_safety/* escapeControlChars */._s)(f.code)}] ${(0,prompt_safety/* escapeControlChars */._s)(f.path)}:${f.line} (${f.severity}) ${(0,prompt_safety/* escapeControlChars */._s)(f.message)}`)
+            .join('\n')}\n`
+        : '';
+    const withIds = candidates.map((f, i) => ({ ...f, id: candidateId(i) }));
+    const floor = minSeverity === VERIFY_MIN_SEVERITY_DEFAULT
+        ? 'high-severity'
+        : `${minSeverity}-or-higher severity`;
+    return `You are reviewing your OWN findings from a prior code-review pass.
+Your job is to challenge each ${floor} finding before it ships to a human reviewer.
+
+PR title: ${(0,prompt_safety/* escapeControlChars */._s)(context.title)}
+PR body (truncated):
+${(0,prompt_safety/* fenced */.OF)(context.body.slice(0, 500))}
+
+Candidate findings to verify (${candidates.length}), each with a unique "id":
+${(0,prompt_safety/* fenced */.OF)((0,prompt_safety/* jsonForPrompt */.Q$)(withIds), 'json')}
+${toolSection}
+
+For each finding, answer 3 questions:
+1. Is the file path real (matches one of: ${context.filenames.slice(0, 20).map(prompt_safety/* escapeControlChars */._s).join(', ')})?
+2. Is the line number plausible (between 1 and a reasonable file length)?
+3. Would a senior engineer agree this is a real bug?
+
+Return exactly ONE verdict object per candidate, using the candidate's "id".
+Set "verified": true only if ALL THREE answers are YES, otherwise "verified": false.
+Add a short "reason". Do NOT omit any candidate: a rejected finding gets
+"verified": false, it is never left out. Do not add ids that were not given.
+
+Return ONLY JSON:
+{"verdicts": [{"id": "c1", "verified": true, "reason": "short reason"}, ...]}
+
+Do not invent new findings. Do not change severity. Do not change titles.
+This pass exists only to catch hallucinated paths/lines and reasoning shortcuts.`;
+}
+/** Output tokens per candidate verdict (id, boolean, short reason), generous. */
+const VERIFY_TOKENS_PER_CANDIDATE = 120;
+const VERIFY_OUTPUT_TOKEN_BASE = 256;
+const VERIFY_OUTPUT_TOKEN_CAP = 8192;
+/**
+ * Output ceiling for `candidates` verdicts: a per-candidate allowance with a
+ * base and a cap, so a long candidate list is not truncated into bad JSON.
+ */
+function verifyOutputTokenBudget(candidates) {
+    return Math.min(VERIFY_OUTPUT_TOKEN_CAP, VERIFY_OUTPUT_TOKEN_BASE + VERIFY_TOKENS_PER_CANDIDATE * candidates);
+}
+/**
+ * Estimate the cost of running the verify pass. Conservative estimate
+ * uses input tokens + output budget.
+ */
+function estimateCostUsd(inputTokens, outputTokens, ratePer1K) {
+    return ((inputTokens + outputTokens) / 1000) * ratePer1K;
+}
+/**
+ * Run the verify pass. Always resolves (never throws). When skipped,
+ * returns the input findings unchanged with a skip reason.
+ */
+async function runVerifyPass(options) {
+    const budgetUsd = options.budgetUsd ?? DEFAULT_BUDGET_USD;
+    const ratePer1K = options.ratePer1K ?? DEFAULT_RATE_PER_1K;
+    const minSeverity = options.minSeverity ?? VERIFY_MIN_SEVERITY_DEFAULT;
+    const isTarget = (f) => isVerifyTarget(f.severity, minSeverity);
+    const highCritical = options.findings.filter(isTarget);
+    if (highCritical.length === 0) {
+        return {
+            findings: options.findings,
+            verifiedCount: 0,
+            droppedCount: 0,
+            skipped: true,
+            skipReason: minSeverity === VERIFY_MIN_SEVERITY_DEFAULT
+                ? 'no high/critical findings to verify'
+                : `no ${minSeverity}+ findings to verify`,
+            estimatedCostUsd: 0,
+            verificationStatus: 'skipped',
+        };
+    }
+    const prompt = buildVerifyPrompt(highCritical, options.toolFindings, options.context, minSeverity);
+    // Cost gate, checked before the call. The caller's estimate is raised to
+    // the real prompt size so the gate never undercounts what is sent.
+    const estimatedCostUsd = estimateCostUsd(Math.max(options.inputTokenEstimate, Math.ceil(prompt.length / 4)), options.outputTokenBudget, ratePer1K);
+    if (!(estimatedCostUsd <= budgetUsd)) {
+        return {
+            findings: options.findings,
+            verifiedCount: 0,
+            droppedCount: 0,
+            skipped: true,
+            skipReason: `estimated cost $${estimatedCostUsd.toFixed(3)} exceeds budget $${budgetUsd}`,
+            estimatedCostUsd,
+            verificationStatus: 'skipped',
+        };
+    }
+    let raw;
+    try {
+        raw = await options.verify(prompt, options.outputTokenBudget);
+    }
+    catch (error) {
+        return {
+            findings: options.findings,
+            verifiedCount: 0,
+            droppedCount: 0,
+            skipped: true,
+            skipReason: sanitiseVerifyReason(`verify call failed: ${error instanceof Error ? error.message : String(error)}`),
+            estimatedCostUsd,
+            verificationStatus: 'error',
+        };
+    }
+    const parsed = parseVerifyOutput(raw, highCritical.length);
+    if (parsed.status !== 'complete') {
+        return {
+            findings: options.findings,
+            verifiedCount: 0,
+            droppedCount: 0,
+            skipped: true,
+            skipReason: parsed.reason,
+            estimatedCostUsd,
+            verificationStatus: parsed.status,
+        };
+    }
+    // Build verified output: keep highCritical that survived verification,
+    // plus all other findings (unchanged).
+    const rejected = new Set();
+    let verifiedCount = 0;
+    highCritical.forEach((f, i) => {
+        if (parsed.verdicts.get(candidateId(i)))
+            verifiedCount += 1;
+        else
+            rejected.add(f);
+    });
+    const surviving = options.findings.filter((f) => !rejected.has(f));
+    return {
+        findings: surviving,
+        verifiedCount,
+        droppedCount: rejected.size,
+        skipped: false,
+        estimatedCostUsd,
+        verificationStatus: 'complete',
+    };
+}
+/** Default budget (USD) for the pipeline verify pass. */
+const VERIFY_BUDGET_USD_DEFAULT = 0.5;
+/**
+ * Apply `runVerifyPass` to a pipeline `ReviewResult` in place: replaces
+ * findings with survivors, recomputes counts + risk, and records
+ * verify stats on `result.diagnostics`. Never throws — any failure
+ * leaves the input result unchanged with the skip reason recorded.
+ */
+async function applyVerifyPass(result, args) {
+    const outcome = await runVerifyPass({
+        findings: result.findings,
+        toolFindings: args.toolFindings,
+        context: {
+            title: args.title,
+            body: args.body,
+            filenames: result.filesReviewed,
+        },
+        verify: args.verify,
+        inputTokenEstimate: estimateVerifyInputTokens(result.findings, args.toolFindings),
+        outputTokenBudget: verifyOutputTokenBudget(result.findings.filter((f) => isVerifyTarget(f.severity, args.minSeverity ?? VERIFY_MIN_SEVERITY_DEFAULT)).length),
+        budgetUsd: args.budgetUsd ?? VERIFY_BUDGET_USD_DEFAULT,
+        minSeverity: args.minSeverity,
+    });
+    if (outcome.skipped) {
+        result.diagnostics = {
+            ...result.diagnostics,
+            verifySkippedReason: outcome.skipReason === undefined
+                ? undefined
+                : sanitiseVerifyReason(outcome.skipReason),
+            verifyCostUsd: outcome.estimatedCostUsd,
+            verifyStatus: outcome.verificationStatus,
+        };
+        if (outcome.verificationStatus === 'error' ||
+            outcome.verificationStatus === 'incomplete')
+            result.reviewStatus = 'incomplete';
+        return;
+    }
+    result.findings = outcome.findings;
+    result.counts = computeCounts(outcome.findings);
+    result.risk = riskFromFindings(outcome.findings);
+    result.diagnostics = {
+        ...result.diagnostics,
+        verifyVerified: outcome.verifiedCount,
+        verifyDropped: outcome.droppedCount,
+        verifyCostUsd: outcome.estimatedCostUsd,
+        verifyStatus: outcome.verificationStatus,
+    };
+}
+/** Rough input estimate: ~4 chars/token over the verify prompt inputs. */
+function estimateVerifyInputTokens(findings, toolFindings) {
+    const chars = JSON.stringify(findings).length + JSON.stringify(toolFindings).length;
+    return Math.ceil(chars / 4);
+}
+/**
+ * Strict parser. A verdict counts only when it is an object with a known
+ * candidate id that appears exactly once and a boolean `verified`. Anything
+ * else is ignored, and unless every candidate ends up with a valid verdict the
+ * result is `incomplete` and the caller keeps every finding.
+ */
+function parseVerifyOutput(raw, candidateCount) {
+    const none = new Map();
+    const objects = topLevelObjects(raw);
+    if (objects.length === 0)
+        return {
+            verdicts: none,
+            status: 'error',
+            reason: 'verify output was not JSON; findings retained',
+        };
+    // The model's answer is its LAST top-level object that carries a verdicts
+    // list. Earlier objects (quoted candidates, decoys) never count.
+    let parsed = null;
+    let parsedAny = false;
+    for (const text of objects) {
+        let value;
+        try {
+            value = JSON.parse(text);
+        }
+        catch {
+            continue;
+        }
+        parsedAny = true;
+        if (value &&
+            typeof value === 'object' &&
+            Array.isArray(value.verdicts))
+            parsed = value;
+    }
+    if (!parsedAny)
+        return {
+            verdicts: none,
+            status: 'error',
+            reason: 'verify output JSON was malformed; findings retained',
+        };
+    if (!parsed)
+        return {
+            verdicts: none,
+            status: 'incomplete',
+            reason: 'verify output did not include a verdicts list; findings retained',
+        };
+    const known = new Set(Array.from({ length: candidateCount }, (_, i) => candidateId(i)));
+    const verdicts = new Map();
+    const duplicated = new Set();
+    for (const item of parsed.verdicts) {
+        const v = item;
+        if (!v || typeof v.id !== 'string' || !known.has(v.id))
+            continue;
+        if (typeof v.verified !== 'boolean')
+            continue;
+        if (verdicts.has(v.id))
+            duplicated.add(v.id);
+        else
+            verdicts.set(v.id, v.verified);
+    }
+    for (const id of duplicated)
+        verdicts.delete(id);
+    if (verdicts.size !== candidateCount)
+        return {
+            verdicts: none,
+            status: 'incomplete',
+            reason: 'verify output lacked one valid verdict per candidate; findings retained',
+        };
+    return { verdicts, status: 'complete' };
+}
+/**
+ * Balanced, string-aware scan for top-level `{...}` spans in free text, so
+ * prose, quoted candidates, and fenced blocks around the answer are tolerated.
+ * Bounded: a reply of unbalanced braces cannot make this quadratic.
+ */
+function topLevelObjects(raw) {
+    const out = [];
+    let failedStarts = 0;
+    let i = raw.indexOf('{');
+    while (i >= 0 && failedStarts < 50) {
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+        let end = -1;
+        for (let j = i; j < raw.length; j++) {
+            const ch = raw[j];
+            if (inString) {
+                if (escaped)
+                    escaped = false;
+                else if (ch === '\\')
+                    escaped = true;
+                else if (ch === '"')
+                    inString = false;
+            }
+            else if (ch === '"')
+                inString = true;
+            else if (ch === '{')
+                depth += 1;
+            else if (ch === '}') {
+                depth -= 1;
+                if (depth === 0) {
+                    end = j;
+                    break;
+                }
+            }
+        }
+        if (end < 0) {
+            failedStarts += 1;
+            i = raw.indexOf('{', i + 1);
+        }
+        else {
+            out.push(raw.slice(i, end + 1));
+            i = raw.indexOf('{', end + 1);
+        }
+    }
+    return out;
+}
+
 // EXTERNAL MODULE: external "node:fs"
 var external_node_fs_ = __nccwpck_require__(3024);
 ;// CONCATENATED MODULE: ./src/github/buffer.ts
@@ -38490,6 +38944,7 @@ function classifyFindings(findings) {
 }
 
 ;// CONCATENATED MODULE: ./src/github/comments.ts
+
 
 
 function mdSafe(value) {
@@ -38832,7 +39287,7 @@ function buildSummaryBody(result) {
                 : []),
             ...(result.diagnostics.verifySkippedReason !== undefined
                 ? [
-                    `- **Verify pass:** skipped (${result.diagnostics.verifySkippedReason})`,
+                    `- **Verify pass:** skipped (${sanitiseVerifyReason(result.diagnostics.verifySkippedReason)})`,
                 ]
                 : []),
             '</details>',
@@ -38886,6 +39341,7 @@ async function hasWritePermission(octokit, owner, repo, actor) {
 }
 
 ;// CONCATENATED MODULE: ./src/github/review.ts
+
 
 
 
@@ -39473,7 +39929,7 @@ function renderToolFindingsSection(toolFindings, diagnostics) {
             diagLines.push(`- **Verify pass:** kept ${diagnostics.verifyVerified ?? 0}, dropped ${diagnostics.verifyDropped ?? 0}${diagnostics.verifyCostUsd !== undefined ? ` ($${diagnostics.verifyCostUsd.toFixed(3)} est.)` : ''}`);
         }
         if (diagnostics.verifySkippedReason !== undefined) {
-            diagLines.push(`- **Verify pass:** skipped (${diagnostics.verifySkippedReason})`);
+            diagLines.push(`- **Verify pass:** skipped (${sanitiseVerifyReason(diagnostics.verifySkippedReason)})`);
         }
         if (diagLines.length > 0) {
             lines.push('### Pipeline diagnostics', '');
@@ -39496,8 +39952,6 @@ function renderToolFindingsSection(toolFindings, diagnostics) {
     return lines.join('\n');
 }
 
-// EXTERNAL MODULE: ./src/shared/prompt-safety.ts
-var prompt_safety = __nccwpck_require__(1877);
 ;// CONCATENATED MODULE: ./src/llm/prompts/pr-content.ts
 
 function createSystemPrompt(customInstructions, templateContent) {
@@ -41243,28 +41697,6 @@ async function withReviewReportOutput(action, buildReport, writeOutput) {
     return result;
 }
 
-;// CONCATENATED MODULE: ./src/types/finding.ts
-/**
- * Normalized finding model used across the review pipeline.
- *
- * Every harness (Pi, future alternatives) must map its output into this
- * format before validation and publishing. See docs/design-spec.md §17.
- */
-const SEVERITY_ORDER = {
-    critical: 3,
-    high: 2,
-    medium: 1,
-    low: 0,
-};
-/** Per-severity publish caps plus the overall cap (spec §19). */
-const FINDING_LIMITS = {
-    critical: 10,
-    high: 10,
-    medium: 10,
-    low: 5,
-    overall: 20,
-};
-
 ;// CONCATENATED MODULE: ./src/context/repository.ts
 /**
  * Repository inspection helpers for the local checkout on the runner.
@@ -41323,70 +41755,6 @@ function planReviewGroups(context, maxFilesPerGroup = 15) {
         }
     }
     return groups;
-}
-
-;// CONCATENATED MODULE: ./src/review/severity.ts
-
-/**
- * Severity handling (spec §19): per-severity caps plus an overall cap.
- * Overflow is resolved by severity rank first, confidence second.
- */
-function computeCounts(findings) {
-    const counts = {
-        critical: 0,
-        high: 0,
-        medium: 0,
-        low: 0,
-    };
-    for (const finding of findings) {
-        counts[finding.severity] += 1;
-    }
-    return counts;
-}
-function capFindings(findings) {
-    const perSeverity = new Map();
-    for (const finding of findings) {
-        const bucket = perSeverity.get(finding.severity) ?? [];
-        bucket.push(finding);
-        perSeverity.set(finding.severity, bucket);
-    }
-    const kept = [];
-    for (const [severity, bucket] of [...perSeverity.entries()].sort((a, b) => SEVERITY_ORDER[b[0]] - SEVERITY_ORDER[a[0]])) {
-        bucket.sort((a, b) => b.confidence - a.confidence);
-        kept.push(...bucket.slice(0, FINDING_LIMITS[severity]));
-    }
-    return kept.slice(0, FINDING_LIMITS.overall);
-}
-/** Overall risk from the surviving findings (spec §20/§21). */
-function riskFromFindings(findings) {
-    let hasCritical = false;
-    let highCount = 0;
-    for (const finding of findings) {
-        switch (finding.severity) {
-            case 'critical':
-                hasCritical = true;
-                break;
-            case 'high':
-                highCount += 1;
-                break;
-            case 'medium':
-            case 'low':
-                break;
-        }
-    }
-    if (hasCritical || highCount >= 2) {
-        return 'critical';
-    }
-    if (highCount === 1) {
-        return 'high';
-    }
-    if (findings.some((f) => f.severity === 'medium')) {
-        return 'medium';
-    }
-    if (findings.some((f) => f.severity === 'low')) {
-        return 'low';
-    }
-    return 'none';
 }
 
 ;// CONCATENATED MODULE: ./src/review/validation.ts
@@ -41854,301 +42222,6 @@ function deriveRuleCoverage(context, findings) {
     };
 }
 
-;// CONCATENATED MODULE: ./src/review/verify.ts
-/**
- * Two-pass verify.
- *
- * After the main review pass, optionally runs a second short LLM call
- * that asks the model to challenge its own high/critical findings.
- * The verify pass is bounded by:
- * - Opt-in via `AI_REVIEW_VERIFY_PASS=true` env var (default false).
- * - Cost ceiling of `AI_REVIEW_VERIFY_BUDGET_USD` (default 0.50 USD).
- * - Skipped when no finding reaches the minimum severity (default high).
- * - `AI_REVIEW_VERIFY_MIN_SEVERITY` (default `high`) widens the set at the
- *   user's own cost.
- *
- * Output: a copy of the input findings without the candidates the model
- * rejected. Survivors are unchanged (the count is recorded in
- * `diagnostics.verifyVerified`). Any error, malformed or partial verdict keeps
- * every finding and marks the review incomplete. Cost is a token estimate
- * (input + output) at a per-1K-token rate, checked before the call.
- */
-
-
-
-const DEFAULT_BUDGET_USD = 0.5;
-const DEFAULT_RATE_PER_1K = 0.001;
-/**
- * Default floor for a verify pass: high and critical only. Lower severities
- * cost more than they save by default; users can lower the floor with
- * `AI_REVIEW_VERIFY_MIN_SEVERITY`.
- */
-const VERIFY_MIN_SEVERITY_DEFAULT = 'high';
-function isVerifyTarget(severity, min) {
-    return SEVERITY_ORDER[severity] >= SEVERITY_ORDER[min];
-}
-/** Candidate id used to match a verdict to a finding: `c1`..`cN` by position. */
-function candidateId(index) {
-    return `c${index + 1}`;
-}
-/**
- * Build the verify prompt. The model gets each candidate with a unique id and
- * must return exactly one verdict object per id, `verified` true or false,
- * with a short reason. Rejected candidates are marked false, never omitted;
- * the pass matches verdicts by id only and keeps everything otherwise.
- */
-function buildVerifyPrompt(candidates, toolFindings, context, minSeverity = VERIFY_MIN_SEVERITY_DEFAULT) {
-    const toolSection = toolFindings.length
-        ? `\nStatic analyzer evidence (from prelint):\n${toolFindings
-            .slice(0, 30)
-            .map((f) => `- [${(0,prompt_safety/* escapeControlChars */._s)(f.tool)}/${(0,prompt_safety/* escapeControlChars */._s)(f.code)}] ${(0,prompt_safety/* escapeControlChars */._s)(f.path)}:${f.line} (${f.severity}) ${(0,prompt_safety/* escapeControlChars */._s)(f.message)}`)
-            .join('\n')}\n`
-        : '';
-    const withIds = candidates.map((f, i) => ({ ...f, id: candidateId(i) }));
-    const floor = minSeverity === VERIFY_MIN_SEVERITY_DEFAULT
-        ? 'high-severity'
-        : `${minSeverity}-or-higher severity`;
-    return `You are reviewing your OWN findings from a prior code-review pass.
-Your job is to challenge each ${floor} finding before it ships to a human reviewer.
-
-PR title: ${(0,prompt_safety/* escapeControlChars */._s)(context.title)}
-PR body (truncated):
-${(0,prompt_safety/* fenced */.OF)(context.body.slice(0, 500))}
-
-Candidate findings to verify (${candidates.length}), each with a unique "id":
-${(0,prompt_safety/* fenced */.OF)((0,prompt_safety/* jsonForPrompt */.Q$)(withIds), 'json')}
-${toolSection}
-
-For each finding, answer 3 questions:
-1. Is the file path real (matches one of: ${context.filenames.slice(0, 20).map(prompt_safety/* escapeControlChars */._s).join(', ')})?
-2. Is the line number plausible (between 1 and a reasonable file length)?
-3. Would a senior engineer agree this is a real bug?
-
-Return exactly ONE verdict object per candidate, using the candidate's "id".
-Set "verified": true only if ALL THREE answers are YES, otherwise "verified": false.
-Add a short "reason". Do NOT omit any candidate: a rejected finding gets
-"verified": false, it is never left out. Do not add ids that were not given.
-
-Return ONLY JSON:
-{"verdicts": [{"id": "c1", "verified": true, "reason": "short reason"}, ...]}
-
-Do not invent new findings. Do not change severity. Do not change titles.
-This pass exists only to catch hallucinated paths/lines and reasoning shortcuts.`;
-}
-/** Output tokens per candidate verdict (id, boolean, short reason), generous. */
-const VERIFY_TOKENS_PER_CANDIDATE = 120;
-const VERIFY_OUTPUT_TOKEN_BASE = 256;
-const VERIFY_OUTPUT_TOKEN_CAP = 8192;
-/**
- * Output ceiling for `candidates` verdicts: a per-candidate allowance with a
- * base and a cap, so a long candidate list is not truncated into bad JSON.
- */
-function verifyOutputTokenBudget(candidates) {
-    return Math.min(VERIFY_OUTPUT_TOKEN_CAP, VERIFY_OUTPUT_TOKEN_BASE + VERIFY_TOKENS_PER_CANDIDATE * candidates);
-}
-/**
- * Estimate the cost of running the verify pass. Conservative estimate
- * uses input tokens + output budget.
- */
-function estimateCostUsd(inputTokens, outputTokens, ratePer1K) {
-    return ((inputTokens + outputTokens) / 1000) * ratePer1K;
-}
-/**
- * Run the verify pass. Always resolves (never throws). When skipped,
- * returns the input findings unchanged with a skip reason.
- */
-async function runVerifyPass(options) {
-    const budgetUsd = options.budgetUsd ?? DEFAULT_BUDGET_USD;
-    const ratePer1K = options.ratePer1K ?? DEFAULT_RATE_PER_1K;
-    const minSeverity = options.minSeverity ?? VERIFY_MIN_SEVERITY_DEFAULT;
-    const isTarget = (f) => isVerifyTarget(f.severity, minSeverity);
-    const highCritical = options.findings.filter(isTarget);
-    if (highCritical.length === 0) {
-        return {
-            findings: options.findings,
-            verifiedCount: 0,
-            droppedCount: 0,
-            skipped: true,
-            skipReason: minSeverity === VERIFY_MIN_SEVERITY_DEFAULT
-                ? 'no high/critical findings to verify'
-                : `no ${minSeverity}+ findings to verify`,
-            estimatedCostUsd: 0,
-            verificationStatus: 'skipped',
-        };
-    }
-    const prompt = buildVerifyPrompt(highCritical, options.toolFindings, options.context, minSeverity);
-    // Cost gate, checked before the call. The caller's estimate is raised to
-    // the real prompt size so the gate never undercounts what is sent.
-    const estimatedCostUsd = estimateCostUsd(Math.max(options.inputTokenEstimate, Math.ceil(prompt.length / 4)), options.outputTokenBudget, ratePer1K);
-    if (!(estimatedCostUsd <= budgetUsd)) {
-        return {
-            findings: options.findings,
-            verifiedCount: 0,
-            droppedCount: 0,
-            skipped: true,
-            skipReason: `estimated cost $${estimatedCostUsd.toFixed(3)} exceeds budget $${budgetUsd}`,
-            estimatedCostUsd,
-            verificationStatus: 'skipped',
-        };
-    }
-    let raw;
-    try {
-        raw = await options.verify(prompt, options.outputTokenBudget);
-    }
-    catch (error) {
-        return {
-            findings: options.findings,
-            verifiedCount: 0,
-            droppedCount: 0,
-            skipped: true,
-            skipReason: `verify call failed: ${error instanceof Error ? error.message : String(error)}`,
-            estimatedCostUsd,
-            verificationStatus: 'error',
-        };
-    }
-    const parsed = parseVerifyOutput(raw, highCritical.length);
-    if (parsed.status !== 'complete') {
-        return {
-            findings: options.findings,
-            verifiedCount: 0,
-            droppedCount: 0,
-            skipped: true,
-            skipReason: parsed.reason,
-            estimatedCostUsd,
-            verificationStatus: parsed.status,
-        };
-    }
-    // Build verified output: keep highCritical that survived verification,
-    // plus all other findings (unchanged).
-    const rejected = new Set();
-    let verifiedCount = 0;
-    highCritical.forEach((f, i) => {
-        if (parsed.verdicts.get(candidateId(i)))
-            verifiedCount += 1;
-        else
-            rejected.add(f);
-    });
-    const surviving = options.findings.filter((f) => !rejected.has(f));
-    return {
-        findings: surviving,
-        verifiedCount,
-        droppedCount: rejected.size,
-        skipped: false,
-        estimatedCostUsd,
-        verificationStatus: 'complete',
-    };
-}
-/** Default budget (USD) for the pipeline verify pass. */
-const VERIFY_BUDGET_USD_DEFAULT = 0.5;
-/**
- * Apply `runVerifyPass` to a pipeline `ReviewResult` in place: replaces
- * findings with survivors, recomputes counts + risk, and records
- * verify stats on `result.diagnostics`. Never throws — any failure
- * leaves the input result unchanged with the skip reason recorded.
- */
-async function applyVerifyPass(result, args) {
-    const outcome = await runVerifyPass({
-        findings: result.findings,
-        toolFindings: args.toolFindings,
-        context: {
-            title: args.title,
-            body: args.body,
-            filenames: result.filesReviewed,
-        },
-        verify: args.verify,
-        inputTokenEstimate: estimateVerifyInputTokens(result.findings, args.toolFindings),
-        outputTokenBudget: verifyOutputTokenBudget(result.findings.filter((f) => isVerifyTarget(f.severity, args.minSeverity ?? VERIFY_MIN_SEVERITY_DEFAULT)).length),
-        budgetUsd: args.budgetUsd ?? VERIFY_BUDGET_USD_DEFAULT,
-        minSeverity: args.minSeverity,
-    });
-    if (outcome.skipped) {
-        result.diagnostics = {
-            ...result.diagnostics,
-            verifySkippedReason: outcome.skipReason,
-            verifyCostUsd: outcome.estimatedCostUsd,
-            verifyStatus: outcome.verificationStatus,
-        };
-        if (outcome.verificationStatus === 'error' ||
-            outcome.verificationStatus === 'incomplete')
-            result.reviewStatus = 'incomplete';
-        return;
-    }
-    result.findings = outcome.findings;
-    result.counts = computeCounts(outcome.findings);
-    result.risk = riskFromFindings(outcome.findings);
-    result.diagnostics = {
-        ...result.diagnostics,
-        verifyVerified: outcome.verifiedCount,
-        verifyDropped: outcome.droppedCount,
-        verifyCostUsd: outcome.estimatedCostUsd,
-        verifyStatus: outcome.verificationStatus,
-    };
-}
-/** Rough input estimate: ~4 chars/token over the verify prompt inputs. */
-function estimateVerifyInputTokens(findings, toolFindings) {
-    const chars = JSON.stringify(findings).length + JSON.stringify(toolFindings).length;
-    return Math.ceil(chars / 4);
-}
-/**
- * Strict parser. A verdict counts only when it is an object with a known
- * candidate id that appears exactly once and a boolean `verified`. Anything
- * else is ignored, and unless every candidate ends up with a valid verdict the
- * result is `incomplete` and the caller keeps every finding.
- */
-function parseVerifyOutput(raw, candidateCount) {
-    const none = new Map();
-    // Best-effort JSON extraction. The LLM may include prose; we look for
-    // the first {...} block.
-    const jsonStart = raw.indexOf('{');
-    const jsonEnd = raw.lastIndexOf('}');
-    if (jsonStart < 0 || jsonEnd <= jsonStart)
-        return {
-            verdicts: none,
-            status: 'error',
-            reason: 'verify output was not JSON; findings retained',
-        };
-    let parsed = null;
-    try {
-        parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
-    }
-    catch {
-        return {
-            verdicts: none,
-            status: 'error',
-            reason: 'verify output JSON was malformed; findings retained',
-        };
-    }
-    if (!parsed || !Array.isArray(parsed.verdicts))
-        return {
-            verdicts: none,
-            status: 'incomplete',
-            reason: 'verify output did not include a verdicts list; findings retained',
-        };
-    const known = new Set(Array.from({ length: candidateCount }, (_, i) => candidateId(i)));
-    const verdicts = new Map();
-    const duplicated = new Set();
-    for (const item of parsed.verdicts) {
-        const v = item;
-        if (!v || typeof v.id !== 'string' || !known.has(v.id))
-            continue;
-        if (typeof v.verified !== 'boolean')
-            continue;
-        if (verdicts.has(v.id))
-            duplicated.add(v.id);
-        else
-            verdicts.set(v.id, v.verified);
-    }
-    for (const id of duplicated)
-        verdicts.delete(id);
-    if (verdicts.size !== candidateCount)
-        return {
-            verdicts: none,
-            status: 'incomplete',
-            reason: 'verify output lacked one valid verdict per candidate; findings retained',
-        };
-    return { verdicts, status: 'complete' };
-}
-
 ;// CONCATENATED MODULE: ./src/runners/review.ts
 
 
@@ -42401,12 +42474,12 @@ async function runPrReviewAction() {
                 trackPhase('harness', `Verify pass done: ${result.findings.length} findings`, { enabled: trackEnabled });
             }
             catch (error) {
-                core.warning(`[review] verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`);
+                core.warning(`[review] ${sanitiseVerifyReason(`verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`)}`);
                 result.reviewStatus = 'incomplete';
                 result.diagnostics = {
                     ...result.diagnostics,
                     verifyStatus: 'error',
-                    verifySkippedReason: `verify pass failed: ${(error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').slice(0, 200)}`,
+                    verifySkippedReason: sanitiseVerifyReason(`verify pass failed: ${error instanceof Error ? error.message : String(error)}`),
                 };
             }
         }

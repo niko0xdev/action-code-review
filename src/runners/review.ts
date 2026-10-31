@@ -41,7 +41,7 @@ import {
 	withReviewReportOutput,
 } from '../review/report.js';
 import { runReview } from '../review/reviewer.js';
-import { applyVerifyPass } from '../review/verify.js';
+import { applyVerifyPass, sanitiseVerifyReason } from '../review/verify.js';
 import { selectReviewSecuritySkills } from '../security/skills/auto-select.js';
 import {
 	parseBoundedFloat,
@@ -342,13 +342,15 @@ export async function runPrReviewAction(): Promise<void> {
 				);
 			} catch (error) {
 				core.warning(
-					`[review] verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`
+					`[review] ${sanitiseVerifyReason(`verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`)}`
 				);
 				result.reviewStatus = 'incomplete';
 				result.diagnostics = {
 					...result.diagnostics,
 					verifyStatus: 'error',
-					verifySkippedReason: `verify pass failed: ${(error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').slice(0, 200)}`,
+					verifySkippedReason: sanitiseVerifyReason(
+						`verify pass failed: ${error instanceof Error ? error.message : String(error)}`
+					),
 				};
 			}
 		}

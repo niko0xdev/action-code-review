@@ -17,6 +17,7 @@
  * (input + output) at a per-1K-token rate, checked before the call.
  */
 
+import { redactSecrets } from '../security/redaction/redactor.js';
 import {
 	escapeControlChars,
 	fenced,
@@ -78,6 +79,19 @@ export const VERIFY_MIN_SEVERITY_DEFAULT: Severity = 'high';
 
 function isVerifyTarget(severity: Severity, min: Severity): boolean {
 	return SEVERITY_ORDER[severity] >= SEVERITY_ORDER[min];
+}
+
+const REASON_MAX_CHARS = 200;
+
+/**
+ * Make a failure reason safe to render: redact secret-shaped text, collapse
+ * whitespace, and cap the length. Provider errors can echo request details.
+ */
+export function sanitiseVerifyReason(text: string): string {
+	return redactSecrets(text)
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, REASON_MAX_CHARS);
 }
 
 /** Candidate id used to match a verdict to a finding: `c1`..`cN` by position. */
@@ -232,9 +246,11 @@ export async function runVerifyPass(
 			verifiedCount: 0,
 			droppedCount: 0,
 			skipped: true,
-			skipReason: `verify call failed: ${
-				error instanceof Error ? error.message : String(error)
-			}`,
+			skipReason: sanitiseVerifyReason(
+				`verify call failed: ${
+					error instanceof Error ? error.message : String(error)
+				}`
+			),
 			estimatedCostUsd,
 			verificationStatus: 'error',
 		};
@@ -320,7 +336,10 @@ export async function applyVerifyPass(
 	if (outcome.skipped) {
 		result.diagnostics = {
 			...result.diagnostics,
-			verifySkippedReason: outcome.skipReason,
+			verifySkippedReason:
+				outcome.skipReason === undefined
+					? undefined
+					: sanitiseVerifyReason(outcome.skipReason),
 			verifyCostUsd: outcome.estimatedCostUsd,
 			verifyStatus: outcome.verificationStatus,
 		};
@@ -372,27 +391,39 @@ function parseVerifyOutput(
 	reason?: string;
 } {
 	const none = new Map<string, boolean>();
-	// Best-effort JSON extraction. The LLM may include prose; we look for
-	// the first {...} block.
-	const jsonStart = raw.indexOf('{');
-	const jsonEnd = raw.lastIndexOf('}');
-	if (jsonStart < 0 || jsonEnd <= jsonStart)
+	const objects = topLevelObjects(raw);
+	if (objects.length === 0)
 		return {
 			verdicts: none,
 			status: 'error',
 			reason: 'verify output was not JSON; findings retained',
 		};
+	// The model's answer is its LAST top-level object that carries a verdicts
+	// list. Earlier objects (quoted candidates, decoys) never count.
 	let parsed: VerifyOutput | null = null;
-	try {
-		parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
-	} catch {
+	let parsedAny = false;
+	for (const text of objects) {
+		let value: unknown;
+		try {
+			value = JSON.parse(text);
+		} catch {
+			continue;
+		}
+		parsedAny = true;
+		if (
+			value &&
+			typeof value === 'object' &&
+			Array.isArray((value as VerifyOutput).verdicts)
+		)
+			parsed = value as VerifyOutput;
+	}
+	if (!parsedAny)
 		return {
 			verdicts: none,
 			status: 'error',
 			reason: 'verify output JSON was malformed; findings retained',
 		};
-	}
-	if (!parsed || !Array.isArray(parsed.verdicts))
+	if (!parsed)
 		return {
 			verdicts: none,
 			status: 'incomplete',
@@ -421,4 +452,45 @@ function parseVerifyOutput(
 				'verify output lacked one valid verdict per candidate; findings retained',
 		};
 	return { verdicts, status: 'complete' };
+}
+
+/**
+ * Balanced, string-aware scan for top-level `{...}` spans in free text, so
+ * prose, quoted candidates, and fenced blocks around the answer are tolerated.
+ * Bounded: a reply of unbalanced braces cannot make this quadratic.
+ */
+function topLevelObjects(raw: string): string[] {
+	const out: string[] = [];
+	let failedStarts = 0;
+	let i = raw.indexOf('{');
+	while (i >= 0 && failedStarts < 50) {
+		let depth = 0;
+		let inString = false;
+		let escaped = false;
+		let end = -1;
+		for (let j = i; j < raw.length; j++) {
+			const ch = raw[j];
+			if (inString) {
+				if (escaped) escaped = false;
+				else if (ch === '\\') escaped = true;
+				else if (ch === '"') inString = false;
+			} else if (ch === '"') inString = true;
+			else if (ch === '{') depth += 1;
+			else if (ch === '}') {
+				depth -= 1;
+				if (depth === 0) {
+					end = j;
+					break;
+				}
+			}
+		}
+		if (end < 0) {
+			failedStarts += 1;
+			i = raw.indexOf('{', i + 1);
+		} else {
+			out.push(raw.slice(i, end + 1));
+			i = raw.indexOf('{', end + 1);
+		}
+	}
+	return out;
 }

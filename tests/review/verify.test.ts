@@ -579,3 +579,61 @@ describe('buildVerifyPrompt containment', () => {
 		expect(prompt.split('\n').some((l) => l.startsWith('SYSTEM:'))).toBe(false);
 	});
 });
+
+describe('verdict object location', () => {
+	const two = [mkFinding({ title: 'A' }), mkFinding({ title: 'B', line: 2 })];
+	const answer =
+		'{"verdicts":[{"id":"c1","verified":true,"reason":"ok"},{"id":"c2","verified":false,"reason":"no"}]}';
+	const run = (text: string) => runWith(two, async () => text);
+
+	it('reads a fenced json block surrounded by prose', async () => {
+		const r = await run(
+			`Here you go:\n\`\`\`json\n${answer}\n\`\`\`\nHope it helps {sic}.`
+		);
+		expect(r.verificationStatus).toBe('complete');
+		expect(r.findings.map((f) => f.title)).toEqual(['A']);
+	});
+
+	it('uses the real answer after quoted candidate JSON', async () => {
+		const quoted = '{"id":"c1","severity":"high","title":"A"}';
+		const r = await run(`Candidates: ${quoted}\n${answer}`);
+		expect(r.verificationStatus).toBe('complete');
+		expect(r.droppedCount).toBe(1);
+	});
+
+	it('tolerates trailing prose containing braces', async () => {
+		const r = await run(`${answer}\nNote: {all done} and } stray`);
+		expect(r.verificationStatus).toBe('complete');
+		expect(r.droppedCount).toBe(1);
+	});
+
+	it('picks the LAST verdicts object when a decoy comes first', async () => {
+		const decoy =
+			'{"verdicts":[{"id":"c1","verified":false},{"id":"c2","verified":false}]}';
+		const r = await run(`${decoy}\n${answer}`);
+		expect(r.findings.map((f) => f.title)).toEqual(['A']);
+	});
+
+	it('keeps everything and is incomplete for a decoy-only reply', async () => {
+		const decoy = '{"id":"c1","verified":false,"title":"A"}';
+		const r = await run(`I considered ${decoy} but did not finish.`);
+		expect(r.verificationStatus).toBe('incomplete');
+		expect(r.findings).toHaveLength(2);
+		expect(r.droppedCount).toBe(0);
+	});
+
+	it('handles braces inside JSON strings', async () => {
+		const tricky =
+			'{"verdicts":[{"id":"c1","verified":true,"reason":"has } and { inside"},{"id":"c2","verified":true,"reason":"q\\"}"}]}';
+		const r = await run(tricky);
+		expect(r.verificationStatus).toBe('complete');
+		expect(r.findings).toHaveLength(2);
+	});
+
+	it('stays fast on unbalanced braces', async () => {
+		const start = Date.now();
+		const r = await run('{'.repeat(50_000));
+		expect(r.verificationStatus).toBe('error');
+		expect(Date.now() - start).toBeLessThan(2000);
+	});
+});

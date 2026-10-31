@@ -99,6 +99,7 @@ vi.mock('../src/llm/openai-compatible.js', () => ({
 }));
 
 import { main } from '../src/cli.js';
+import { verifyOutputTokenBudget } from '../src/review/verify.js';
 
 const ENV_KEYS = [
 	'GITHUB_EVENT_NAME',
@@ -336,11 +337,17 @@ describe('main: top-level flows', () => {
 
 		it('marks the review incomplete and fails the step when the verify pass throws', async () => {
 			process.env.AI_REVIEW_VERIFY_PASS = 'true';
-			state.runReview.mockResolvedValue(withFindings());
+			const reviewed = withFindings();
+			state.runReview.mockResolvedValue(reviewed);
 			state.applyVerify = async () => {
 				throw new Error('verify exploded\nwith detail');
 			};
 			await main(['pr-review']);
+			expect(reviewed).toMatchObject({
+				reviewStatus: 'incomplete',
+				diagnostics: { verifyStatus: 'error' },
+			});
+			expect(reviewed.findings).toHaveLength(2);
 			expect(setFailed).toHaveBeenCalledWith(
 				expect.stringContaining('Review incomplete')
 			);
@@ -377,6 +384,12 @@ describe('main: top-level flows', () => {
 			expect(state.complete).toHaveBeenCalledTimes(1);
 			expect(sentPrompt()).toContain('High finding title');
 			expect(sentPrompt()).not.toContain('Medium finding title');
+			// One candidate: the scaled ceiling reaches the provider call.
+			expect(state.complete.mock.calls[0]?.[1]).toMatchObject({
+				temperature: 0,
+				maxOutputTokens: verifyOutputTokenBudget(1),
+			});
+			expect(verifyOutputTokenBudget(1)).not.toBe(2048);
 		});
 
 		it('honours AI_REVIEW_VERIFY_MIN_SEVERITY=medium end to end', async () => {
@@ -387,6 +400,9 @@ describe('main: top-level flows', () => {
 			await main(['pr-review']);
 			expect(sentPrompt()).toContain('High finding title');
 			expect(sentPrompt()).toContain('Medium finding title');
+			expect(state.complete.mock.calls[0]?.[1]).toMatchObject({
+				maxOutputTokens: verifyOutputTokenBudget(2),
+			});
 			expect(setFailed).not.toHaveBeenCalled();
 		});
 	});

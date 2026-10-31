@@ -268,8 +268,11 @@ Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic alrea
    returns one `verified` verdict per id; verdicts match by id only. A failed,
    unusable, or partial reply keeps every finding, marks the review incomplete,
    and records the reason in the summary, so a verify outage fails the step by
-   default while findings are still published (`AI_REVIEW_FAIL_ON_INCOMPLETE=false`
-   downgrades it to a warning). The output ceiling scales with the candidate
+   default while findings are still published
+   (`AI_REVIEW_FAIL_ON_INCOMPLETE=false` downgrades it to a warning). The
+   reason shown is redacted, whitespace-collapsed, and capped at 200
+   characters. The verdicts object is the last top-level `{...}` in the reply
+   that carries a `verdicts` list. The output ceiling scales with the candidate
    count.
 5. **Review decision on re-runs** — `REQUEST_CHANGES` is decided from every
    valid finding, including ones already commented, and is submitted separately
