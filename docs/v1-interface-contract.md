@@ -88,11 +88,17 @@ Additive input (not part of the frozen V1 surface; added after V1, optional, def
 | Input | Required | Default |
 |-------|----------|---------|
 | `scorecard-context` | false | `'false'` |
+| `security-skills` | false | `'all'` |
 
 `scorecard-context` is opt-in. When `'true'` and the repository is public, the
 review fetches the repository's published OSSF Scorecard once from
 `api.securityscorecards.dev` and gives the reviewer a fixed-format table of numeric
 scores as advisory context. Failures never fail or block a review.
+
+`security-skills` is a new optional input (additive; the default `'all'` leaves
+the review prompt byte-identical). `'auto'` keeps only the curated security skills
+for risk domains the existing classifier flags in the changed files, always keeps
+the validation gate, and uses all skills when it cannot classify.
 
 ### Outputs
 

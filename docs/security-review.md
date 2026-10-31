@@ -102,6 +102,8 @@ Derived and adapted from `mukul975/Anthropic-Cybersecurity-Skills` under the **A
 
 Skills are dynamically and deterministically routed by the `SecuritySkillSelector` based on the PR risk classifier output. Every non-empty render appends a seven-question Review Validation Gate (file, line, source, data flow, impact, fix, false-positive evidence); findings that cannot answer all seven are dropped.
 
+The default review prompt includes every skill (`security-skills: all`). The opt-in `security-skills: auto` input reuses the same classifier and selector to include only the skills for domains flagged in the changed files. It always keeps the validation gate. A docs-only PR (`.md`, `.mdx`, `.txt`, `.rst`) gets the gate and no domain skill. Unknown file types, an empty or truncated file list, or a classifier error fall back to all skills. Classifier domains without a skill map to the nearest one (`process-execution` to injection, `cloud-infrastructure` to CI/CD, `serialization` to file handling). This is a cost optimisation that is unmeasured for review quality and off by default; changing the default needs the `all` versus `auto` ablation scored with `tests/eval/scoring.ts`. Because the classifier reads the PR's own paths and diff, a PR author can influence which skills are included, which is another reason it is opt-in.
+
 Licence-clean defensive skills (original prose; MIT/Apache sources ported with attribution in code comments, OWASP sheets used as linked references only, never copied verbatim):
 - Payment Safety: Race Conditions & Idempotency (CWE-367, CWE-841)
 - Client-Side XSS: Contextual Output Encoding (CWE-79, CWE-116)

@@ -15,6 +15,11 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Added
 
+- **Opt-in `security-skills` input (default `'all'`, additive).** `'auto'` limits the
+  curated security skills in the review prompt to the risk domains the existing
+  classifier flags in the changed files (the validation gate is always kept) and
+  falls back to all skills when it cannot classify. The default prompt is
+  byte-identical. A cost optimisation, unmeasured for review quality.
 - **Opt-in `scorecard-context` input (default `'false'`, additive).** For public
   repositories, fetches the published OSSF Scorecard once and gives the reviewer
   clamped numeric scores for a fixed list of checks as advisory context. Third-party

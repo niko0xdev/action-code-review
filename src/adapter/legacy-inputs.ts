@@ -5,6 +5,10 @@
  */
 
 import { normalizeBaseUrl } from '../llm/config.js';
+import {
+	SECURITY_SKILLS_MODES,
+	type SecuritySkillsMode,
+} from '../security/skills/auto-select.js';
 import { parseEnum, parsePositiveInt } from '../shared/numeric.js';
 
 export type LegacyAction = 'pr-review' | 'pr-content';
@@ -26,6 +30,7 @@ export interface PrReviewEngineOptions {
 	includeFullContent: boolean;
 	maxContextChars: number;
 	scorecardContext: boolean;
+	securitySkills: SecuritySkillsMode;
 }
 
 export interface PrContentEngineOptions {
@@ -85,6 +90,7 @@ const PR_REVIEW_DEFAULTS = {
 	includeFullContent: 'false',
 	maxContextChars: '30000',
 	scorecardContext: 'false',
+	securitySkills: 'all',
 } as const;
 
 const PR_CONTENT_DEFAULTS = {
@@ -276,6 +282,12 @@ function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 		scorecardContext: bool(
 			get(inputs, 'scorecard-context'),
 			PR_REVIEW_DEFAULTS.scorecardContext
+		),
+		securitySkills: parseEnum(
+			get(inputs, 'security-skills'),
+			SECURITY_SKILLS_MODES,
+			PR_REVIEW_DEFAULTS.securitySkills,
+			'security-skills'
 		),
 	};
 }
