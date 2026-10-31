@@ -110,14 +110,15 @@ export function selectReviewSecuritySkills(
 	let prompt: string;
 	let domains: string[];
 	try {
-		if (kinds.every((k) => k === 'doc')) {
-			// Docs only: no domain skill, the validation gate still applies.
+		// Classify first: a flagged domain always wins over the docs shortcut.
+		const flagged = classifyPrRisk(files).domains.map(
+			(d) => DOMAIN_ALIASES[d] ?? d
+		);
+		if (flagged.length === 0 && kinds.every((k) => k === 'doc')) {
+			// Prose only and nothing flagged: no domain skill, the gate still applies.
 			domains = [];
 			prompt = `\n## Targeted Security Review Knowledge\n${REVIEW_VALIDATION_GATE}\n`;
 		} else {
-			const flagged = classifyPrRisk(files).domains.map(
-				(d) => DOMAIN_ALIASES[d] ?? d
-			);
 			const skills = selectSecuritySkills(flagged);
 			domains = skills.map((s) => s.domain);
 			prompt = renderSkillsForPrompt(skills);
