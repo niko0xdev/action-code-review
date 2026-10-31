@@ -13,7 +13,8 @@
 - **Mitigation**:
   1. Explicit System Prompt Framing: All code diffs and repository files are isolated under explicit UNTRUSTED DATA headers.
   2. Structural Schema Enforcement: The LLM is forced to respond strictly in structured JSON matching `SecurityFinding` schema, with no executable prose.
-  3. Read-only Tooling: Pi harness restricts tools strictly to read-only operations (`read`, `grep`, `find`, `ls`).
+  3. Fences and Escaping: Every prompt builder (the review prompt, the security engine's diff and confirmation prompts, and the verify pass, and the PR-content prompt builder for file names) shares `src/shared/prompt-safety.ts`. Diffs and code excerpts sit in a fence one backtick longer than the longest backtick run inside them, so no patch line can close it. File names, finding paths, titles, and messages are written on one line with line breaks, control characters, bidirectional controls (U+202A to U+202E, U+2066 to U+2069), and zero-width characters (U+200B to U+200D, U+2060, U+FEFF) as visible `\uXXXX` escapes. Diff bodies are never rewritten. A literal backslash is not escaped, so a file name holding the two characters `\n` looks like an escaped newline.
+  4. Read-only Tooling: Pi harness restricts tools strictly to read-only operations (`read`, `grep`, `find`, `ls`).
 
 ### 2.2 Secret Exfiltration & Leakage
 - **Threat**: Repository code contains secrets, or malicious code attempts to trigger reflection/echo of GitHub Action runner tokens or API keys into PR comments, GitHub Step Summaries, or SARIF files.

@@ -1,9 +1,6 @@
 import { renderToolFindingsForPrompt } from '../context/prelint.js';
-import {
-	escapeControlChars,
-	extractJsonBlock,
-	scrubSecrets,
-} from '../llm/openai-compatible.js';
+import { extractJsonBlock, scrubSecrets } from '../llm/openai-compatible.js';
+import { escapeControlChars, fenceFor } from '../shared/prompt-safety.js';
 import type {
 	ChangedFile,
 	DetectedProfile,
@@ -46,15 +43,6 @@ interface RenderedFiles {
 /** Header line for a file; the name is escaped so it cannot span lines. */
 function fileHeader(f: ChangedFile): string {
 	return `### ${escapeControlChars(f.filename)} (${f.status}, +${f.additions}/-${f.deletions})`;
-}
-
-/** A fence longer than any backtick run in `patch`, so no line can close it. */
-function fenceFor(patch: string): string {
-	const longest = Math.max(
-		0,
-		...(patch.match(/`+/g) ?? []).map((run) => run.length)
-	);
-	return '`'.repeat(Math.max(3, longest + 1));
 }
 
 function renderFileBlock(f: ChangedFile, patch: string, note?: string): string {
