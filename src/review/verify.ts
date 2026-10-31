@@ -14,6 +14,11 @@
  * (input + output) using a per-1K-token rate.
  */
 
+import {
+	escapeControlChars,
+	fenced,
+	jsonForPrompt,
+} from '../shared/prompt-safety.js';
 import type {
 	Finding,
 	ReviewResult,
@@ -81,7 +86,7 @@ export function buildVerifyPrompt(
 				.slice(0, 30)
 				.map(
 					(f) =>
-						`- [${f.tool}/${f.code}] ${f.path}:${f.line} (${f.severity}) ${f.message}`
+						`- [${f.tool}/${f.code}] ${escapeControlChars(f.path)}:${f.line} (${f.severity}) ${escapeControlChars(f.message)}`
 				)
 				.join('\n')}\n`
 		: '';
@@ -89,15 +94,16 @@ export function buildVerifyPrompt(
 	return `You are reviewing your OWN findings from a prior code-review pass.
 Your job is to challenge each high-severity finding before it ships to a human reviewer.
 
-PR title: ${context.title}
-PR body (truncated): ${context.body.slice(0, 500)}
+PR title: ${escapeControlChars(context.title)}
+PR body (truncated):
+${fenced(context.body.slice(0, 500))}
 
 Candidate findings to verify (${highCritical.length}):
-${JSON.stringify(highCritical, null, 2)}
+${fenced(jsonForPrompt(highCritical), 'json')}
 ${toolSection}
 
 For each finding, answer 3 questions:
-1. Is the file path real (matches one of: ${context.filenames.slice(0, 20).join(', ')})?
+1. Is the file path real (matches one of: ${context.filenames.slice(0, 20).map(escapeControlChars).join(', ')})?
 2. Is the line number plausible (between 1 and a reasonable file length)?
 3. Would a senior engineer agree this is a real bug?
 

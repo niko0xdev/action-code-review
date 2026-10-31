@@ -38,6 +38,14 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Fixed
 
+- **Prompt hardening now covers the security engine, the verify pass, and the
+  PR-content prompt.** Diffs and code excerpts in the security engine's diff and
+  confirmation prompts, and the finding list in the verify prompt, use a fence
+  longer than any backtick run inside them. File names, finding fields, and the
+  PR title are written on one line with line breaks, control characters, bidi
+  controls, and zero-width characters as visible escapes (the review prompt
+  gains the bidi and zero-width escapes too). The helpers moved to
+  `src/shared/prompt-safety.ts`. Diff bodies are unchanged.
 - **A truncated changed-file list now makes the review incomplete.** When
   GitHub pagination stopped at the 1000-file cap, the review used to report
   `complete`, show an APPROVED banner, and could submit an approval. It now has

@@ -32457,8 +32457,8 @@ function wrappy (fn, cb) {
 /* harmony import */ var node_string_decoder__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__nccwpck_require__.n(node_string_decoder__WEBPACK_IMPORTED_MODULE_3__);
 /* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_4__ = __nccwpck_require__(474);
 /* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__nccwpck_require__.n(_actions_core__WEBPACK_IMPORTED_MODULE_4__);
-/* harmony import */ var _llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_5__ = __nccwpck_require__(8251);
-/* harmony import */ var _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__ = __nccwpck_require__(1620);
+/* harmony import */ var _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__ = __nccwpck_require__(1620);
+/* harmony import */ var _shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_6__ = __nccwpck_require__(1877);
 /**
  * PreLint orchestrator.
  *
@@ -32538,7 +32538,7 @@ function spawnCollect(cmd, args, options) {
     return new Promise((resolve, reject) => {
         const child = (0,node_child_process__WEBPACK_IMPORTED_MODULE_0__.spawn)(cmd, args, {
             cwd: options.cwd,
-            env: (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .buildAnalyserEnv */ .pk)(),
+            env: (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .buildAnalyserEnv */ .pk)(),
             stdio: ['ignore', 'pipe', 'pipe'],
             detached: process.platform !== 'win32',
         });
@@ -32556,15 +32556,15 @@ function spawnCollect(cmd, args, options) {
             cb();
         };
         const timer = setTimeout(() => {
-            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .killAnalyser */ .eQ)(child);
+            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .killAnalyser */ .eQ)(child);
             finish(() => reject(new Error(`${cmd} timed out after ${options.timeoutMs}ms`)));
         }, options.timeoutMs);
         const overCap = (size) => {
-            if (size <= _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG)
+            if (size <= _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG)
                 return false;
             clearTimeout(timer);
-            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .killAnalyser */ .eQ)(child);
-            finish(() => reject(new Error(`${cmd} output exceeded ${_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG} byte cap`)));
+            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .killAnalyser */ .eQ)(child);
+            finish(() => reject(new Error(`${cmd} output exceeded ${_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG} byte cap`)));
             return true;
         };
         child.stdout?.on('data', (chunk) => {
@@ -32605,7 +32605,7 @@ const biomeRunner = {
         const binary = configuredBinary(repositoryPath, 'biome');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['lint', '--reporter=json', '--max-diagnostics=50', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32620,7 +32620,7 @@ const ruffRunner = {
         const binary = configuredBinary(repositoryPath, 'ruff');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['check', '--output-format=json', '--no-fix', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32640,7 +32640,7 @@ const swiftlintRunner = {
         const binary = configuredBinary(repositoryPath, 'swiftlint');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['lint', '--reporter=json', '--quiet', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32661,7 +32661,7 @@ const ktlintRunner = {
         const binary = configuredBinary(repositoryPath, 'ktlint');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['--reporter=json', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32681,7 +32681,7 @@ const sqlfluffRunner = {
         const binary = configuredBinary(repositoryPath, 'sqlfluff');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         // sqlfluff returns non-zero on violations; we want the JSON anyway.
@@ -32940,7 +32940,7 @@ function renderToolFindingsForPrompt(findings, maxLines = 50) {
         return '(no static-analyzer findings)';
     const lines = ['Static-analyzer findings (treat as evidence):'];
     for (const finding of findings.slice(0, maxLines)) {
-        lines.push(`- [${finding.tool}/${finding.code}] ${(0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_5__/* .escapeControlChars */ ._s)(finding.path)}:${finding.line} (${finding.severity}) ${(0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_5__/* .escapeControlChars */ ._s)(finding.message)}`);
+        lines.push(`- [${finding.tool}/${finding.code}] ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_6__/* .escapeControlChars */ ._s)(finding.path)}:${finding.line} (${finding.severity}) ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_6__/* .escapeControlChars */ ._s)(finding.message)}`);
     }
     if (findings.length > maxLines) {
         lines.push(`... and ${findings.length - maxLines} more findings`);
@@ -32989,22 +32989,20 @@ var redactor = __nccwpck_require__(8759);
 var prelint = __nccwpck_require__(7154);
 // EXTERNAL MODULE: ./src/llm/openai-compatible.ts + 1 modules
 var openai_compatible = __nccwpck_require__(8251);
+// EXTERNAL MODULE: ./src/shared/prompt-safety.ts
+var prompt_safety = __nccwpck_require__(1877);
 ;// CONCATENATED MODULE: ./src/harness/harness.ts
+
 
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 const RISKS = ['critical', 'high', 'medium', 'low', 'none'];
 /** Header line for a file; the name is escaped so it cannot span lines. */
 function fileHeader(f) {
-    return `### ${(0,openai_compatible/* escapeControlChars */._s)(f.filename)} (${f.status}, +${f.additions}/-${f.deletions})`;
-}
-/** A fence longer than any backtick run in `patch`, so no line can close it. */
-function fenceFor(patch) {
-    const longest = Math.max(0, ...(patch.match(/`+/g) ?? []).map((run) => run.length));
-    return '`'.repeat(Math.max(3, longest + 1));
+    return `### ${(0,prompt_safety/* escapeControlChars */._s)(f.filename)} (${f.status}, +${f.additions}/-${f.deletions})`;
 }
 function renderFileBlock(f, patch, note) {
-    const fence = fenceFor(patch);
+    const fence = (0,prompt_safety/* fenceFor */.Lt)(patch);
     return `${fileHeader(f)}${note ? ` ${note}` : ''}\n${fence}diff\n${patch}\n${fence}`;
 }
 /**
@@ -33998,7 +33996,6 @@ function normalizeBaseUrl(url) {
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
   OpenAiCompatibleProvider: () => (/* binding */ OpenAiCompatibleProvider),
-  _s: () => (/* binding */ escapeControlChars),
   zR: () => (/* binding */ extractJsonBlock),
   Zg: () => (/* binding */ scrubSecrets)
 });
@@ -34190,26 +34187,6 @@ function stripReasoningArtifacts(content, reasoningContent) {
         // tail (reasoning) rather than the head (JSON payload).
         .replace(/<think(?:ing)?>[\s\S]*?(?:<\/(?:think|thinking)>|$)/gi, '')
         .trim());
-}
-/**
- * Make untrusted text safe to place on a single prompt line. Line breaks and
- * other control characters (a git path may contain them) are written as
- * escapes, so attacker text cannot start a new line outside a fenced block.
- */
-function escapeControlChars(text) {
-    return Array.from(text, (ch) => {
-        const code = ch.charCodeAt(0);
-        if (ch === '\n')
-            return '\\n';
-        if (ch === '\r')
-            return '\\r';
-        if (code < 0x20 ||
-            (code >= 0x7f && code <= 0x9f) ||
-            code === 0x2028 ||
-            code === 0x2029)
-            return `\\u${code.toString(16).padStart(4, '0')}`;
-        return ch;
-    }).join('');
 }
 function scrubSecrets(text) {
     return text.replace(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+|(?:sk-|gh[oprsu]_|xox[abprs]-|AIza|github_pat_)[A-Za-z0-9._~+/=-]*/gi, '[REDACTED-TOKEN]');
@@ -34407,9 +34384,11 @@ function killAnalyser(child, signal = 'SIGKILL') {
 /* harmony export */   PiSecurityEngine: () => (/* binding */ PiSecurityEngine)
 /* harmony export */ });
 /* harmony import */ var _llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(8251);
+/* harmony import */ var _shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_4__ = __nccwpck_require__(1877);
 /* harmony import */ var _findings_normalizer_js__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(2533);
 /* harmony import */ var _redaction_redactor_js__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(8759);
 /* harmony import */ var _skills_selector_js__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(9347);
+
 
 
 
@@ -34501,7 +34480,7 @@ class PiSecurityEngine {
         const selectedSkills = (0,_skills_selector_js__WEBPACK_IMPORTED_MODULE_3__/* .selectSecuritySkills */ .N)(domains);
         const skillsText = (0,_skills_selector_js__WEBPACK_IMPORTED_MODULE_3__/* .renderSkillsForPrompt */ .a)(selectedSkills);
         const fileDiffs = ctx.changedFiles
-            .map((f) => `### ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})\n\`\`\`diff\n${f.patch ? (0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_0__/* .scrubSecrets */ .Zg)(f.patch) : '(binary or large file)'}\n\`\`\``)
+            .map((f) => `### ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_4__/* .escapeControlChars */ ._s)(f.filename)} (${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_4__/* .escapeControlChars */ ._s)(f.status)}, +${f.additions}/-${f.deletions})\n${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_4__/* .fenced */ .OF)(f.patch ? (0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_0__/* .scrubSecrets */ .Zg)(f.patch) : '(binary or large file)', 'diff')}`)
             .join('\n\n');
         return [
             PI_SECURITY_SYSTEM_PROMPT,
@@ -34526,13 +34505,13 @@ class PiSecurityEngine {
             '',
             'TASK: Independently verify this candidate security finding. Do not assume the claim is true.',
             '',
-            `Claimed Vulnerability: ${finding.title} (${finding.severity.toUpperCase()})`,
-            `CWE: ${finding.cwe || 'N/A'}`,
-            `Target File: ${finding.file || 'N/A'}:${finding.startLine ?? 'N/A'}`,
-            `Claimed Evidence: ${finding.evidence.map((e) => e.description).join('; ')}`,
+            `Claimed Vulnerability: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_4__/* .escapeControlChars */ ._s)(finding.title)} (${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_4__/* .escapeControlChars */ ._s)(finding.severity.toUpperCase())})`,
+            `CWE: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_4__/* .escapeControlChars */ ._s)(finding.cwe || 'N/A')}`,
+            `Target File: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_4__/* .escapeControlChars */ ._s)(finding.file || 'N/A')}:${finding.startLine ?? 'N/A'}`,
+            `Claimed Evidence: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_4__/* .escapeControlChars */ ._s)(finding.evidence.map((e) => e.description).join('; '))}`,
             '',
             'Diff Context (UNTRUSTED DATA):',
-            `\`\`\`diff\n${(0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_0__/* .scrubSecrets */ .Zg)(patchSnippet.slice(0, 5000))}\n\`\`\``,
+            (0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_4__/* .fenced */ .OF)((0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_0__/* .scrubSecrets */ .Zg)(patchSnippet.slice(0, 5000)), 'diff'),
             '',
             'Analyze whether this is a genuine security issue or a false positive.',
             'Respond ONLY with JSON:',
@@ -35219,6 +35198,70 @@ function renderSkillsForPrompt(skills) {
         return '';
     const parts = skills.map((skill) => `#### ${skill.title}\n${skill.promptInstructions.trim()}`);
     return `\n## Targeted Security Review Knowledge\n${parts.join('\n\n')}\n\n${_license_clean_js__WEBPACK_IMPORTED_MODULE_0__/* .REVIEW_VALIDATION_GATE */ .F}\n`;
+}
+
+
+/***/ }),
+
+/***/ 1877:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
+/* harmony export */   Lt: () => (/* binding */ fenceFor),
+/* harmony export */   OF: () => (/* binding */ fenced),
+/* harmony export */   Q$: () => (/* binding */ jsonForPrompt),
+/* harmony export */   _s: () => (/* binding */ escapeControlChars)
+/* harmony export */ });
+/**
+ * Helpers that keep untrusted text (file names, finding fields, diffs, code
+ * excerpts) contained when it is placed in a model prompt.
+ */
+/** Characters a reviewer cannot see or that can break a line (CR and LF aside). */
+function isHidden(code) {
+    return ((code < 0x20 && code !== 0x0a && code !== 0x0d) ||
+        (code >= 0x7f && code <= 0x9f) ||
+        code === 0x2028 ||
+        code === 0x2029 ||
+        (code >= 0x202a && code <= 0x202e) ||
+        (code >= 0x2066 && code <= 0x2069) ||
+        (code >= 0x200b && code <= 0x200d) ||
+        code === 0x2060 ||
+        code === 0xfeff);
+}
+/** Write every hidden character as `\uXXXX`; other text is untouched. */
+function escapeHidden(text) {
+    return Array.from(text, (ch) => {
+        const code = ch.charCodeAt(0);
+        return isHidden(code) ? `\\u${code.toString(16).padStart(4, '0')}` : ch;
+    }).join('');
+}
+/**
+ * Make untrusted text safe to place on a single prompt line. Line breaks,
+ * other control characters (a git path may contain them), bidirectional
+ * controls, and zero-width characters are written as visible escapes, so
+ * attacker text can neither start a new line outside a fenced block nor hide
+ * behind characters the reviewer cannot see. Not for diff bodies, which must
+ * stay byte-faithful.
+ */
+function escapeControlChars(text) {
+    return escapeHidden(text.replace(/\n/g, '\\n').replace(/\r/g, '\\r'));
+}
+/**
+ * Pretty JSON for a prompt with hidden characters written as `\uXXXX`, which
+ * JSON reads as the same character, so the layout is untouched.
+ */
+function jsonForPrompt(value) {
+    return escapeHidden(JSON.stringify(value, null, 2));
+}
+/** A fence longer than any backtick run in `text`, so no line can close it. */
+function fenceFor(text) {
+    const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+    return '`'.repeat(Math.max(3, longest + 1));
+}
+/** Wrap `text` in a code fence that its own content cannot close. */
+function fenced(text, lang = '') {
+    const fence = fenceFor(text);
+    return `${fence}${lang}\n${text}\n${fence}`;
 }
 
 
@@ -38967,7 +39010,10 @@ function renderToolFindingsSection(toolFindings, diagnostics) {
     return lines.join('\n');
 }
 
+// EXTERNAL MODULE: ./src/shared/prompt-safety.ts
+var prompt_safety = __nccwpck_require__(1877);
 ;// CONCATENATED MODULE: ./src/llm/prompts/pr-content.ts
+
 function createSystemPrompt(customInstructions, templateContent) {
     const prompt = [
         'You are an expert software engineer and technical writer.',
@@ -38989,11 +39035,11 @@ function buildUserPrompt(currentTitle, currentDescription, diffs, includeFileLis
     let prompt = `Current PR Title: ${currentTitle}\n\n`;
     prompt += `Current PR Description:\n${currentDescription || '(No description)'}\n\n`;
     if (includeFileList) {
-        prompt += `Changed Files:\n${diffs.map((d) => `${d.status}: ${d.filename}`).join('\n')}\n\n`;
+        prompt += `Changed Files:\n${diffs.map((d) => `${(0,prompt_safety/* escapeControlChars */._s)(d.status)}: ${(0,prompt_safety/* escapeControlChars */._s)(d.filename)}`).join('\n')}\n\n`;
     }
     prompt += 'Code Changes:';
     diffs.forEach((diff, index) => {
-        prompt += `\n\n--- File ${index + 1}: ${diff.filename} (${diff.status}) ---\n`;
+        prompt += `\n\n--- File ${index + 1}: ${(0,prompt_safety/* escapeControlChars */._s)(diff.filename)} (${(0,prompt_safety/* escapeControlChars */._s)(diff.status)}) ---\n`;
         prompt += diff.patch.substring(0, 2000);
         if (diff.patch.length > 2000)
             prompt += '\n... (truncated)';
@@ -41340,6 +41386,7 @@ function deriveRuleCoverage(context, findings) {
  * (input + output) using a per-1K-token rate.
  */
 
+
 const DEFAULT_BUDGET_USD = 0.5;
 const DEFAULT_RATE_PER_1K = 0.001;
 /**
@@ -41358,21 +41405,22 @@ function buildVerifyPrompt(highCritical, toolFindings, context) {
     const toolSection = toolFindings.length
         ? `\nStatic analyzer evidence (from prelint):\n${toolFindings
             .slice(0, 30)
-            .map((f) => `- [${f.tool}/${f.code}] ${f.path}:${f.line} (${f.severity}) ${f.message}`)
+            .map((f) => `- [${f.tool}/${f.code}] ${(0,prompt_safety/* escapeControlChars */._s)(f.path)}:${f.line} (${f.severity}) ${(0,prompt_safety/* escapeControlChars */._s)(f.message)}`)
             .join('\n')}\n`
         : '';
     return `You are reviewing your OWN findings from a prior code-review pass.
 Your job is to challenge each high-severity finding before it ships to a human reviewer.
 
-PR title: ${context.title}
-PR body (truncated): ${context.body.slice(0, 500)}
+PR title: ${(0,prompt_safety/* escapeControlChars */._s)(context.title)}
+PR body (truncated):
+${(0,prompt_safety/* fenced */.OF)(context.body.slice(0, 500))}
 
 Candidate findings to verify (${highCritical.length}):
-${JSON.stringify(highCritical, null, 2)}
+${(0,prompt_safety/* fenced */.OF)((0,prompt_safety/* jsonForPrompt */.Q$)(highCritical), 'json')}
 ${toolSection}
 
 For each finding, answer 3 questions:
-1. Is the file path real (matches one of: ${context.filenames.slice(0, 20).join(', ')})?
+1. Is the file path real (matches one of: ${context.filenames.slice(0, 20).map(prompt_safety/* escapeControlChars */._s).join(', ')})?
 2. Is the line number plausible (between 1 and a reasonable file length)?
 3. Would a senior engineer agree this is a real bug?
 
