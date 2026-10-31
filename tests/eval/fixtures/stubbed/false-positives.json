@@ -1,0 +1,478 @@
+{
+	"scenarios": [
+		{
+			"seededDefects": [],
+			"id": "baseline-clean-empty",
+			"description": "Clean PR, model reports nothing.",
+			"cleanPr": true,
+			"modelOutput": {
+				"findings": [],
+				"summary": "No issues.",
+				"risk": "none"
+			},
+			"published": [],
+			"blocked": false
+		},
+		{
+			"seededDefects": [],
+			"id": "noise-legacy-file",
+			"description": "Finding on a file the PR does not touch.",
+			"cleanPr": true,
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "high",
+						"confidence": 0.92,
+						"category": "correctness",
+						"path": "src/legacy.ts",
+						"line": 10,
+						"title": "Noisy finding",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"published": [],
+			"blocked": false
+		},
+		{
+			"seededDefects": [],
+			"id": "noise-line-outside-hunks",
+			"description": "Finding on a line outside every hunk.",
+			"cleanPr": true,
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "high",
+						"confidence": 0.92,
+						"category": "correctness",
+						"path": "src/app.ts",
+						"line": 40,
+						"title": "Noisy finding",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"published": [],
+			"blocked": false
+		},
+		{
+			"seededDefects": [],
+			"id": "noise-low-confidence",
+			"description": "Anchor is valid but confidence is below the 0.80 floor.",
+			"cleanPr": true,
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "high",
+						"confidence": 0.55,
+						"category": "correctness",
+						"path": "src/app.ts",
+						"line": 2,
+						"title": "Noisy finding",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"published": [],
+			"blocked": false
+		},
+		{
+			"seededDefects": [],
+			"id": "noise-hallucinated-path",
+			"description": "Path has a typo and matches no changed file.",
+			"cleanPr": true,
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "high",
+						"confidence": 0.92,
+						"category": "correctness",
+						"path": "src/app.tsx",
+						"line": 2,
+						"title": "Noisy finding",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"published": [],
+			"blocked": false
+		},
+		{
+			"seededDefects": [],
+			"id": "noise-invalid-lines",
+			"description": "Zero and non-numeric lines are dropped at parse time.",
+			"cleanPr": true,
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "high",
+						"confidence": 0.92,
+						"category": "correctness",
+						"path": "src/app.ts",
+						"line": 0,
+						"title": "Noisy finding",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					},
+					{
+						"severity": "high",
+						"confidence": 0.92,
+						"category": "correctness",
+						"path": "src/app.ts",
+						"line": "abc",
+						"title": "Other",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"published": [],
+			"blocked": false
+		},
+		{
+			"seededDefects": [],
+			"id": "noise-below-min-severity",
+			"description": "Medium noise with min-severity high.",
+			"cleanPr": true,
+			"minSeverity": "high",
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "medium",
+						"confidence": 0.92,
+						"category": "correctness",
+						"path": "src/app.ts",
+						"line": 2,
+						"title": "Noisy finding",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"published": [],
+			"blocked": false
+		},
+		{
+			"seededDefects": [],
+			"id": "noise-duplicate-spam",
+			"description": "Three copies of one claim collapse to one; it is still a false positive and blocks.",
+			"cleanPr": true,
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "medium",
+						"confidence": 0.85,
+						"category": "correctness",
+						"path": "src/app.ts",
+						"line": 2,
+						"title": "Noisy finding",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null,
+						"ruleId": "nodejs/noisy"
+					},
+					{
+						"severity": "medium",
+						"confidence": 0.9,
+						"category": "correctness",
+						"path": "src/app.ts",
+						"line": 2,
+						"title": "Noisy finding",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null,
+						"ruleId": "nodejs/noisy"
+					},
+					{
+						"severity": "medium",
+						"confidence": 0.95,
+						"category": "correctness",
+						"path": "src/app.ts",
+						"line": 2,
+						"title": "Noisy finding",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null,
+						"ruleId": "nodejs/noisy"
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"published": [["src/app.ts", 2]],
+			"blocked": true
+		},
+		{
+			"seededDefects": [],
+			"id": "noise-unknown-category",
+			"description": "Category outside the vocabulary is bucketed to low maintainability and cannot block.",
+			"cleanPr": true,
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "high",
+						"confidence": 0.92,
+						"category": "vibes",
+						"path": "src/app.ts",
+						"line": 2,
+						"title": "Noisy finding",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"published": [["src/app.ts", 2]],
+			"blocked": false
+		},
+		{
+			"seededDefects": [],
+			"id": "noise-low-severity-valid-anchor",
+			"description": "Low severity noise on a changed line is published but never blocks.",
+			"cleanPr": true,
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "low",
+						"confidence": 0.92,
+						"category": "correctness",
+						"path": "src/app.ts",
+						"line": 2,
+						"title": "Noisy finding",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"published": [["src/app.ts", 2]],
+			"blocked": false
+		},
+		{
+			"seededDefects": [],
+			"id": "wrong-claim-valid-anchor",
+			"description": "Limit of the offline gates: a confident wrong claim on a changed line passes every deterministic check and is a false block.",
+			"cleanPr": true,
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "high",
+						"confidence": 0.95,
+						"category": "correctness",
+						"path": "src/app.ts",
+						"line": 2,
+						"title": "Claimed race condition",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"published": [["src/app.ts", 2]],
+			"blocked": true
+		},
+		{
+			"seededDefects": [],
+			"id": "wrong-claim-dropped-by-verify",
+			"description": "Same wrong claim, but the stubbed verify pass rejects it.",
+			"cleanPr": true,
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "high",
+						"confidence": 0.95,
+						"category": "correctness",
+						"path": "src/app.ts",
+						"line": 2,
+						"title": "Claimed race condition",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"verifyOutput": {
+				"findings": [
+					{
+						"path": "src/app.ts",
+						"line": 2,
+						"category": "correctness",
+						"title": "Claimed race condition",
+						"verified": false
+					}
+				]
+			},
+			"published": [],
+			"blocked": false
+		},
+		{
+			"seededDefects": [
+				{
+					"id": "D1",
+					"path": "src/pay.ts",
+					"line": 2
+				}
+			],
+			"id": "seeded-found-with-noise",
+			"description": "Seeded defect found; noise outside the hunks is dropped.",
+			"cleanPr": false,
+			"files": [
+				{
+					"filename": "src/pay.ts",
+					"patch": "@@ -1,3 +1,4 @@\n export function pay(a: number) {\n+  const fee = (a * 100) / 3;\n   return a;\n }"
+				}
+			],
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "high",
+						"confidence": 0.92,
+						"category": "correctness",
+						"path": "src/pay.ts",
+						"line": 2,
+						"title": "Fee rounding drops cents",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					},
+					{
+						"severity": "high",
+						"confidence": 0.92,
+						"category": "correctness",
+						"path": "src/pay.ts",
+						"line": 40,
+						"title": "Style complaint",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"published": [["src/pay.ts", 2]],
+			"blocked": true
+		},
+		{
+			"seededDefects": [
+				{
+					"id": "D3",
+					"path": "src/pay.ts",
+					"line": 2
+				}
+			],
+			"id": "seeded-found-and-verified",
+			"description": "Seeded defect found and confirmed by the stubbed verify pass.",
+			"cleanPr": false,
+			"files": [
+				{
+					"filename": "src/pay.ts",
+					"patch": "@@ -1,3 +1,4 @@\n export function pay(a: number) {\n+  const fee = (a * 100) / 3;\n   return a;\n }"
+				}
+			],
+			"modelOutput": {
+				"findings": [
+					{
+						"severity": "high",
+						"confidence": 0.92,
+						"category": "correctness",
+						"path": "src/pay.ts",
+						"line": 2,
+						"title": "Fee rounding drops cents",
+						"description": "Canned description.",
+						"impact": "Canned impact.",
+						"suggestion": "Canned suggestion.",
+						"replacement": null
+					}
+				],
+				"summary": "Reviewed.",
+				"risk": "low"
+			},
+			"verifyOutput": {
+				"findings": [
+					{
+						"path": "src/pay.ts",
+						"line": 2,
+						"category": "correctness",
+						"title": "Fee rounding drops cents",
+						"verified": true
+					}
+				]
+			},
+			"published": [["src/pay.ts", 2]],
+			"blocked": true
+		},
+		{
+			"seededDefects": [
+				{
+					"id": "D2",
+					"path": "src/pay.ts",
+					"line": 2
+				}
+			],
+			"id": "seeded-missed",
+			"description": "Model returns nothing for a seeded defect; recall must register the miss.",
+			"cleanPr": false,
+			"files": [
+				{
+					"filename": "src/pay.ts",
+					"patch": "@@ -1,3 +1,4 @@\n export function pay(a: number) {\n+  const fee = (a * 100) / 3;\n   return a;\n }"
+				}
+			],
+			"modelOutput": {
+				"findings": [],
+				"summary": "No issues.",
+				"risk": "none"
+			},
+			"published": [],
+			"blocked": false
+		}
+	]
+}
