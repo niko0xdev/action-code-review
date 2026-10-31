@@ -1,4 +1,5 @@
 import { extractJsonBlock, scrubSecrets } from '../../llm/openai-compatible.js';
+import { escapeControlChars, fenced } from '../../shared/prompt-safety.js';
 import { normalizeSecurityFinding } from '../findings/normalizer.js';
 import { redactSecrets } from '../redaction/redactor.js';
 import {
@@ -113,7 +114,7 @@ export class PiSecurityEngine implements SecurityEngine {
 		const fileDiffs = ctx.changedFiles
 			.map(
 				(f) =>
-					`### ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})\n\`\`\`diff\n${f.patch ? scrubSecrets(f.patch) : '(binary or large file)'}\n\`\`\``
+					`### ${escapeControlChars(f.filename)} (${escapeControlChars(f.status)}, +${f.additions}/-${f.deletions})\n${fenced(f.patch ? scrubSecrets(f.patch) : '(binary or large file)', 'diff')}`
 			)
 			.join('\n\n');
 
@@ -147,13 +148,13 @@ export class PiSecurityEngine implements SecurityEngine {
 			'',
 			'TASK: Independently verify this candidate security finding. Do not assume the claim is true.',
 			'',
-			`Claimed Vulnerability: ${finding.title} (${finding.severity.toUpperCase()})`,
-			`CWE: ${finding.cwe || 'N/A'}`,
-			`Target File: ${finding.file || 'N/A'}:${finding.startLine ?? 'N/A'}`,
-			`Claimed Evidence: ${finding.evidence.map((e) => e.description).join('; ')}`,
+			`Claimed Vulnerability: ${escapeControlChars(finding.title)} (${escapeControlChars(finding.severity.toUpperCase())})`,
+			`CWE: ${escapeControlChars(finding.cwe || 'N/A')}`,
+			`Target File: ${escapeControlChars(finding.file || 'N/A')}:${finding.startLine ?? 'N/A'}`,
+			`Claimed Evidence: ${escapeControlChars(finding.evidence.map((e) => e.description).join('; '))}`,
 			'',
 			'Diff Context (UNTRUSTED DATA):',
-			`\`\`\`diff\n${scrubSecrets(patchSnippet.slice(0, 5000))}\n\`\`\``,
+			fenced(scrubSecrets(patchSnippet.slice(0, 5000)), 'diff'),
 			'',
 			'Analyze whether this is a genuine security issue or a false positive.',
 			'Respond ONLY with JSON:',

@@ -1,3 +1,5 @@
+import { escapeControlChars } from '../../shared/prompt-safety.js';
+
 export function createSystemPrompt(
 	customInstructions?: string,
 	templateContent?: string
@@ -33,11 +35,11 @@ export function buildUserPrompt(
 	let prompt = `Current PR Title: ${currentTitle}\n\n`;
 	prompt += `Current PR Description:\n${currentDescription || '(No description)'}\n\n`;
 	if (includeFileList) {
-		prompt += `Changed Files:\n${diffs.map((d) => `${d.status}: ${d.filename}`).join('\n')}\n\n`;
+		prompt += `Changed Files:\n${diffs.map((d) => `${escapeControlChars(d.status)}: ${escapeControlChars(d.filename)}`).join('\n')}\n\n`;
 	}
 	prompt += 'Code Changes:';
 	diffs.forEach((diff, index) => {
-		prompt += `\n\n--- File ${index + 1}: ${diff.filename} (${diff.status}) ---\n`;
+		prompt += `\n\n--- File ${index + 1}: ${escapeControlChars(diff.filename)} (${escapeControlChars(diff.status)}) ---\n`;
 		prompt += diff.patch.substring(0, 2000);
 		if (diff.patch.length > 2000) prompt += '\n... (truncated)';
 	});

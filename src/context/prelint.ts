@@ -20,13 +20,13 @@ import { existsSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import * as core from '@actions/core';
-import { escapeControlChars } from '../llm/openai-compatible.js';
 import {
 	MAX_ANALYSER_OUTPUT_BYTES,
 	buildAnalyserEnv,
 	killAnalyser,
 	safeTargetFiles,
 } from '../security/analyser-process.js';
+import { escapeControlChars } from '../shared/prompt-safety.js';
 import type { ChangedFile } from '../types/context.js';
 import type { ToolFinding } from '../types/finding.js';
 

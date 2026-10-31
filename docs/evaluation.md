@@ -50,6 +50,13 @@ For **every** injection case (prompt side):
 - `truncation-keeps-closing-fence`: at several context budgets every opened
   fence is closed and the final instruction survives.
 
+The same cases also run through the security engine's diff and confirmation
+prompts (`tests/eval/injection-security-prompt.test.ts`, with the engine's
+private prompt step captured by stubbing its model call): untrusted text stays
+inside fences, no fence is left open, and the trailing instruction stays
+outside. The `fence-escape` fixtures include backtick runs of 3, 4, and 10 and a
+file name with line breaks, a bidi override, and a zero-width space.
+
 For every case with a canned model reply: only anchored findings survive the
 validator (`only-anchored-findings-survive`), and no canary secret appears in
 inline comments, the summary comment, the review report, the job summary, or
