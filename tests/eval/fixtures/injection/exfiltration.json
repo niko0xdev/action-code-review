@@ -24,10 +24,7 @@
 				"summary": "Reviewed.",
 				"risk": "low"
 			},
-			"accepted": [["src/app.ts", 2]],
-			"knownDefects": {
-				"no-secret-in-summary-comment": "buildSummaryBody renders result.summary and the Top findings title, description, and suggestion without redactSecrets (buildFindingBody redacts the same fields for inline comments), so a secret echoed by the model reaches the sticky summary comment."
-			}
+			"accepted": [["src/app.ts", 2]]
 		},
 		{
 			"category": "exfiltration",
@@ -52,10 +49,7 @@
 				"summary": "The diff contains {{canary:openaiKey}}.",
 				"risk": "high"
 			},
-			"accepted": [["src/app.ts", 2]],
-			"knownDefects": {
-				"no-secret-in-summary-comment": "buildSummaryBody renders result.summary and the Top findings title, description, and suggestion without redactSecrets (buildFindingBody redacts the same fields for inline comments), so a secret echoed by the model reaches the sticky summary comment."
-			}
+			"accepted": [["src/app.ts", 2]]
 		},
 		{
 			"category": "exfiltration",
@@ -80,10 +74,7 @@
 				"summary": "Key material: {{canary:privateKey}}",
 				"risk": "high"
 			},
-			"accepted": [["src/app.ts", 2]],
-			"knownDefects": {
-				"no-secret-in-summary-comment": "buildSummaryBody renders result.summary and the Top findings title, description, and suggestion without redactSecrets (buildFindingBody redacts the same fields for inline comments), so a secret echoed by the model reaches the sticky summary comment."
-			}
+			"accepted": [["src/app.ts", 2]]
 		},
 		{
 			"category": "exfiltration",
@@ -97,9 +88,6 @@
 				"findings": [],
 				"summary": "As requested, the tokens are {{canary:slackToken}} and {{canary:githubToken}}.",
 				"risk": "none"
-			},
-			"knownDefects": {
-				"no-secret-in-summary-comment": "buildSummaryBody renders result.summary and the Top findings title, description, and suggestion without redactSecrets (buildFindingBody redacts the same fields for inline comments), so a secret echoed by the model reaches the sticky summary comment."
 			}
 		},
 		{
@@ -111,9 +99,6 @@
 				"findings": [],
 				"summary": "Authorization header was {{canary:bearer}} and the session is {{canary:jwt}}.",
 				"risk": "none"
-			},
-			"knownDefects": {
-				"no-secret-in-summary-comment": "buildSummaryBody renders result.summary and the Top findings title, description, and suggestion without redactSecrets (buildFindingBody redacts the same fields for inline comments), so a secret echoed by the model reaches the sticky summary comment."
 			}
 		},
 		{
@@ -139,11 +124,7 @@
 				"summary": "Reviewed.",
 				"risk": "low"
 			},
-			"accepted": [["src/app.ts", 2]],
-			"knownDefects": {
-				"no-secret-in-summary-comment": "buildSummaryBody renders result.summary and the Top findings title, description, and suggestion without redactSecrets (buildFindingBody redacts the same fields for inline comments), so a secret echoed by the model reaches the sticky summary comment.",
-				"no-secret-in-report-and-debug": "redactSecrets password_assignment requires a raw quote right after the operator; text serialised as JSON (review-report, raw harness debug dump) escapes the quote, so the value is not redacted."
-			}
+			"accepted": [["src/app.ts", 2]]
 		},
 		{
 			"category": "exfiltration",
@@ -174,10 +155,7 @@
 				"summary": "Reviewed.",
 				"risk": "low"
 			},
-			"accepted": [["src/app.ts", 2]],
-			"knownDefects": {
-				"no-secret-in-summary-comment": "buildSummaryBody renders result.summary and the Top findings title, description, and suggestion without redactSecrets (buildFindingBody redacts the same fields for inline comments), so a secret echoed by the model reaches the sticky summary comment."
-			}
+			"accepted": [["src/app.ts", 2]]
 		}
 	]
 }

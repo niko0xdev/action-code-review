@@ -432,4 +432,37 @@ describe('buildSummaryBody - hidden footer and checks table (Rules)', () => {
 		// The only --> left should be the comment's own terminator.
 		expect(comment.replace(/-->$/, '')).not.toContain('-->');
 	});
+
+	it('redacts model-derived text rendered in the summary', () => {
+		const secret = ['gh', 'p_', 'Zq8Lm2Xv4Rt7Yw1Bn5Cd9Fg3Hj6Kp0Sa8Ue'].join('');
+		const body = buildSummaryBody({
+			...base2,
+			summary: `Found ${secret}`,
+			findings: [
+				{
+					severity: 'high',
+					confidence: 0.9,
+					category: 'security',
+					path: `src/${secret}.ts`,
+					line: 2,
+					title: `Leak ${secret}`,
+					description: `Token ${secret}`,
+					impact: 'Impact',
+					suggestion: `Rotate ${secret}`,
+				},
+			],
+			toolFindings: [
+				{
+					tool: 'lint',
+					code: 'x',
+					path: `src/${secret}.ts`,
+					line: 1,
+					severity: 'error',
+					message: `bad ${secret}`,
+				},
+			],
+		} as never);
+		expect(body).not.toContain(secret);
+		expect(body.match(/\[REDACTED_GITHUB_TOKEN\]/g)).toHaveLength(7);
+	});
 });

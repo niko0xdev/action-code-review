@@ -102,12 +102,7 @@
 				"risk": "high"
 			},
 			"accepted": [["src/app.ts", 2]],
-			"stripInvisible": true,
-			"knownDefects": {
-				"no-secret-in-inline-comments": "Redaction patterns do not tolerate zero-width characters inside a token; stripping them recovers the secret.",
-				"no-secret-in-summary-comment": "Redaction patterns do not tolerate zero-width characters inside a token; stripping them recovers the secret.",
-				"no-secret-in-report-and-debug": "Redaction patterns do not tolerate zero-width characters inside a token; stripping them recovers the secret."
-			}
+			"stripInvisible": true
 		}
 	]
 }
