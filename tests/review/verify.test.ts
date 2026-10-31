@@ -470,3 +470,138 @@ describe('buildVerifyPrompt containment', () => {
 		expect(prompt.split('\n').some((l) => l.startsWith('SYSTEM:'))).toBe(false);
 	});
 });
+
+describe('runVerifyPass minimum severity', () => {
+	const verdictFor = (title: string, verified: boolean) => ({
+		path: 'src/app.ts',
+		line: 10,
+		category: 'correctness',
+		title,
+		verified,
+	});
+
+	it('leaves medium findings untouched at the default severity', async () => {
+		const prompts: string[] = [];
+		const findings = [
+			mkFinding({ severity: 'high', title: 'High bug' }),
+			mkFinding({ severity: 'medium', title: 'Medium bug' }),
+		];
+		const result = await runVerifyPass({
+			findings,
+			toolFindings: [],
+			context: ctx,
+			verify: async (prompt) => {
+				prompts.push(prompt);
+				return JSON.stringify({ findings: [verdictFor('High bug', true)] });
+			},
+			inputTokenEstimate: 100,
+			outputTokenBudget: 100,
+		});
+		expect(prompts[0]).not.toContain('Medium bug');
+		expect(result.findings).toHaveLength(2);
+	});
+
+	it('challenges and can drop medium findings when the floor is medium', async () => {
+		const findings = [
+			mkFinding({ severity: 'high', title: 'High bug' }),
+			mkFinding({ severity: 'medium', title: 'Medium bug' }),
+			mkFinding({ severity: 'low', title: 'Low bug' }),
+		];
+		const result = await runVerifyPass({
+			findings,
+			toolFindings: [],
+			context: ctx,
+			verify: async () =>
+				JSON.stringify({
+					findings: [
+						verdictFor('High bug', true),
+						verdictFor('Medium bug', false),
+					],
+				}),
+			inputTokenEstimate: 100,
+			outputTokenBudget: 100,
+			minSeverity: 'medium',
+		});
+		expect(result.findings.map((f) => f.title)).toEqual([
+			'High bug',
+			'Low bug',
+		]);
+		expect(result.droppedCount).toBe(1);
+	});
+
+	it('skips with a specific reason when nothing reaches the floor', async () => {
+		const result = await runVerifyPass({
+			findings: [mkFinding({ severity: 'low' })],
+			toolFindings: [],
+			context: ctx,
+			verify: async () => {
+				throw new Error('must not be called');
+			},
+			inputTokenEstimate: 100,
+			outputTokenBudget: 100,
+			minSeverity: 'medium',
+		});
+		expect(result.skipped).toBe(true);
+		expect(result.skipReason).toBe('no medium+ findings to verify');
+	});
+});
+
+describe('runVerifyPass budget is checked before the call', () => {
+	it('counts the real prompt size even when the caller estimate is tiny', async () => {
+		let called = false;
+		const result = await runVerifyPass({
+			findings: [mkFinding({ description: 'x'.repeat(40_000) })],
+			toolFindings: [],
+			context: ctx,
+			verify: async () => {
+				called = true;
+				return '{"findings":[]}';
+			},
+			inputTokenEstimate: 1,
+			outputTokenBudget: 1,
+			budgetUsd: 0.001,
+		});
+		expect(called).toBe(false);
+		expect(result.skipped).toBe(true);
+		expect(result.skipReason).toContain('budget');
+	});
+});
+
+describe('applyVerifyPass failure handling', () => {
+	const base = () => ({
+		findings: [mkFinding({ severity: 'high' })],
+		summary: '',
+		risk: 'high' as const,
+		counts: { critical: 0, high: 1, medium: 0, low: 0 },
+		filesReviewed: ['src/app.ts'],
+		reviewStatus: 'complete' as const,
+	});
+	const args = {
+		toolFindings: [],
+		title: 't',
+		body: '',
+	};
+
+	for (const [name, verify] of [
+		[
+			'a thrown error',
+			async () => {
+				throw new Error('boom');
+			},
+		],
+		['malformed JSON', async () => '{not json}'],
+		['prose without JSON', async () => 'looks fine to me'],
+		['an empty verdict list', async () => '{"findings":[]}'],
+	] as const) {
+		it(`keeps every finding and marks the review incomplete on ${name}`, async () => {
+			const result = base();
+			await applyVerifyPass(result, { ...args, verify });
+			expect(result.findings).toHaveLength(1);
+			expect(result.reviewStatus).toBe('incomplete');
+			expect(result.diagnostics?.verifySkippedReason).toBeDefined();
+			expect(['error', 'incomplete']).toContain(
+				result.diagnostics?.verifyStatus
+			);
+		});
+	}
+});

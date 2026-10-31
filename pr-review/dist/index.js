@@ -41863,23 +41863,30 @@ function deriveRuleCoverage(context, findings) {
  * The verify pass is bounded by:
  * - Opt-in via `AI_REVIEW_VERIFY_PASS=true` env var (default false).
  * - Cost ceiling of `AI_REVIEW_VERIFY_BUDGET_USD` (default 0.50 USD).
- * - Skipped when zero high/critical findings (nothing worth verifying).
+ * - Skipped when no finding reaches the minimum severity (default high).
+ * - `AI_REVIEW_VERIFY_MIN_SEVERITY` (default `high`) widens the set at the
+ *   user's own cost.
  *
- * Output: a verified copy of the input findings where each surviving
- * finding has a `verified: true` marker set on its body. Dropped
- * findings are silently removed. Cost is tracked via token estimate
- * (input + output) using a per-1K-token rate.
+ * Output: a copy of the input findings without the candidates the model
+ * rejected. Survivors are unchanged (the count is recorded in
+ * `diagnostics.verifyVerified`). Any error, malformed or partial verdict keeps
+ * every finding and marks the review incomplete. Cost is a token estimate
+ * (input + output) at a per-1K-token rate, checked before the call.
  */
+
 
 
 const DEFAULT_BUDGET_USD = 0.5;
 const DEFAULT_RATE_PER_1K = 0.001;
 /**
- * Severities that warrant a verify pass. Lower severities are not
- * worth the cost - the LLM is unlikely to drop low/medium findings
- * anyway, and the cost ceiling is tighter.
+ * Default floor for a verify pass: high and critical only. Lower severities
+ * cost more than they save by default; users can lower the floor with
+ * `AI_REVIEW_VERIFY_MIN_SEVERITY`.
  */
-const VERIFY_TARGET_SEVERITIES = ['critical', 'high'];
+const VERIFY_MIN_SEVERITY_DEFAULT = 'high';
+function isVerifyTarget(severity, min) {
+    return SEVERITY_ORDER[severity] >= SEVERITY_ORDER[min];
+}
 /**
  * Build the verify prompt. The model is asked to challenge each
  * high/critical finding with three yes/no questions. The model must
@@ -41932,21 +41939,26 @@ function estimateCostUsd(inputTokens, outputTokens, ratePer1K) {
 async function runVerifyPass(options) {
     const budgetUsd = options.budgetUsd ?? DEFAULT_BUDGET_USD;
     const ratePer1K = options.ratePer1K ?? DEFAULT_RATE_PER_1K;
-    // Filter to high/critical only.
-    const highCritical = options.findings.filter((f) => VERIFY_TARGET_SEVERITIES.includes(f.severity));
+    const minSeverity = options.minSeverity ?? VERIFY_MIN_SEVERITY_DEFAULT;
+    const isTarget = (f) => isVerifyTarget(f.severity, minSeverity);
+    const highCritical = options.findings.filter(isTarget);
     if (highCritical.length === 0) {
         return {
             findings: options.findings,
             verifiedCount: 0,
             droppedCount: 0,
             skipped: true,
-            skipReason: 'no high/critical findings to verify',
+            skipReason: minSeverity === VERIFY_MIN_SEVERITY_DEFAULT
+                ? 'no high/critical findings to verify'
+                : `no ${minSeverity}+ findings to verify`,
             estimatedCostUsd: 0,
             verificationStatus: 'skipped',
         };
     }
-    // Cost gate.
-    const estimatedCostUsd = estimateCostUsd(options.inputTokenEstimate, options.outputTokenBudget, ratePer1K);
+    const prompt = buildVerifyPrompt(highCritical, options.toolFindings, options.context);
+    // Cost gate, checked before the call. The caller's estimate is raised to
+    // the real prompt size so the gate never undercounts what is sent.
+    const estimatedCostUsd = estimateCostUsd(Math.max(options.inputTokenEstimate, Math.ceil(prompt.length / 4)), options.outputTokenBudget, ratePer1K);
     if (!(estimatedCostUsd <= budgetUsd)) {
         return {
             findings: options.findings,
@@ -41958,7 +41970,6 @@ async function runVerifyPass(options) {
             verificationStatus: 'skipped',
         };
     }
-    const prompt = buildVerifyPrompt(highCritical, options.toolFindings, options.context);
     let raw;
     try {
         raw = await options.verify(prompt);
@@ -41990,7 +42001,7 @@ async function runVerifyPass(options) {
     // plus all other findings (unchanged).
     const verifiedSet = new Set(parsed.verified.map((f) => identifyFinding(f)));
     const surviving = options.findings.filter((f) => {
-        if (!VERIFY_TARGET_SEVERITIES.includes(f.severity))
+        if (!isTarget(f))
             return true;
         return verifiedSet.has(identifyFinding(f));
     });
@@ -42025,6 +42036,7 @@ async function applyVerifyPass(result, args) {
         inputTokenEstimate: estimateVerifyInputTokens(result.findings, args.toolFindings),
         outputTokenBudget: VERIFY_OUTPUT_TOKEN_BUDGET,
         budgetUsd: args.budgetUsd ?? VERIFY_BUDGET_USD_DEFAULT,
+        minSeverity: args.minSeverity,
     });
     if (outcome.skipped) {
         result.diagnostics = {
@@ -42390,11 +42402,14 @@ async function runPrReviewAction() {
                     body: reviewContext.pullRequest.body,
                     verify: async (prompt) => (await verifyProvider.complete([{ role: 'user', content: prompt }], { temperature: 0, maxOutputTokens: 2048 })).content,
                     budgetUsd: envLimits.verifyBudgetUsd,
+                    minSeverity: envLimits.verifyMinSeverity,
                 });
                 trackPhase('harness', `Verify pass done: ${result.findings.length} findings`, { enabled: trackEnabled });
             }
             catch (error) {
                 core.warning(`[review] verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`);
+                result.reviewStatus = 'incomplete';
+                result.diagnostics = { ...result.diagnostics, verifyStatus: 'error' };
             }
         }
         // Surface tool findings + prelint diagnostics in the result
@@ -42527,6 +42542,7 @@ function readReviewEnvLimits(env) {
             name: 'AI_REVIEW_VERIFY_BUDGET_USD',
             min: 0,
         }),
+        verifyMinSeverity: parseEnum(env.AI_REVIEW_VERIFY_MIN_SEVERITY, ['critical', 'high', 'medium', 'low'], 'high', 'AI_REVIEW_VERIFY_MIN_SEVERITY'),
     };
 }
 /**

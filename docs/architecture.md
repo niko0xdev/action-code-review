@@ -226,7 +226,8 @@ Numeric variables are validated by `src/shared/numeric.ts`: an invalid value log
 | `AI_REVIEW_PI_REPAIR_ATTEMPTS` | `1` | extra harness calls that ask the model to convert its own unparseable answer into the required JSON |
 | `AI_REVIEW_LLM_TIMEOUT_MS` | `600000` | OpenAI-compatible per-attempt request timeout; 408, 429, 5xx, and connection resets get up to 3 attempts with backoff and `Retry-After` (never retried: request timeouts, other 4xx, unparseable 200 bodies) |
 | `AI_REVIEW_VERIFY_PASS` | `false` | second LLM pass over high/critical findings (`'true'` to enable; drops hallucinations, records stats in diagnostics) |
-| `AI_REVIEW_VERIFY_BUDGET_USD` | `0.50` | cost ceiling for the verify pass (0 or more) |
+| `AI_REVIEW_VERIFY_BUDGET_USD` | `0.50` | cost ceiling for the verify pass (0 or more); estimated before the call, never exceeded |
+| `AI_REVIEW_VERIFY_MIN_SEVERITY` | `high` | lowest severity the verify pass challenges (`critical`, `high`, `medium`, `low`); lower floors cost more |
 | `AI_REVIEW_DEBUG_HARNESS` | unset | `true`/`1` or a byte budget: append redacted, truncated raw harness output to the step summary |
 | `AI_REVIEW_FAIL_ON_INCOMPLETE` | `true` | fail the step when the review is incomplete (crashed group, unanalyzed files, truncated changed-file list); `false` downgrades to a warning |
 
@@ -263,7 +264,8 @@ Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic alrea
    finding-quality evals remain future work.
 4. **~~Verify pass wiring~~ — DONE.** `src/review/verify.ts` runs in the
    pipeline behind `AI_REVIEW_VERIFY_PASS=true` (default off); kept/dropped
-   counts surface in the diagnostics block.
+   counts surface in the diagnostics block. A failed or unusable verify reply
+   keeps every finding and marks the review incomplete.
 5. **Review decision on re-runs** — `REQUEST_CHANGES` is decided from every
    valid finding, including ones already commented, and is submitted separately
    from the inline comments so it survives the per-comment fallback. When

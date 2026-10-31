@@ -20,6 +20,11 @@ Questions) lives in `docs/v3-decisions.md`.
   classifier flags in the changed files (the validation gate is always kept) and
   falls back to all skills when it cannot classify. The default prompt is
   byte-identical. A cost optimisation, unmeasured for review quality.
+- **Opt-in `AI_REVIEW_VERIFY_MIN_SEVERITY` (env-only, default `high`, additive).**
+  Lets the verify pass challenge `medium` or lower findings at the user's own
+  cost. The default behaviour is unchanged. Offline eval scenarios now measure the
+  verify pass with a scripted verifier; the numbers describe canned data, not a
+  model (`docs/evaluation.md`).
 - **Opt-in `scorecard-context` input (default `'false'`, additive).** For public
   repositories, fetches the published OSSF Scorecard once and gives the reviewer
   clamped numeric scores for a fixed list of checks as advisory context. Third-party
@@ -43,6 +48,8 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Fixed
 
+- The verify-pass budget gate now counts the real prompt size, and an exception
+  escaping the verify pass marks the review `incomplete` instead of only logging.
 - **Prompt hardening now covers the security engine, the verify pass, and the
   PR-content prompt.** Diffs and code excerpts in the security engine's diff and
   confirmation prompts, and the finding list and PR body in the verify prompt, use a fence

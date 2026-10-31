@@ -43,8 +43,13 @@ import {
 import { runReview } from '../review/reviewer.js';
 import { applyVerifyPass } from '../review/verify.js';
 import { selectReviewSecuritySkills } from '../security/skills/auto-select.js';
-import { parseBoundedFloat, parsePositiveInt } from '../shared/numeric.js';
+import {
+	parseBoundedFloat,
+	parseEnum,
+	parsePositiveInt,
+} from '../shared/numeric.js';
 import { profilesWithSkills } from '../skills/registry.js';
+import type { Severity } from '../types/finding.js';
 import { toPublisherOctokit } from './octokit.js';
 
 function positiveTimeout(value: string | undefined, fallback: number): number {
@@ -328,6 +333,7 @@ export async function runPrReviewAction(): Promise<void> {
 							)
 						).content,
 					budgetUsd: envLimits.verifyBudgetUsd,
+					minSeverity: envLimits.verifyMinSeverity,
 				});
 				trackPhase(
 					'harness',
@@ -338,6 +344,8 @@ export async function runPrReviewAction(): Promise<void> {
 				core.warning(
 					`[review] verify pass failed, keeping main-pass findings: ${error instanceof Error ? error.message : String(error)}`
 				);
+				result.reviewStatus = 'incomplete';
+				result.diagnostics = { ...result.diagnostics, verifyStatus: 'error' };
 			}
 		}
 		// Surface tool findings + prelint diagnostics in the result
@@ -483,6 +491,7 @@ export function readReviewEnvLimits(env: NodeJS.ProcessEnv): {
 	maxFiles: number;
 	minConfidence: number;
 	verifyBudgetUsd: number;
+	verifyMinSeverity: Severity;
 } {
 	return {
 		maxFiles: parsePositiveInt(
@@ -499,6 +508,12 @@ export function readReviewEnvLimits(env: NodeJS.ProcessEnv): {
 			name: 'AI_REVIEW_VERIFY_BUDGET_USD',
 			min: 0,
 		}),
+		verifyMinSeverity: parseEnum(
+			env.AI_REVIEW_VERIFY_MIN_SEVERITY,
+			['critical', 'high', 'medium', 'low'] as const,
+			'high',
+			'AI_REVIEW_VERIFY_MIN_SEVERITY'
+		),
 	};
 }
 

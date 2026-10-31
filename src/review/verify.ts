@@ -6,12 +6,15 @@
  * The verify pass is bounded by:
  * - Opt-in via `AI_REVIEW_VERIFY_PASS=true` env var (default false).
  * - Cost ceiling of `AI_REVIEW_VERIFY_BUDGET_USD` (default 0.50 USD).
- * - Skipped when zero high/critical findings (nothing worth verifying).
+ * - Skipped when no finding reaches the minimum severity (default high).
+ * - `AI_REVIEW_VERIFY_MIN_SEVERITY` (default `high`) widens the set at the
+ *   user's own cost.
  *
- * Output: a verified copy of the input findings where each surviving
- * finding has a `verified: true` marker set on its body. Dropped
- * findings are silently removed. Cost is tracked via token estimate
- * (input + output) using a per-1K-token rate.
+ * Output: a copy of the input findings without the candidates the model
+ * rejected. Survivors are unchanged (the count is recorded in
+ * `diagnostics.verifyVerified`). Any error, malformed or partial verdict keeps
+ * every finding and marks the review incomplete. Cost is a token estimate
+ * (input + output) at a per-1K-token rate, checked before the call.
  */
 
 import {
@@ -19,11 +22,12 @@ import {
 	fenced,
 	jsonForPrompt,
 } from '../shared/prompt-safety.js';
-import type {
-	Finding,
-	ReviewResult,
-	Severity,
-	ToolFinding,
+import {
+	type Finding,
+	type ReviewResult,
+	SEVERITY_ORDER,
+	type Severity,
+	type ToolFinding,
 } from '../types/finding.js';
 import { computeCounts, riskFromFindings } from './severity.js';
 
@@ -48,6 +52,8 @@ export interface VerifyPassOptions {
 	budgetUsd?: number;
 	/** Per-1K-token USD rate (input + output averaged). Default 0.001 (Haiku-class). */
 	ratePer1K?: number;
+	/** Lowest severity that is challenged. Default `high` (high and critical). */
+	minSeverity?: Severity;
 }
 
 export interface VerifyPassResult {
@@ -64,11 +70,15 @@ const DEFAULT_BUDGET_USD = 0.5;
 const DEFAULT_RATE_PER_1K = 0.001;
 
 /**
- * Severities that warrant a verify pass. Lower severities are not
- * worth the cost - the LLM is unlikely to drop low/medium findings
- * anyway, and the cost ceiling is tighter.
+ * Default floor for a verify pass: high and critical only. Lower severities
+ * cost more than they save by default; users can lower the floor with
+ * `AI_REVIEW_VERIFY_MIN_SEVERITY`.
  */
-const VERIFY_TARGET_SEVERITIES: Severity[] = ['critical', 'high'];
+export const VERIFY_MIN_SEVERITY_DEFAULT: Severity = 'high';
+
+function isVerifyTarget(severity: Severity, min: Severity): boolean {
+	return SEVERITY_ORDER[severity] >= SEVERITY_ORDER[min];
+}
 
 /**
  * Build the verify prompt. The model is asked to challenge each
@@ -139,10 +149,9 @@ export async function runVerifyPass(
 	const budgetUsd = options.budgetUsd ?? DEFAULT_BUDGET_USD;
 	const ratePer1K = options.ratePer1K ?? DEFAULT_RATE_PER_1K;
 
-	// Filter to high/critical only.
-	const highCritical = options.findings.filter((f) =>
-		VERIFY_TARGET_SEVERITIES.includes(f.severity)
-	);
+	const minSeverity = options.minSeverity ?? VERIFY_MIN_SEVERITY_DEFAULT;
+	const isTarget = (f: Finding) => isVerifyTarget(f.severity, minSeverity);
+	const highCritical = options.findings.filter(isTarget);
 
 	if (highCritical.length === 0) {
 		return {
@@ -150,15 +159,25 @@ export async function runVerifyPass(
 			verifiedCount: 0,
 			droppedCount: 0,
 			skipped: true,
-			skipReason: 'no high/critical findings to verify',
+			skipReason:
+				minSeverity === VERIFY_MIN_SEVERITY_DEFAULT
+					? 'no high/critical findings to verify'
+					: `no ${minSeverity}+ findings to verify`,
 			estimatedCostUsd: 0,
 			verificationStatus: 'skipped',
 		};
 	}
 
-	// Cost gate.
+	const prompt = buildVerifyPrompt(
+		highCritical,
+		options.toolFindings,
+		options.context
+	);
+
+	// Cost gate, checked before the call. The caller's estimate is raised to
+	// the real prompt size so the gate never undercounts what is sent.
 	const estimatedCostUsd = estimateCostUsd(
-		options.inputTokenEstimate,
+		Math.max(options.inputTokenEstimate, Math.ceil(prompt.length / 4)),
 		options.outputTokenBudget,
 		ratePer1K
 	);
@@ -173,12 +192,6 @@ export async function runVerifyPass(
 			verificationStatus: 'skipped',
 		};
 	}
-
-	const prompt = buildVerifyPrompt(
-		highCritical,
-		options.toolFindings,
-		options.context
-	);
 
 	let raw: string;
 	try {
@@ -214,7 +227,7 @@ export async function runVerifyPass(
 	// plus all other findings (unchanged).
 	const verifiedSet = new Set(parsed.verified.map((f) => identifyFinding(f)));
 	const surviving = options.findings.filter((f) => {
-		if (!VERIFY_TARGET_SEVERITIES.includes(f.severity)) return true;
+		if (!isTarget(f)) return true;
 		return verifiedSet.has(identifyFinding(f));
 	});
 
@@ -246,6 +259,7 @@ export async function applyVerifyPass(
 		body: string;
 		verify: (prompt: string) => Promise<string>;
 		budgetUsd?: number;
+		minSeverity?: Severity;
 	}
 ): Promise<void> {
 	const outcome = await runVerifyPass({
@@ -263,6 +277,7 @@ export async function applyVerifyPass(
 		),
 		outputTokenBudget: VERIFY_OUTPUT_TOKEN_BUDGET,
 		budgetUsd: args.budgetUsd ?? VERIFY_BUDGET_USD_DEFAULT,
+		minSeverity: args.minSeverity,
 	});
 	if (outcome.skipped) {
 		result.diagnostics = {
