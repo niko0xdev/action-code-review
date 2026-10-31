@@ -34843,7 +34843,8 @@ function regexDetector(name, pattern) {
             const spans = [];
             pattern.lastIndex = 0;
             for (const m of text.matchAll(pattern)) {
-                const [start, end] = m.indices?.[1] ?? m.indices?.[0] ?? [0, 0];
+                const group = m.indices?.slice(1).find(Boolean) ?? m.indices?.[0];
+                const [start, end] = group ?? [0, 0];
                 if (end > start)
                     spans.push({ start, end, label });
             }
@@ -34898,11 +34899,9 @@ const jwtDetector = {
 };
 const PEM_BEGIN = /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/y;
 const PEM_END = /-----END (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/y;
-/** Longest key block redacted; the END search is bounded by this. */
-const PEM_MAX_BODY = 64 * 1024;
 /**
- * BEGIN marker, then the nearest END marker within a bounded window. The next
- * END position is cached, so a run of BEGIN markers costs linear time overall.
+ * BEGIN marker, then the nearest END marker, however far. The next END position
+ * is cached and only moves forward, so a run of BEGIN markers costs linear time overall.
  */
 const privateKeyDetector = {
     name: 'private_key',
@@ -34930,7 +34929,7 @@ const privateKeyDetector = {
                     nextEnd = text.indexOf('-----END ', bodyStart);
                     noMoreEnds = nextEnd < 0;
                 }
-                if (nextEnd < 0 || nextEnd - bodyStart > PEM_MAX_BODY)
+                if (nextEnd < 0)
                     break;
                 PEM_END.lastIndex = nextEnd;
                 const tail = PEM_END.exec(text);
@@ -34972,10 +34971,12 @@ const DETECTORS = [
     jwtDetector,
     // Generic API keys and Bearer tokens
     regexDetector('bearer_token', /Bearer\s+([a-zA-Z0-9\-._~+/]+=*)/dgi),
-    // Generic passwords in URLs or assignments. The quote may be JSON-escaped
-    // (`\"`); the value consumes whole escape pairs, so a trailing `\\` is never
-    // split and the surrounding JSON stays valid after redaction.
-    regexDetector('password_assignment', /(?:password|passwd|secret)\s*[:=]\s*\\?["']((?:[^"'\s\\]|\\.){8,})\\?["']/dgi),
+    // Generic passwords in URLs or assignments, with raw or JSON-escaped quotes.
+    // Raw: escape pairs belong to the value. Escaped (`\"`, as in serialised
+    // JSON): the value stops at the first escaped quote that is followed by a
+    // JSON separator, so neighbouring fields survive, and it never ends in a
+    // lone backslash, so the JSON stays valid after redaction.
+    regexDetector('password_assignment', /(?:password|passwd|secret)\s*[:=]\s*(?:\\["']((?:[^"'\s\\]|\\\\|\\[^"'\\]|\\["'](?=[^,}\]:\s])){8,})\\["']|["']((?:[^"'\s\\]|\\.){8,})["'])/dgi),
 ];
 /**
  * Characters that render as nothing (or only alter the glyph before them) and

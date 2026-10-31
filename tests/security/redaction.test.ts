@@ -233,6 +233,84 @@ MIIEowIBAAKCAQEA0Yq3...fake...private...key...data
 		});
 	});
 
+	describe('span merging', () => {
+		const token = ['gh', 'p_', 'Zq8Lm2Xv4Rt7Yw1Bn5Cd9Fg3Hj6Kp0Sa8Ue'].join('');
+		const awsKey = ['AK', 'IA', 'QZ7XM2LK9PT4WV8N'].join('');
+		const jwt = [
+			'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.',
+			'eyJzdWIiOiJldmFsLWNhbmFyeSIsIm5hbWUiOiJ0ZXN0In0.',
+			'c2lnbmF0dXJlLWNhbmFyeS1ub3QtcmVhbA',
+		].join('');
+
+		it('merges identical spans from two detectors into one label', () => {
+			expect(redactSecrets(`password="${jwt}"`)).toBe(
+				'password="[REDACTED_JWT_TOKEN]"'
+			);
+		});
+
+		it('extends a merged span to the longer detector', () => {
+			expect(redactSecrets(`secret="${token}-extra-tail-value"`)).toBe(
+				'secret="[REDACTED_GITHUB_TOKEN]"'
+			);
+		});
+
+		it('keeps the outer span when a shorter one sits inside it', () => {
+			expect(redactSecrets(`secret="aaaaaaaa-${token}-tail-end"`)).toBe(
+				'secret="[REDACTED_PASSWORD_ASSIGNMENT]"'
+			);
+		});
+
+		it('keeps adjacent spans separate', () => {
+			expect(redactSecrets(`${awsKey}${token}`)).toBe(
+				'[REDACTED_AWS_ACCESS_KEY][REDACTED_GITHUB_TOKEN]'
+			);
+		});
+
+		it.each([
+			['at position 0', ''],
+			['after text', 'note: '],
+		])('keeps a leading invisible character %s', (_name, prefix) => {
+			expect(redactSecrets(`${prefix}​${token}`)).toBe(
+				`${prefix}​[REDACTED_GITHUB_TOKEN]`
+			);
+			expect(redactSecrets(`${prefix}\u{e0100}​${token}​`)).toBe(
+				`${prefix}\u{e0100}​[REDACTED_GITHUB_TOKEN]​`
+			);
+		});
+	});
+
+	describe('long and neighbouring values', () => {
+		it('redacts an armoured key far larger than 64 KiB', () => {
+			const body = 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n'.repeat(6000);
+			expect(body.length).toBeGreaterThan(190_000);
+			const pem = `-----BEGIN PRIVATE KEY-----\n${body}-----END PRIVATE KEY-----`;
+			expect(redactSecrets(`before\n${pem}\nafter`)).toBe(
+				'before\n[REDACTED_PRIVATE_KEY]\nafter'
+			);
+		});
+
+		it('keeps neighbouring fields of space-free escaped JSON', () => {
+			const input = 'password=\\"hunter2hunter2\\",\\"user\\":\\"bob\\"';
+			const redacted = redactSecrets(input);
+			expect(redacted).toBe(
+				'password=\\"[REDACTED_PASSWORD_ASSIGNMENT]\\",\\"user\\":\\"bob\\"'
+			);
+			const wrapped = JSON.stringify({
+				a: 'password="hunter2hunter2"',
+				user: 'bob',
+			});
+			expect(JSON.parse(redactSecrets(wrapped)).user).toBe('bob');
+			expect(redactSecrets(wrapped)).not.toContain('hunter2');
+		});
+
+		it('still redacts an escaped value that contains an escaped quote', () => {
+			const wrapped = JSON.stringify({ t: 'password="ab"cdefghijk"' });
+			const redacted = redactSecrets(wrapped);
+			expect(redacted).not.toContain('cdefghijk');
+			expect(() => JSON.parse(redacted)).not.toThrow();
+		});
+	});
+
 	describe('performance', () => {
 		/** Worst-case ratio between a 4x larger input and the base one. */
 		function growth(make: (size: number) => string, size: number): number {
@@ -256,6 +334,10 @@ MIIEowIBAAKCAQEA0Yq3...fake...private...key...data
 			'JWT-like segments': [
 				(n) => 'eyJaaaaaaaaaaaa.eyJaaaaaaaaaaaa.'.repeat(n / 33),
 				20_000,
+			],
+			'BEGIN markers with mismatched ENDs': [
+				(n) => '-----BEGIN PRIVATE KEY-----\n-----END X-----'.repeat(n / 43),
+				60_000,
 			],
 			'repeated BEGIN markers': [
 				(n) => '-----BEGIN PRIVATE KEY-----'.repeat(n / 27),

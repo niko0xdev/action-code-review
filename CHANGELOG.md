@@ -72,7 +72,8 @@ Questions) lives in `docs/v3-decisions.md`.
   title and description, and error text in warnings.
 - **Redaction no longer stalls on hostile input.** The JWT and private-key
   detectors were quadratic (a repeated `eyJ` took minutes at 400 KB); they now
-  scan in linear time. `password="password"` redacts the value, not the key.
+  scan in linear time, and a private key of any size is still redacted. In JSON-escaped
+  text a redacted password no longer swallows the neighbouring fields. `password="password"` redacts the value, not the key.
 - **A suggestion containing a secret-like value is withheld** from the inline
   comment, with a note, instead of rendering a redaction placeholder that a
   reader could apply as code.
