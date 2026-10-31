@@ -58,6 +58,10 @@ inputs:
     description: 'Opt-in: for public repositories, fetch the published OSSF Scorecard (supply-chain health scores) as advisory review context. Sends the owner/repo name to api.securityscorecards.dev, a third-party service. Never fails a review.'
     required: false
     default: 'false'
+  security-skills:
+    description: 'Which curated security skills go into the review prompt: all | auto. auto keeps only the skills for risk domains found in the changed files (a cost optimisation, unmeasured for review quality) and falls back to all when it cannot classify.'
+    required: false
+    default: 'all'
   mode:
     description: 'Execution mode: auto | review | security | agent'
     required: false
@@ -203,6 +207,7 @@ runs:
         INPUT_INCLUDE-FULL-CONTENT: ${{ inputs.include-full-content }}
         INPUT_MAX-CONTEXT-CHARS: ${{ inputs.max-context-chars }}
         INPUT_SCORECARD-CONTEXT: ${{ inputs.scorecard-context }}
+        INPUT_SECURITY-SKILLS: ${{ inputs.security-skills }}
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_SECURITY-PROFILE: ${{ inputs.security-profile }}
         INPUT_SECURITY-MIN-SEVERITY: ${{ inputs.security-min-severity }}

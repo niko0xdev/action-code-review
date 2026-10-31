@@ -102,6 +102,14 @@ Derived and adapted from `mukul975/Anthropic-Cybersecurity-Skills` under the **A
 
 Skills are dynamically and deterministically routed by the `SecuritySkillSelector` based on the PR risk classifier output. Every non-empty render appends a seven-question Review Validation Gate (file, line, source, data flow, impact, fix, false-positive evidence); findings that cannot answer all seven are dropped.
 
+The default review prompt includes every skill (`security-skills: all`). The opt-in `security-skills: auto` input reuses the same classifier and selector to include only the skills for domains flagged in the changed files. It always keeps the validation gate. The classifier runs first, and a flagged domain always includes its skill, whatever the file type. Only when every changed file is prose (`.md`, `.mdx`, `.txt`, `.rst`, excluding `requirements*.txt`, `constraints*.txt`, and `CMakeLists.txt`) and the classifier flags nothing does the prompt get the gate and no domain skill. Code that flags nothing gets the foundational authentication, authorisation, and database skills. Unknown file types in any changed file, an empty or truncated file list, or a classifier error fall back to all skills. Classifier domains without a skill map to the nearest one (`process-execution` to injection, `cloud-infrastructure` to CI/CD, `serialization` to file handling). This is a cost optimisation that is unmeasured for review quality and off by default; changing the default needs the `all` versus `auto` ablation scored with `tests/eval/scoring.ts`. Because the classifier reads the PR's own paths and diff, a PR author can influence which skills are included, which is another reason it is opt-in.
+
+Known limitations of `auto`:
+
+- A renamed file is judged on its new name only, so renaming `src/auth/login.ts` to `src/utils/a.ts` hides the authentication domain and yields only the foundational skills.
+- A file with no `patch` (large or binary files) is judged on its path alone, and with no path match yields only the foundational skills.
+- `cloud-infrastructure` maps to the GitHub Actions focused CI/CD skill; no skill covers infrastructure as code.
+
 Licence-clean defensive skills (original prose; MIT/Apache sources ported with attribution in code comments, OWASP sheets used as linked references only, never copied verbatim):
 - Payment Safety: Race Conditions & Idempotency (CWE-367, CWE-841)
 - Client-Side XSS: Contextual Output Encoding (CWE-79, CWE-116)

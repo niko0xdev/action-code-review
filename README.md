@@ -35,6 +35,7 @@ jobs:
           # max-files: 10
           # exclude-patterns: '*.md,*.json,*.lock'
           # scorecard-context: 'true'  # opt-in, default 'false'; see below
+          # security-skills: auto      # opt-in, default 'all'; see below
 ```
 
 Pin `uses:` to a released tag once published (example `@v1`).
@@ -47,6 +48,14 @@ public repositories as review context. Privacy note: when enabled, the owner and
 repository name are sent to `api.securityscorecards.dev`, a third-party service.
 Only numeric scores are used, and a failed lookup never affects the review. See
 [`docs/architecture.md`](docs/architecture.md).
+
+`security-skills` (default `'all'`) controls which curated security skills are
+added to the review prompt. `'all'` is the current behaviour. `'auto'` includes
+only the skills for risk domains the classifier finds in the changed files, plus
+the validation gate; a docs-only PR gets the gate alone, and anything it cannot
+classify (unknown file types, truncated file list, error) gets every skill.
+`auto` is a cost optimisation: its effect on review quality has not been
+measured, so it stays off by default.
 
 `review-prompt-file` must be a repo-relative regular file inside the workspace
 (symlinks are resolved and may not leave it, 50 KiB cap). Because the file feeds

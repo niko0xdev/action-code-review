@@ -42,8 +42,7 @@ import {
 } from '../review/report.js';
 import { runReview } from '../review/reviewer.js';
 import { applyVerifyPass } from '../review/verify.js';
-import { CURATED_SECURITY_SKILLS } from '../security/skills/registry.js';
-import { renderSkillsForPrompt } from '../security/skills/selector.js';
+import { selectReviewSecuritySkills } from '../security/skills/auto-select.js';
 import { parseBoundedFloat, parsePositiveInt } from '../shared/numeric.js';
 import { profilesWithSkills } from '../skills/registry.js';
 import { toPublisherOctokit } from './octokit.js';
@@ -108,6 +107,7 @@ export async function runPrReviewAction(): Promise<void> {
 		'include-full-content': core.getInput('include-full-content'),
 		'max-context-chars': core.getInput('max-context-chars'),
 		'scorecard-context': core.getInput('scorecard-context'),
+		'security-skills': core.getInput('security-skills'),
 	});
 	const llmConfig = resolveEngineConfig(legacyOptions);
 	const octokit = toPublisherOctokit(
@@ -232,8 +232,18 @@ export async function runPrReviewAction(): Promise<void> {
 				);
 			}
 		}
-		// ponytail: all security skills into default review (12 domains + validation gate); filter by domain when cost matters.
-		const allSecurityPrompt = renderSkillsForPrompt(CURATED_SECURITY_SKILLS);
+		// Default `all` keeps every skill; opt-in `auto` filters by classified domain.
+		const skillSelection = selectReviewSecuritySkills(
+			legacyOptions.securitySkills,
+			reviewContext.diff.files,
+			reviewContext.diff.filesTruncated
+		);
+		if (legacyOptions.securitySkills === 'auto') {
+			core.info(
+				`[security-skills] auto: ${skillSelection.fellBackToAll ? 'could not classify, using all skills' : `${skillSelection.domains.join(', ') || 'validation gate only'} (saved ${skillSelection.savedChars} chars)`}`
+			);
+		}
+		const allSecurityPrompt = skillSelection.prompt;
 		const promptFile = await loadReviewPromptFile({
 			repoPath: reviewContext.repositoryPath,
 			file: core.getInput('review-prompt-file'),
