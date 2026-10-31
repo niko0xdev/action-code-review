@@ -228,7 +228,7 @@ Numeric variables are validated by `src/shared/numeric.ts`: an invalid value log
 | `AI_REVIEW_VERIFY_PASS` | `false` | second LLM pass over high/critical findings (`'true'` to enable; drops hallucinations, records stats in diagnostics) |
 | `AI_REVIEW_VERIFY_BUDGET_USD` | `0.50` | cost ceiling for the verify pass (0 or more) |
 | `AI_REVIEW_DEBUG_HARNESS` | unset | `true`/`1` or a byte budget: append redacted, truncated raw harness output to the step summary |
-| `AI_REVIEW_FAIL_ON_INCOMPLETE` | `true` | fail the step when the review is incomplete (crashed group, unanalyzed files); `false` downgrades to a warning |
+| `AI_REVIEW_FAIL_ON_INCOMPLETE` | `true` | fail the step when the review is incomplete (crashed group, unanalyzed files, truncated changed-file list); `false` downgrades to a warning |
 
 All optional; consumers providing none still work unchanged.
 

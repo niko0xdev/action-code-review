@@ -471,7 +471,8 @@ async function resolveApproval(
 function reviewFailed(result: PublishParams['result']): boolean {
 	return (
 		(result.reviewStatus !== undefined && result.reviewStatus !== 'complete') ||
-		(result.diagnostics?.failedGroups ?? 0) > 0
+		(result.diagnostics?.failedGroups ?? 0) > 0 ||
+		result.filesTruncated === true
 	);
 }
 

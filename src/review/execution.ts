@@ -14,7 +14,12 @@ import type { ReviewResult } from '../types/finding.js';
 export interface ReviewExecutionInput {
 	result: Pick<
 		ReviewResult,
-		'reviewStatus' | 'diagnostics' | 'filesReviewed' | 'findings' | 'approval'
+		| 'reviewStatus'
+		| 'diagnostics'
+		| 'filesReviewed'
+		| 'findings'
+		| 'approval'
+		| 'filesTruncated'
 	>;
 	/**
 	 * Files the review was asked to analyze: the PR files that survived
@@ -32,6 +37,8 @@ export interface ReviewExecution {
 	filesSelected: number;
 	filesNotAnalyzed: number;
 	failedGroups: number;
+	/** True when the changed-file list was cut at the pagination cap. */
+	filesTruncated: boolean;
 	status: 'complete' | 'incomplete' | 'failed' | 'stale';
 }
 
@@ -46,9 +53,14 @@ export function describeReviewExecution(
 		reportedNotAnalyzed,
 		input.filesSelected - filesReviewed
 	);
+	const filesTruncated = input.result.filesTruncated === true;
 	return {
 		complete:
-			status === 'complete' && failedGroups === 0 && filesNotAnalyzed <= 0,
+			status === 'complete' &&
+			failedGroups === 0 &&
+			filesNotAnalyzed <= 0 &&
+			!filesTruncated,
+		filesTruncated,
 		filesReviewed,
 		filesSelected: input.filesSelected,
 		filesNotAnalyzed,
@@ -75,8 +87,20 @@ export function incompleteReviewFailure(
 		execution.filesNotAnalyzed > 0
 			? `${execution.filesNotAnalyzed} of ${execution.filesSelected} selected file(s) were not analyzed`
 			: '',
+		execution.filesTruncated
+			? 'the changed-file list was truncated at the pagination limit'
+			: '',
 	].filter(Boolean);
 	return `Review incomplete (${reasons.join('; ')}). No approval was submitted. Re-run the workflow; if it keeps failing, check the harness output above.`;
+}
+
+/** Text of the `review-summary` output; an incomplete run is marked as such. */
+export function reviewSummaryText(
+	input: ReviewExecutionInput,
+	failure: string | null
+): string {
+	const { filesReviewed, findings } = input.result;
+	return `${filesReviewed.length} files reviewed, ${findings.length} issues found${failure ? ' (review incomplete)' : ''}`;
 }
 
 /** Hard cap on the raw dump written to the job summary, in characters. */

@@ -32457,7 +32457,8 @@ function wrappy (fn, cb) {
 /* harmony import */ var node_string_decoder__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__nccwpck_require__.n(node_string_decoder__WEBPACK_IMPORTED_MODULE_3__);
 /* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_4__ = __nccwpck_require__(474);
 /* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_4___default = /*#__PURE__*/__nccwpck_require__.n(_actions_core__WEBPACK_IMPORTED_MODULE_4__);
-/* harmony import */ var _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__ = __nccwpck_require__(1620);
+/* harmony import */ var _llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_5__ = __nccwpck_require__(8251);
+/* harmony import */ var _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__ = __nccwpck_require__(1620);
 /**
  * PreLint orchestrator.
  *
@@ -32474,6 +32475,7 @@ function wrappy (fn, cb) {
  * binaries require `AI_REVIEW_ALLOW_WORKSPACE_TOOLS=true`; otherwise use a
  * pinned directory via `AI_REVIEW_TRUSTED_ANALYZER_DIR`.
  */
+
 
 
 
@@ -32536,7 +32538,7 @@ function spawnCollect(cmd, args, options) {
     return new Promise((resolve, reject) => {
         const child = (0,node_child_process__WEBPACK_IMPORTED_MODULE_0__.spawn)(cmd, args, {
             cwd: options.cwd,
-            env: (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .buildAnalyserEnv */ .pk)(),
+            env: (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .buildAnalyserEnv */ .pk)(),
             stdio: ['ignore', 'pipe', 'pipe'],
             detached: process.platform !== 'win32',
         });
@@ -32554,15 +32556,15 @@ function spawnCollect(cmd, args, options) {
             cb();
         };
         const timer = setTimeout(() => {
-            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .killAnalyser */ .eQ)(child);
+            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .killAnalyser */ .eQ)(child);
             finish(() => reject(new Error(`${cmd} timed out after ${options.timeoutMs}ms`)));
         }, options.timeoutMs);
         const overCap = (size) => {
-            if (size <= _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG)
+            if (size <= _security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG)
                 return false;
             clearTimeout(timer);
-            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .killAnalyser */ .eQ)(child);
-            finish(() => reject(new Error(`${cmd} output exceeded ${_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG} byte cap`)));
+            (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .killAnalyser */ .eQ)(child);
+            finish(() => reject(new Error(`${cmd} output exceeded ${_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .MAX_ANALYSER_OUTPUT_BYTES */ .hG} byte cap`)));
             return true;
         };
         child.stdout?.on('data', (chunk) => {
@@ -32603,7 +32605,7 @@ const biomeRunner = {
         const binary = configuredBinary(repositoryPath, 'biome');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['lint', '--reporter=json', '--max-diagnostics=50', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32618,7 +32620,7 @@ const ruffRunner = {
         const binary = configuredBinary(repositoryPath, 'ruff');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['check', '--output-format=json', '--no-fix', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32638,7 +32640,7 @@ const swiftlintRunner = {
         const binary = configuredBinary(repositoryPath, 'swiftlint');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['lint', '--reporter=json', '--quiet', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32659,7 +32661,7 @@ const ktlintRunner = {
         const binary = configuredBinary(repositoryPath, 'ktlint');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         const { stdout } = await spawnCollect(binary, ['--reporter=json', '--', ...fileList], { cwd: repositoryPath, timeoutMs });
@@ -32679,7 +32681,7 @@ const sqlfluffRunner = {
         const binary = configuredBinary(repositoryPath, 'sqlfluff');
         if (!binary)
             return [];
-        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_5__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
+        const fileList = (0,_security_analyser_process_js__WEBPACK_IMPORTED_MODULE_6__/* .safeTargetFiles */ .sR)(files.map((f) => f.filename));
         if (fileList.length === 0)
             return [];
         // sqlfluff returns non-zero on violations; we want the JSON anyway.
@@ -32938,7 +32940,7 @@ function renderToolFindingsForPrompt(findings, maxLines = 50) {
         return '(no static-analyzer findings)';
     const lines = ['Static-analyzer findings (treat as evidence):'];
     for (const finding of findings.slice(0, maxLines)) {
-        lines.push(`- [${finding.tool}/${finding.code}] ${finding.path}:${finding.line} (${finding.severity}) ${finding.message}`);
+        lines.push(`- [${finding.tool}/${finding.code}] ${(0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_5__/* .escapeControlChars */ ._s)(finding.path)}:${finding.line} (${finding.severity}) ${(0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_5__/* .escapeControlChars */ ._s)(finding.message)}`);
     }
     if (findings.length > maxLines) {
         lines.push(`... and ${findings.length - maxLines} more findings`);
@@ -32992,9 +32994,18 @@ var openai_compatible = __nccwpck_require__(8251);
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 const RISKS = ['critical', 'high', 'medium', 'low', 'none'];
-const FENCE = '```';
+/** Header line for a file; the name is escaped so it cannot span lines. */
+function fileHeader(f) {
+    return `### ${(0,openai_compatible/* escapeControlChars */._s)(f.filename)} (${f.status}, +${f.additions}/-${f.deletions})`;
+}
+/** A fence longer than any backtick run in `patch`, so no line can close it. */
+function fenceFor(patch) {
+    const longest = Math.max(0, ...(patch.match(/`+/g) ?? []).map((run) => run.length));
+    return '`'.repeat(Math.max(3, longest + 1));
+}
 function renderFileBlock(f, patch, note) {
-    return `### ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})${note ? ` ${note}` : ''}\n${FENCE}diff\n${patch}\n${FENCE}`;
+    const fence = fenceFor(patch);
+    return `${fileHeader(f)}${note ? ` ${note}` : ''}\n${fence}diff\n${patch}\n${fence}`;
 }
 /**
  * Render per-file diff blocks within `maxChars`, cutting only at file or hunk
@@ -33022,7 +33033,7 @@ function renderChangedFiles(files, maxChars) {
                 block = renderFileBlock(f, hunks.slice(0, kept).join('\n'), `[TRUNCATED: ${kept} of ${hunks.length} hunks shown; not fully analysed]`);
             } while (kept > 0 && !room(block));
             if (kept === 0) {
-                block = `### ${f.filename} (${f.status}, +${f.additions}/-${f.deletions}) [OMITTED: context limit; not analysed]`;
+                block = `${fileHeader(f)} [OMITTED: context limit; not analysed]`;
                 if (!room(block))
                     continue;
             }
@@ -33987,6 +33998,7 @@ function normalizeBaseUrl(url) {
 // EXPORTS
 __nccwpck_require__.d(__webpack_exports__, {
   OpenAiCompatibleProvider: () => (/* binding */ OpenAiCompatibleProvider),
+  _s: () => (/* binding */ escapeControlChars),
   zR: () => (/* binding */ extractJsonBlock),
   Zg: () => (/* binding */ scrubSecrets)
 });
@@ -34178,6 +34190,26 @@ function stripReasoningArtifacts(content, reasoningContent) {
         // tail (reasoning) rather than the head (JSON payload).
         .replace(/<think(?:ing)?>[\s\S]*?(?:<\/(?:think|thinking)>|$)/gi, '')
         .trim());
+}
+/**
+ * Make untrusted text safe to place on a single prompt line. Line breaks and
+ * other control characters (a git path may contain them) are written as
+ * escapes, so attacker text cannot start a new line outside a fenced block.
+ */
+function escapeControlChars(text) {
+    return Array.from(text, (ch) => {
+        const code = ch.charCodeAt(0);
+        if (ch === '\n')
+            return '\\n';
+        if (ch === '\r')
+            return '\\r';
+        if (code < 0x20 ||
+            (code >= 0x7f && code <= 0x9f) ||
+            code === 0x2028 ||
+            code === 0x2029)
+            return `\\u${code.toString(16).padStart(4, '0')}`;
+        return ch;
+    }).join('');
 }
 function scrubSecrets(text) {
     return text.replace(/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+|(?:sk-|gh[oprsu]_|xox[abprs]-|AIza|github_pat_)[A-Za-z0-9._~+/=-]*/gi, '[REDACTED-TOKEN]');
@@ -38164,8 +38196,12 @@ function findingLines(findings = []) {
 /** Render rich PR summary while keeping the legacy heading recognizable. */
 function buildSummaryBody(result) {
     const findings = result.findings ?? [];
-    const reviewStatus = result.reviewStatus ??
+    const declaredStatus = result.reviewStatus ??
         (result.diagnostics?.failedGroups ? 'incomplete' : 'complete');
+    // A partial file list can never read as a complete review.
+    const reviewStatus = result.filesTruncated && declaredStatus === 'complete'
+        ? 'incomplete'
+        : declaredStatus;
     const blocking = hasBlockingFindings(findings, result.counts);
     const reviewed = result.filesReviewed.length;
     const excluded = result.filesExcluded ??
@@ -38603,7 +38639,8 @@ async function resolveApproval(octokit, params, state) {
  */
 function reviewFailed(result) {
     return ((result.reviewStatus !== undefined && result.reviewStatus !== 'complete') ||
-        (result.diagnostics?.failedGroups ?? 0) > 0);
+        (result.diagnostics?.failedGroups ?? 0) > 0 ||
+        result.filesTruncated === true);
 }
 /**
  * Resolve whether every AI-authored review thread on the PR is resolved.
@@ -40248,8 +40285,13 @@ function execution_describeReviewExecution(input) {
     const filesReviewed = input.result.filesReviewed.length;
     const reportedNotAnalyzed = input.result.diagnostics?.filesNotAnalyzed ?? 0;
     const filesNotAnalyzed = Math.max(reportedNotAnalyzed, input.filesSelected - filesReviewed);
+    const filesTruncated = input.result.filesTruncated === true;
     return {
-        complete: status === 'complete' && failedGroups === 0 && filesNotAnalyzed <= 0,
+        complete: status === 'complete' &&
+            failedGroups === 0 &&
+            filesNotAnalyzed <= 0 &&
+            !filesTruncated,
+        filesTruncated,
         filesReviewed,
         filesSelected: input.filesSelected,
         filesNotAnalyzed,
@@ -40274,8 +40316,16 @@ function incompleteReviewFailure(input) {
         execution.filesNotAnalyzed > 0
             ? `${execution.filesNotAnalyzed} of ${execution.filesSelected} selected file(s) were not analyzed`
             : '',
+        execution.filesTruncated
+            ? 'the changed-file list was truncated at the pagination limit'
+            : '',
     ].filter(Boolean);
     return `Review incomplete (${reasons.join('; ')}). No approval was submitted. Re-run the workflow; if it keeps failing, check the harness output above.`;
+}
+/** Text of the `review-summary` output; an incomplete run is marked as such. */
+function reviewSummaryText(input, failure) {
+    const { filesReviewed, findings } = input.result;
+    return `${filesReviewed.length} files reviewed, ${findings.length} issues found${failure ? ' (review incomplete)' : ''}`;
 }
 /** Hard cap on the raw dump written to the job summary, in characters. */
 const RAW_HARNESS_SUMMARY_MAX_CHARS = 60 * 1024;
@@ -40510,7 +40560,7 @@ function deriveStatus(result) {
     const failedGroups = typeof result.diagnostics?.failedGroups === 'number'
         ? result.diagnostics.failedGroups
         : 0;
-    if (failedGroups > 0)
+    if (failedGroups > 0 || result.filesTruncated)
         return 'incomplete';
     const status = result.reviewStatus;
     if (status === 'failed' || status === 'stale' || status === 'incomplete')
@@ -41217,7 +41267,9 @@ async function runReview(context, harness, options = {}) {
         filesReviewed,
         ...(context.diff.filesTruncated ? { filesTruncated: true } : {}),
         ruleCoverage: deriveRuleCoverage(context, findings),
-        reviewStatus: failedGroups > 0 || truncatedFiles > 0 ? 'incomplete' : 'complete',
+        reviewStatus: failedGroups > 0 || truncatedFiles > 0 || context.diff.filesTruncated
+            ? 'incomplete'
+            : 'complete',
         // Read after every group settled so failed processes that still emitted
         // usage before exiting are included in the aggregate.
         ...(harness.usage ? { usage: harness.usage } : {}),
@@ -41891,12 +41943,12 @@ async function runPrReviewAction() {
             if (section)
                 await core.summary.addRaw(section).write();
         }
-        core.setOutput('review-summary', `${result.filesReviewed.length} files reviewed, ${result.findings.length} issues found`);
+        const failure = incompleteReviewFailure({ result, filesSelected });
+        core.setOutput('review-summary', reviewSummaryText({ result, filesSelected }, failure));
         // A crashed group or an unanalyzed file used to leave the step green
         // while the summary looked like a clean review. Fail the step so the
         // run is visible; set AI_REVIEW_FAIL_ON_INCOMPLETE=false to keep the
         // old lenient behavior.
-        const failure = incompleteReviewFailure({ result, filesSelected });
         if (failure && process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false') {
             core.setFailed(failure);
         }

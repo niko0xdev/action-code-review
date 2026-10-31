@@ -304,6 +304,31 @@ describe('publishReview', () => {
 		expect(callArgs.comments).toBeUndefined();
 	});
 
+	it('does not approve a result with a truncated file list even if declared complete', async () => {
+		const octokit = makeApprovalOctokit();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result: {
+				findings: [],
+				summary: 'clean',
+				risk: 'none',
+				counts: { critical: 0, high: 0, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+				reviewStatus: 'complete',
+				filesTruncated: true,
+			},
+			blockOnIssues: true,
+			autoApproveWhenResolved: true,
+		});
+		const events = (
+			octokit.rest.pulls.createReview as ReturnType<typeof vi.fn>
+		).mock.calls.map((call) => call[0]?.event);
+		expect(events).not.toContain('APPROVE');
+	});
+
 	it('does not auto-approve when autoApproveWhenResolved is false', async () => {
 		const octokit = makeOctokit();
 		await publishReview(octokit as never, {

@@ -95,13 +95,7 @@
 			"modelOutput": "{\"findings\":[{\"severity\":\"high\",\"confidence\":0.95,\"category\":\"correctness\",\"path\":\"src/app.ts\",\"line\":2,\"title\":\"Noisy finding\",\"description\":\"Canned description.\",\"impact\":\"Canned impact.\",\"suggestion\":\"Canned suggestion.\",\"replacement\":null}],\"summary\":\"One issue.\",\"risk\":\"high\"}"
 		},
 		{
-			"knownDefects": {
-				"status-not-complete": "runReview sets filesTruncated on the result but reviewStatus stays \"complete\" (only failedGroups and truncatedFiles are considered), so describeReviewExecution and incompleteReviewFailure report a complete run for a partial file list.",
-				"no-approval": "reviewFailed() in publishReview ignores filesTruncated, so with auto-approve enabled and all AI threads resolved a review over a truncated file list is APPROVED.",
-				"failure-surfaced": "incompleteReviewFailure returns null for this run, so the step does not fail even though the changed-file list is partial.",
-				"summary-says-incomplete": "The summary shows the APPROVED banner (with only a small FILE LIST TRUNCATED notice) because the decision banner keys off reviewStatus, which is complete.",
-				"report-status": "buildReviewReport derives status from reviewStatus and failedGroups only, so the machine-readable report says complete while coverage.filesTruncated is true."
-			},
+			"knownDefects": {},
 			"id": "pagination-truncated",
 			"description": "GitHub file listing hit the safety cap, so the diff is partial; the model saw only what was listed and found nothing.",
 			"fault": "pagination-truncated",

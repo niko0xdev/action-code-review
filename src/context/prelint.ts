@@ -20,6 +20,7 @@ import { existsSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import * as core from '@actions/core';
+import { escapeControlChars } from '../llm/openai-compatible.js';
 import {
 	MAX_ANALYSER_OUTPUT_BYTES,
 	buildAnalyserEnv,
@@ -667,7 +668,7 @@ export function renderToolFindingsForPrompt(
 	const lines: string[] = ['Static-analyzer findings (treat as evidence):'];
 	for (const finding of findings.slice(0, maxLines)) {
 		lines.push(
-			`- [${finding.tool}/${finding.code}] ${finding.path}:${finding.line} (${finding.severity}) ${finding.message}`
+			`- [${finding.tool}/${finding.code}] ${escapeControlChars(finding.path)}:${finding.line} (${finding.severity}) ${escapeControlChars(finding.message)}`
 		);
 	}
 	if (findings.length > maxLines) {

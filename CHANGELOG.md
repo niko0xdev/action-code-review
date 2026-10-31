@@ -38,6 +38,16 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Fixed
 
+- **A truncated changed-file list now makes the review incomplete.** When
+  GitHub pagination stopped at the 1000-file cap, the review used to report
+  `complete`, show an APPROVED banner, and could submit an approval. It now has
+  status `incomplete`, shows the incomplete banner, never approves, and fails
+  the step (or warns with `AI_REVIEW_FAIL_ON_INCOMPLETE=false`). The
+  `review-summary` output ends with `(review incomplete)`.
+- **Prompt hardening for diffs and file names.** The diff fence now grows past
+  the longest backtick run in a patch, so markdown context lines can no longer
+  close it early, and control characters in file names (including in analyser
+  evidence) are escaped so a name cannot start a new prompt line.
 - **Re-runs no longer add a `REQUEST_CHANGES` review per run.** When
   nothing new needs posting and the action's latest review is already
   `CHANGES_REQUESTED` on the current head commit, the body-only review is

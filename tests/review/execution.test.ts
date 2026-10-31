@@ -5,6 +5,7 @@ import {
 	describeReviewExecution,
 	incompleteReviewFailure,
 	rawHarnessDumpEnabled,
+	reviewSummaryText,
 } from '../../src/review/execution.js';
 import type { ReviewResult } from '../../src/types/finding.js';
 
@@ -62,7 +63,43 @@ describe('describeReviewExecution', () => {
 	});
 });
 
+describe('reviewSummaryText', () => {
+	const summary = (overrides: Partial<ReviewResult>, selected = 2) => {
+		const input = { result: result(overrides), filesSelected: selected };
+		return reviewSummaryText(input, incompleteReviewFailure(input));
+	};
+
+	it('has no suffix for a complete run', () => {
+		expect(summary({ reviewStatus: 'complete' })).toBe(
+			'2 files reviewed, 0 issues found'
+		);
+	});
+
+	it('marks a truncated file list as incomplete', () => {
+		expect(summary({ reviewStatus: 'complete', filesTruncated: true })).toBe(
+			'2 files reviewed, 0 issues found (review incomplete)'
+		);
+	});
+
+	it('marks a crashed group as incomplete', () => {
+		expect(
+			summary({
+				reviewStatus: 'incomplete',
+				diagnostics: { failedGroups: 1 } as never,
+			})
+		).toBe('2 files reviewed, 0 issues found (review incomplete)');
+	});
+});
+
 describe('incompleteReviewFailure', () => {
+	it('names a truncated changed-file list as the reason', () => {
+		const message = incompleteReviewFailure({
+			result: result({ reviewStatus: 'complete', filesTruncated: true }),
+			filesSelected: 2,
+		});
+		expect(message).toContain('changed-file list was truncated');
+	});
+
 	it('returns null for a complete review with no findings', () => {
 		expect(
 			incompleteReviewFailure({

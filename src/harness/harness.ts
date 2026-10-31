@@ -1,5 +1,9 @@
 import { renderToolFindingsForPrompt } from '../context/prelint.js';
-import { extractJsonBlock, scrubSecrets } from '../llm/openai-compatible.js';
+import {
+	escapeControlChars,
+	extractJsonBlock,
+	scrubSecrets,
+} from '../llm/openai-compatible.js';
 import type {
 	ChangedFile,
 	DetectedProfile,
@@ -39,10 +43,23 @@ interface RenderedFiles {
 	included: string[];
 }
 
-const FENCE = '```';
+/** Header line for a file; the name is escaped so it cannot span lines. */
+function fileHeader(f: ChangedFile): string {
+	return `### ${escapeControlChars(f.filename)} (${f.status}, +${f.additions}/-${f.deletions})`;
+}
+
+/** A fence longer than any backtick run in `patch`, so no line can close it. */
+function fenceFor(patch: string): string {
+	const longest = Math.max(
+		0,
+		...(patch.match(/`+/g) ?? []).map((run) => run.length)
+	);
+	return '`'.repeat(Math.max(3, longest + 1));
+}
 
 function renderFileBlock(f: ChangedFile, patch: string, note?: string): string {
-	return `### ${f.filename} (${f.status}, +${f.additions}/-${f.deletions})${note ? ` ${note}` : ''}\n${FENCE}diff\n${patch}\n${FENCE}`;
+	const fence = fenceFor(patch);
+	return `${fileHeader(f)}${note ? ` ${note}` : ''}\n${fence}diff\n${patch}\n${fence}`;
 }
 
 /**
@@ -78,7 +95,7 @@ function renderChangedFiles(
 				);
 			} while (kept > 0 && !room(block));
 			if (kept === 0) {
-				block = `### ${f.filename} (${f.status}, +${f.additions}/-${f.deletions}) [OMITTED: context limit; not analysed]`;
+				block = `${fileHeader(f)} [OMITTED: context limit; not analysed]`;
 				if (!room(block)) continue;
 			}
 		}
