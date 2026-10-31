@@ -211,6 +211,22 @@ describe('readReviewEnvLimits', () => {
 		expect(limits.maxFiles).toBe(100);
 		expect(limits.minConfidence).toBe(0.8);
 		expect(limits.verifyBudgetUsd).toBe(0.5);
+		expect(limits.verifyMinSeverity).toBe('high');
+	});
+
+	it('reads and validates AI_REVIEW_VERIFY_MIN_SEVERITY', () => {
+		expect(
+			readReviewEnvLimits({ AI_REVIEW_VERIFY_MIN_SEVERITY: ' Medium ' })
+				.verifyMinSeverity
+		).toBe('medium');
+		const warn = vi.spyOn(core, 'warning').mockImplementation(() => {});
+		expect(
+			readReviewEnvLimits({ AI_REVIEW_VERIFY_MIN_SEVERITY: 'urgent' })
+				.verifyMinSeverity
+		).toBe('high');
+		expect(warn).toHaveBeenCalledWith(
+			expect.stringContaining('AI_REVIEW_VERIFY_MIN_SEVERITY')
+		);
 	});
 
 	it('reads valid values', () => {
@@ -220,7 +236,12 @@ describe('readReviewEnvLimits', () => {
 				AI_REVIEW_MIN_CONFIDENCE: '0.5',
 				AI_REVIEW_VERIFY_BUDGET_USD: '1.25',
 			})
-		).toEqual({ maxFiles: 25, minConfidence: 0.5, verifyBudgetUsd: 1.25 });
+		).toEqual({
+			maxFiles: 25,
+			minConfidence: 0.5,
+			verifyBudgetUsd: 1.25,
+			verifyMinSeverity: 'high',
+		});
 	});
 
 	it('warns and falls back for invalid values', () => {
@@ -234,6 +255,7 @@ describe('readReviewEnvLimits', () => {
 			maxFiles: 100,
 			minConfidence: 0.8,
 			verifyBudgetUsd: 0.5,
+			verifyMinSeverity: 'high',
 		});
 		for (const name of [
 			'AI_REVIEW_MAX_FILES',

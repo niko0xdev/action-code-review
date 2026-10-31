@@ -1,6 +1,7 @@
 import * as core from '@actions/core';
 import type { OctokitLike } from '../context/pr.js';
 import { normalizeCommentId } from '../review/dedupe.js';
+import { sanitiseVerifyReason } from '../review/verify.js';
 import { redactSecrets } from '../security/redaction/redactor.js';
 import type {
 	ApprovalOutcome,
@@ -889,7 +890,7 @@ export function renderToolFindingsSection(
 		}
 		if (diagnostics.verifySkippedReason !== undefined) {
 			diagLines.push(
-				`- **Verify pass:** skipped (${diagnostics.verifySkippedReason})`
+				`- **Verify pass:** skipped (${sanitiseVerifyReason(diagnostics.verifySkippedReason)})`
 			);
 		}
 		if (diagLines.length > 0) {

@@ -1,4 +1,5 @@
 import { commentIdentityBody, normalizeCommentId } from '../review/dedupe.js';
+import { sanitiseVerifyReason } from '../review/verify.js';
 import { redactSecrets } from '../security/redaction/redactor.js';
 import type {
 	ApprovalOutcome,
@@ -446,7 +447,7 @@ export function buildSummaryBody(result: SummaryResult): string {
 						: []),
 					...(result.diagnostics.verifySkippedReason !== undefined
 						? [
-								`- **Verify pass:** skipped (${result.diagnostics.verifySkippedReason})`,
+								`- **Verify pass:** skipped (${sanitiseVerifyReason(result.diagnostics.verifySkippedReason)})`,
 							]
 						: []),
 					'</details>',

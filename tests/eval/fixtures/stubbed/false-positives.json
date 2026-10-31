@@ -337,13 +337,11 @@
 				"risk": "low"
 			},
 			"verifyOutput": {
-				"findings": [
+				"verdicts": [
 					{
-						"path": "src/app.ts",
-						"line": 2,
-						"category": "correctness",
-						"title": "Claimed race condition",
-						"verified": false
+						"id": "c1",
+						"verified": false,
+						"reason": "canned"
 					}
 				]
 			},
@@ -436,13 +434,11 @@
 				"risk": "low"
 			},
 			"verifyOutput": {
-				"findings": [
+				"verdicts": [
 					{
-						"path": "src/pay.ts",
-						"line": 2,
-						"category": "correctness",
-						"title": "Fee rounding drops cents",
-						"verified": true
+						"id": "c1",
+						"verified": true,
+						"reason": "canned"
 					}
 				]
 			},
