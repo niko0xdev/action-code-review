@@ -41,7 +41,7 @@ export interface ScorecardOptions {
 	fetchImpl?: typeof fetch;
 }
 
-const NAME_PATTERN = /^[A-Za-z0-9_.-]{1,100}$/;
+const NAME_PATTERN = /^(?!\.+$)[A-Za-z0-9_.-]{1,100}$/;
 
 function clamp(value: unknown, min: number, max: number): number | undefined {
 	if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
@@ -123,6 +123,8 @@ export async function loadScorecardContext(
 			`${SCORECARD_API_BASE}/${options.owner}/${options.repo}`,
 			{
 				headers: { accept: 'application/json' },
+				// A redirect would reach a second host; fail instead of following it.
+				redirect: 'error',
 				signal: AbortSignal.timeout(SCORECARD_TIMEOUT_MS),
 			}
 		);

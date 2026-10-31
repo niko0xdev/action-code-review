@@ -33042,6 +33042,7 @@ function buildReviewPromptWithCoverage(context, extraRules, options = {}) {
     const toolSection = options.toolFindings?.length
         ? `\nStatic analyzer evidence (deterministic tools already ran; treat as evidence, not as your output):\n${(0,prelint/* renderToolFindingsForPrompt */.oo)(options.toolFindings, 50)}\n- Cite these in your findings when they confirm or contradict LLM review.\n- You MAY add findings the tools missed (logical bugs, design issues, security flaws).\n- You SHOULD drop or downgrade findings the tools already caught unless you add meaningful context.`
         : '';
+    // Deliberately unfenced: only clamped numbers from a fixed template.
     const scorecardSection = options.scorecardContext
         ? `\n${options.scorecardContext}`
         : '';
@@ -39644,7 +39645,7 @@ const SCORECARD_CHECKS = [
     'Security-Policy',
     'Binary-Artifacts',
 ];
-const NAME_PATTERN = /^[A-Za-z0-9_.-]{1,100}$/;
+const NAME_PATTERN = /^(?!\.+$)[A-Za-z0-9_.-]{1,100}$/;
 function clamp(value, min, max) {
     if (typeof value !== 'number' || !Number.isFinite(value))
         return undefined;
@@ -39720,6 +39721,8 @@ async function loadScorecardContext(options) {
         const doFetch = options.fetchImpl ?? fetch;
         const response = await doFetch(`${SCORECARD_API_BASE}/${options.owner}/${options.repo}`, {
             headers: { accept: 'application/json' },
+            // A redirect would reach a second host; fail instead of following it.
+            redirect: 'error',
             signal: AbortSignal.timeout(SCORECARD_TIMEOUT_MS),
         });
         if (!response.ok) {

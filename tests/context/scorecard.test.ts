@@ -17,6 +17,14 @@ function json(body: unknown, init?: ResponseInit): Response {
 	return new Response(JSON.stringify(body), init);
 }
 
+function paddedBody(): string {
+	return JSON.stringify({
+		score: 5,
+		checks: [{ name: 'SAST', score: 5 }],
+		pad: 'x'.repeat(SCORECARD_MAX_BYTES),
+	});
+}
+
 function run(
 	fetchImpl: typeof fetch,
 	extra: Partial<Parameters<typeof loadScorecardContext>[0]> = {}
@@ -118,18 +126,79 @@ describe('scorecard context', () => {
 		['non-JSON', () => new Response('<html>')],
 		['empty', () => new Response(null)],
 		['wrong shape', () => json([1, 2, 3])],
-		['oversize body', () => new Response('x'.repeat(SCORECARD_MAX_BYTES + 10))],
-		[
-			'oversize declared',
-			() =>
-				new Response('{}', {
-					headers: { 'content-length': String(SCORECARD_MAX_BYTES + 1) },
-				}),
-		],
 	])('degrades to no context on %s', async (_name, make) => {
 		const { result, log } = run(vi.fn(async () => make()) as never);
 		await expect(result).resolves.toBeUndefined();
 		expect(log).toHaveBeenCalledWith(expect.stringContaining('[scorecard]'));
+	});
+
+	it.each([
+		[
+			'declared via content-length',
+			() =>
+				// Small valid body: only the declared length can reject it.
+				new Response(JSON.stringify({ score: 5 }), {
+					headers: { 'content-length': String(SCORECARD_MAX_BYTES + 1) },
+				}),
+		],
+		[
+			'streamed without content-length',
+			() => {
+				const bytes = new TextEncoder().encode(paddedBody());
+				return new Response(
+					new ReadableStream({
+						start(controller) {
+							controller.enqueue(bytes.slice(0, SCORECARD_MAX_BYTES - 10));
+							controller.enqueue(bytes.slice(SCORECARD_MAX_BYTES - 10));
+							controller.close();
+						},
+					})
+				);
+			},
+		],
+	])(
+		'rejects a valid but oversize body (%s) via the cap only',
+		async (_n, make) => {
+			const { result, log } = run(vi.fn(async () => make()) as never);
+			await expect(result).resolves.toBeUndefined();
+			expect(log).toHaveBeenCalledWith(
+				'[scorecard] skipped: response empty or over size cap'
+			);
+		}
+	);
+
+	it('refuses redirects so only one host is ever contacted', async () => {
+		const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+			if (init?.redirect === 'error') {
+				throw new TypeError('fetch failed: unexpected redirect');
+			}
+			return new Response(null, {
+				status: 302,
+				headers: { location: 'https://evil.test/' },
+			});
+		});
+		const { result, log } = run(fetchImpl as never);
+		await expect(result).resolves.toBeUndefined();
+		expect(fetchImpl.mock.calls[0]?.[1]?.redirect).toBe('error');
+		expect(log).toHaveBeenCalledWith(expect.stringContaining('[scorecard]'));
+	});
+
+	it('uses the global fetch when no implementation is injected', async () => {
+		const stub = vi.fn(async () => json({ score: 2 }));
+		vi.stubGlobal('fetch', stub);
+		try {
+			const text = await loadScorecardContext({
+				enabled: true,
+				owner: 'acme',
+				repo: 'widget',
+				isPrivate: false,
+				log: vi.fn(),
+			});
+			expect(text).toContain('Overall: 2/10');
+			expect(stub).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it('degrades silently on timeout or network error', async () => {
@@ -148,6 +217,8 @@ describe('scorecard context', () => {
 			{ isPrivate: true },
 			{ isPrivate: undefined },
 			{ owner: '../x' },
+			{ owner: '..' },
+			{ repo: '.' },
 			{ repo: 'a/b' },
 		]) {
 			await expect(run(fetchImpl, extra).result).resolves.toBeUndefined();
