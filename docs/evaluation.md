@@ -223,6 +223,32 @@ publishes anything above `low` (override with `blocked`). `labelByAnchor` derive
 labels from seeded anchors. Set `EVAL_VERBOSE=1` to print the table for the
 stubbed set.
 
+## Running a live model
+
+`tests/eval/live/` holds a small seeded set for a first, cheap measurement: 20
+single-file pull requests, 10 with one seeded defect (off-by-one, SQL injection,
+missing `await`, assignment in a condition, path traversal, null dereference,
+pagination offset, string-versus-number date compare, swallowed error, cache key
+collision) and 10 clean twins that look similar but are correct. A defect line
+carries a marker the builder strips before the model sees the diff.
+
+```bash
+OPENAI_API_KEY=... OPENAI_API_MODEL=... pnpm test:eval:live
+```
+
+It is skipped in `pnpm test` and runs only with `EVAL_LIVE=1`, because it calls
+the model. Optional variables: `OPENAI_API_URL`, `EVAL_RUNS` (repeats per case),
+`EVAL_VERIFY_MIN_SEVERITY` (default `high`), and `EVAL_OUT` (path for raw JSON).
+The main pass runs once per case, and the verify pass reuses that reply, so the
+two printed tables differ only by verify. A finding within two lines of the
+seeded defect in the right file is a true positive, and repeats of the same
+defect are not scored twice.
+
+Twenty cases are a smoke test, not a benchmark. The intervals will be wide and
+none of the targets below can be confirmed from this set. It does not exercise
+the Pi tool loop, so it measures the prompt and verify pass, not repository
+inspection.
+
 ## Proposed targets (not measured)
 
 These come from the quality gates in
