@@ -14,6 +14,21 @@ All written output is English (British spelling, en dashes or commas, never em
 dashes). Follow `CLAUDE.md` for commits and PRs: no co-author trailers, no model
 names in the PR title or body.
 
+## Automated run (GitHub Actions)
+
+`.github/workflows/weekly-research.yml` runs Phases 1 and 2 unattended every
+Monday at 02:00 UTC (and on `workflow_dispatch`). Three matrix jobs (`github`,
+`web`, `lists`, `max-parallel: 3`) collect public data with
+`scripts/weekly-research/collect.mjs`, then rank it with the read-only Pi
+harness (`rank.mjs`) in a directory that holds only the collected data. A final
+job (`report.mjs`) verifies repositories against the GitHub API, writes
+`docs/research/weekly-YYYY-MM-DD.md`, and opens a report-only PR. It reuses the
+existing `OPENAI_API_KEY`, `OPENAI_API_URL`, and `OPENAI_API_MODEL` secrets, and
+the repository must allow GitHub Actions to create pull requests.
+
+The automated run never builds code: planning and implementing (Phases 3 to 6)
+stay an interactive, human-started run of this skill on a chosen candidate.
+
 ## Hard limits
 
 - At most **3 agents at the same time**. Queue anything extra; never exceed 3.
