@@ -15,6 +15,10 @@ Questions) lives in `docs/v3-decisions.md`.
 
 ### Added
 
+- **Maintainer skill `weekly-research` (`.claude/skills/`, no runtime effect).** A weekly
+  three-scout research run (GitHub, web, curated lists such as goodailist.com) that
+  writes a dated report, then plans, implements, tests, and opens a PR for at most
+  one bounded item. Capped at three concurrent agents; fetched content is untrusted.
 - **Opt-in `security-skills` input (default `'all'`, additive).** `'auto'` limits the
   curated security skills in the review prompt to the risk domains the existing
   classifier flags in the changed files (the validation gate is always kept) and

@@ -31,6 +31,7 @@ Operational quick reference for a run that looks wrong:
 | [research/review-usage-observability-2026-09-18.md](research/review-usage-observability-2026-09-18.md) | User feedback, pinned Pi event evidence, and the case for reporting review usage in JSON | Auditing token/tool usage and incomplete runs from CI |
 | [research/2026-09-24-file-level-coverage.md](research/2026-09-24-file-level-coverage.md) | Why `review-report` identifies reviewed and skipped files | Auditing review scope in workflow consumers |
 | [research/audit-branches-2026-09-25.md](research/audit-branches-2026-09-25.md) | Inventory of every open branch, classified as obsolete / merged-equivalent / has-unique-delta, with file-level overlap | Triaging which stale branches to delete vs ship; reproduces with `scripts/audit-branches.sh` |
+| [.claude/skills/weekly-research/SKILL.md](../.claude/skills/weekly-research/SKILL.md) | Maintainer skill: weekly three-scout research (GitHub, web, curated lists), report in `docs/research/weekly-YYYY-MM-DD.md`, then plan, implement, test, PR | Running or scheduling the weekly tooling scan |
 
 ## Historical decisions (folded in, files removed)
 
