@@ -81,4 +81,14 @@ describe('trusted review runtime boundary', () => {
 		expect(call('a.ts', 'bash').result?.block).toBe(true);
 		expect(await readFile(outside, 'utf8')).toBe('synthetic canary');
 	});
+	it('gives concurrent subprocesses independent extension files', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'acr-boundary-concurrent-'));
+		scratch.push(root);
+		const paths = await Promise.all(
+			Array.from({ length: 6 }, () => preparePiBoundary(root, root))
+		);
+		expect(new Set(paths).size).toBe(6);
+		for (const path of paths)
+			expect(await readFile(path, 'utf8')).toContain("pi.on('tool_call'");
+	});
 });

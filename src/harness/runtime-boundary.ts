@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -17,7 +18,7 @@ export async function preparePiBoundary(
 			}
 		})
 	);
-	const extensionPath = join(configDir, 'review-boundary.mjs');
+	const extensionPath = join(configDir, `review-boundary-${randomUUID()}.mjs`);
 	await writeFile(
 		extensionPath,
 		`

@@ -131,6 +131,9 @@ describe('pinned Pi runtime against a loopback provider', () => {
 		try {
 			const result = await f.harness.review(f.context);
 			expect(result.findings).toEqual([]);
+			expect(JSON.stringify(f.requests[0].messages[0].content)).toContain(
+				f.context.repositoryPath
+			);
 			const sent = JSON.stringify(f.requests);
 			for (const canary of [
 				'OUTSIDE_CREDENTIAL_CANARY',
