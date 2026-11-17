@@ -27,7 +27,7 @@ Keep tests deterministic by default. Real-model quality and deterministic live G
 
 - Typecheck and Biome passed.
 - Coverage suite: 1,853 passed, five existing live-evaluation cases skipped, and seven existing measurement placeholders. No new skipped cases.
-- Coverage: lines/statements 90.10%, branches 87.00%, and functions 91.01%. Existing thresholds are unchanged.
+- Coverage: lines/statements 90.11%, branches 87.17%, and functions 91.01%. Existing thresholds are unchanged.
 - Actual pinned-runtime suite: five passed against loopback, including Unicode path-normalisation bypass regression, traversal/symlink isolation, usage, and independent limits.
 - Both bundles rebuilt and both unsupported-event startup guards smoke-ran successfully.
 - Confirmation partition regressions failed before correction, then all 165 focused security tests passed.
