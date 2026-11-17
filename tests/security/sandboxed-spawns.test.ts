@@ -225,6 +225,7 @@ describe('PiSecurityEngine fallback spawn', () => {
 		const { join } = await import('node:path');
 		ctx.repositoryPath = await mkdtemp(join(tmpdir(), 'acr-security-root-'));
 		engines = [];
+		ctx.options = {} as SecurityOptions;
 		for (const k of keys) {
 			saved[k] = process.env[k];
 			Reflect.deleteProperty(process.env, k);
@@ -285,6 +286,47 @@ describe('PiSecurityEngine fallback spawn', () => {
 			}
 		}
 	);
+
+	it('writes the configured gateway and disables compaction in the owned fallback directory', async () => {
+		ctx.options = {
+			baseUrl: 'https://gateway.invalid/v1',
+			model: 'gateway-review',
+		} as SecurityOptions;
+		mockSpawn.mockImplementationOnce(() =>
+			fakeProc(assistant('{"findings":[]}'))
+		);
+		await engine().diff(ctx);
+		const { env } = lastSpawn();
+		const { readFile } = await import('node:fs/promises');
+		const { join } = await import('node:path');
+		const configDir = env.PI_CODING_AGENT_DIR as string;
+		const models = JSON.parse(
+			await readFile(join(configDir, 'models.json'), 'utf8')
+		);
+		expect(models.providers.openai.baseUrl).toBe(ctx.options.baseUrl);
+		expect(models.providers.openai.models[0].id).toBe(ctx.options.model);
+		const settings = JSON.parse(
+			await readFile(join(configDir, 'settings.json'), 'utf8')
+		);
+		expect(settings.compaction.enabled).toBe(false);
+	});
+
+	it('disables compaction without replacing built-in alternative provider models', async () => {
+		process.env.ANTHROPIC_API_KEY = 'synthetic-provider-key';
+		mockSpawn.mockImplementationOnce(() =>
+			fakeProc(assistant('{"findings":[]}'))
+		);
+		await engine().diff(ctx);
+		const { env } = lastSpawn();
+		const { access, readFile } = await import('node:fs/promises');
+		const { join } = await import('node:path');
+		const configDir = env.PI_CODING_AGENT_DIR as string;
+		await expect(access(join(configDir, 'models.json'))).rejects.toThrow();
+		expect(
+			JSON.parse(await readFile(join(configDir, 'settings.json'), 'utf8'))
+				.compaction.enabled
+		).toBe(false);
+	});
 
 	it('reuses one owned config directory for discovery and confirmation, then removes it', async () => {
 		const instance = engine();

@@ -1,9 +1,11 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import * as core from '@actions/core';
 import { classifyPrRisk } from './classifier/risk-classifier.js';
 import { PiSecurityEngine } from './engines/pi-security-engine.js';
 import { PioliumSecurityEngine } from './engines/piolium-engine.js';
 import { findingOccurrenceKey } from './findings/dedupe.js';
+import { redactSecrets } from './redaction/redactor.js';
 import { buildFullAuditReport } from './reporters/audit-reporter.js';
 import { buildStickySecuritySummary } from './reporters/sticky-summary.js';
 import { generateSarif } from './sarif/sarif-generator.js';
@@ -25,13 +27,8 @@ import { applyQualityGate } from './validators/quality-gate.js';
  * Main security workflow orchestrator.
  * Spec reference: §5.2, §8, §9, §11, §18, §19, §26.
  */
-type ManagedSecurityEngine = SecurityEngine & {
-	dispose?: () => Promise<void>;
-	rejectedConfirmations?: SecurityFinding[];
-};
-
 export interface SecurityWorkflowDependencies {
-	engine?: ManagedSecurityEngine;
+	engine?: SecurityEngine;
 	runScanners?: typeof runSecurityScanners;
 }
 
@@ -40,7 +37,7 @@ export async function runSecurityWorkflow(
 	options: SecurityOptions,
 	dependencies: SecurityWorkflowDependencies = {}
 ): Promise<SecurityResult> {
-	const engine: ManagedSecurityEngine =
+	const engine: SecurityEngine =
 		dependencies.engine ??
 		(options.profile === 'diff'
 			? new PiSecurityEngine()
@@ -48,7 +45,14 @@ export async function runSecurityWorkflow(
 	try {
 		return await runSecurityAssessment(context, options, dependencies, engine);
 	} finally {
-		await engine.dispose?.();
+		try {
+			await engine.dispose?.();
+		} catch (error) {
+			const detail = error instanceof Error ? error.message : String(error);
+			core.warning(
+				`Security runtime cleanup failed; preserving the assessment: ${redactSecrets(detail).slice(0, 200)}`
+			);
+		}
 	}
 }
 
@@ -56,7 +60,7 @@ async function runSecurityAssessment(
 	context: SecurityContext,
 	options: SecurityOptions,
 	dependencies: SecurityWorkflowDependencies,
-	engine: ManagedSecurityEngine
+	engine: SecurityEngine
 ): Promise<SecurityResult> {
 	const startTime = Date.now();
 	context.scope = options.profile === 'diff' ? 'diff' : 'audit';

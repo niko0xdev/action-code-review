@@ -64,3 +64,11 @@ The implementation PR must pass the full quality and runtime gates before merge.
 ## Repository review workflow allowance
 
 The repository's own Linux review workflow explicitly installs `ripgrep` and `fd-find` before starting offline inspection. Repeated large-remediation reviews exhausted the default 60-call ceiling without producing a complete assessment. The workflow therefore allows at most 120 calls and asks the reviewer to plan within 100, while retaining timeout/output limits and incomplete-result handling. The selected patches in this audit PR total approximately 86,000 characters, above the default 30,000-character context cap. The repository workflow therefore supplies a finite 150,000-character context budget so selected patches fit without silently claiming clipped source as reviewed. The distributed Action's defaults remain unchanged. The runtime suite additionally exercises actual offline grep with repository-relative and blocked outside paths.
+
+## Self-review follow-up
+
+Live self-review identified a genuine owned-runtime configuration gap: fallback runs created an isolated directory but did not write gateway models or disable compaction there. The shared configuration writer now installs those files atomically while retaining built-in alternative-provider models when no gateway override is supplied. Regression tests cover both cases.
+
+The exported security engine contract now documents the complete confirmation partition and its explicit refutation ledger, and the secondary module re-exports that canonical type. Cleanup failures produce a redacted warning while preserving a completed assessment or the original error.
+
+The independent verifier deliberately has a separate 24,000-character evidence budget. Raising the main review context does not raise this second-pass allowance. A candidate whose complete source patch cannot fit is retained with incomplete verification, preventing approval. This is a documented bounded-verification limit, rather than permission to silently discard an unverified candidate.

@@ -26,9 +26,9 @@ Keep tests deterministic by default. Real-model quality and deterministic live G
 ## Local verification on 18/11/2026
 
 - Typecheck and Biome passed.
-- Coverage suite: 1,849 passed, five existing live-evaluation cases skipped, and seven existing measurement placeholders. No new skipped cases.
-- Coverage: lines/statements 90.03%, branches 87.01%, and functions 90.99%. Existing thresholds are unchanged.
-- Actual pinned-runtime suite: four passed against loopback, including Unicode path-normalisation bypass regression, traversal/symlink isolation, usage, and independent limits.
+- Coverage suite: 1,852 passed, five existing live-evaluation cases skipped, and seven existing measurement placeholders. No new skipped cases.
+- Coverage: lines/statements 90.10%, branches 87.00%, and functions 91.01%. Existing thresholds are unchanged.
+- Actual pinned-runtime suite: five passed against loopback, including Unicode path-normalisation bypass regression, traversal/symlink isolation, usage, and independent limits.
 - Both bundles rebuilt and both unsupported-event startup guards smoke-ran successfully.
 - Confirmation partition regressions failed before correction, then all 165 focused security tests passed.
 
@@ -37,3 +37,5 @@ Keep tests deterministic by default. Real-model quality and deterministic live G
 - Linux workflows install the offline search prerequisites; the review workflow uses an explicit 120-call maximum after repeated exhaustion of the default 60 on this large remediation. Actual offline grep is covered by the runtime suite.
 
 - The measured selected patch set exceeds 86,000 characters. The repository workflow supplies 150,000 characters so the complete selected input fits; omitted input remains incomplete.
+
+- Live self-review follow-up: three new regression cases proved the owned runtime configuration gap and cleanup result loss before correction. A fifth real-runtime case verifies the gateway with an initially empty owned directory. Public security engine types now describe the complete confirmation partition.

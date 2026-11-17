@@ -11,6 +11,7 @@ import type {
 const engine = vi.hoisted(() => ({
 	findings: [] as unknown[],
 	confirmFails: false,
+	disposeFails: false,
 	confirmIds: undefined as string[] | undefined,
 	confirmed: [] as unknown[],
 	confirmOutput: undefined as unknown[] | undefined,
@@ -19,6 +20,9 @@ const engine = vi.hoisted(() => ({
 
 vi.mock('../../src/security/engines/pi-security-engine.js', () => ({
 	PiSecurityEngine: class {
+		async dispose() {
+			if (engine.disposeFails) throw new Error('Synthetic cleanup failure');
+		}
 		get rejectedConfirmations() {
 			return engine.refutations;
 		}
@@ -99,6 +103,7 @@ function run(overrides: Partial<SecurityOptions>, outputDir?: string) {
 afterEach(() => {
 	engine.findings = [];
 	engine.confirmFails = false;
+	engine.disposeFails = false;
 	engine.confirmIds = undefined;
 	engine.confirmed = [];
 	engine.confirmOutput = undefined;
@@ -112,6 +117,15 @@ describe('security orchestrator policy', () => {
 		const result = await run({});
 		expect(result.conclusion.incomplete).toBe(true);
 		expect(result.summaryMarkdown).toMatch(/incomplete/i);
+	});
+
+	it('preserves the completed assessment when runtime cleanup fails', async () => {
+		engine.findings = [finding('a', 'high')];
+		engine.disposeFails = true;
+		const result = await run({ confirmFindings: false });
+		expect(result.findings).toMatchObject([{ id: 'a', severity: 'high' }]);
+		expect(result.conclusion.incomplete).toBe(false);
+		expect(result.conclusion.engineStatus).toBe('success');
 	});
 
 	it('clears sarifPath when the SARIF write fails', async () => {

@@ -5,7 +5,10 @@ import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { StringDecoder } from 'node:string_decoder';
 import * as core from '@actions/core';
-import { preparePiRuntimeConfig } from '../adapter/runtime.js';
+import {
+	preparePiRuntimeConfig,
+	writePiRuntimeConfig,
+} from '../adapter/runtime.js';
 import { redactSecrets } from '../security/redaction/redactor.js';
 import type { ReviewContext } from '../types/context.js';
 import type {
@@ -992,14 +995,22 @@ export async function runIsolatedPiPrompt(
 	} = {}
 ): Promise<string> {
 	const provider = options.provider ?? 'openai';
+	const config = {
+		provider,
+		apiKey: options.apiKey ?? '',
+		baseUrl: options.baseUrl ?? 'https://api.openai.com/v1',
+		model: options.model ?? 'gpt-4o',
+	};
 	const runtime = options.configDir
 		? undefined
-		: await preparePiRuntimeConfig({
-				provider,
-				apiKey: options.apiKey ?? '',
-				baseUrl: options.baseUrl ?? 'https://api.openai.com/v1',
-				model: options.model ?? 'gpt-4o',
-			});
+		: await preparePiRuntimeConfig(config);
+	if (options.configDir) {
+		// Preserve built-in alternative-provider models unless a gateway was supplied.
+		await writePiRuntimeConfig(
+			options.configDir,
+			options.baseUrl ? config : undefined
+		);
+	}
 	try {
 		const configDir = options.configDir ?? runtime?.configDir;
 		if (!configDir)

@@ -1,10 +1,17 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { preparePiRuntimeConfig } from '../../src/adapter/runtime.js';
-import { PiHarness } from '../../src/harness/pi.js';
+import { PiHarness, runIsolatedPiPrompt } from '../../src/harness/pi.js';
 import type { ReviewContext } from '../../src/types/context.js';
 
 async function fixture(
@@ -114,6 +121,8 @@ async function fixture(
 	return {
 		harness,
 		context,
+		configDir: runtime.configDir,
+		baseUrl: `http://127.0.0.1:${address.port}/v1`,
 		requests,
 		cleanup: async () => {
 			await runtime.cleanup();
@@ -175,6 +184,33 @@ describe('pinned Pi runtime against a loopback provider', () => {
 				'OUTSIDE_CREDENTIAL_CANARY'
 			);
 			expect(JSON.stringify(replies)).not.toContain('not available');
+		} finally {
+			await f.cleanup();
+		}
+	});
+	it('uses an explicit gateway from an initially empty caller-owned configuration', async () => {
+		const f = await fixture([]);
+		try {
+			await rm(join(f.configDir, 'models.json'));
+			await rm(join(f.configDir, 'settings.json'));
+			const output = await runIsolatedPiPrompt(
+				f.context.repositoryPath,
+				'Return the prescribed JSON result.',
+				{
+					binaryPath: resolve('pr-review/pi-runtime/node_modules/.bin/pi'),
+					configDir: f.configDir,
+					baseUrl: f.baseUrl,
+					apiKey: 'synthetic',
+					model: 'mock',
+					timeoutMs: 15_000,
+				}
+			);
+			expect(JSON.parse(output).findings).toEqual([]);
+			expect(f.requests).toHaveLength(1);
+			expect(
+				JSON.parse(await readFile(join(f.configDir, 'settings.json'), 'utf8'))
+					.compaction.enabled
+			).toBe(false);
 		} finally {
 			await f.cleanup();
 		}

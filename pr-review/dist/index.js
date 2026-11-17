@@ -32443,16 +32443,20 @@ function wrappy (fn, cb) {
 /***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
 
 /* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
+/* harmony export */   Pm: () => (/* binding */ writePiRuntimeConfig),
 /* harmony export */   vk: () => (/* binding */ preparePiRuntimeConfig)
 /* harmony export */ });
 /* unused harmony exports buildPiRuntimeModelsJson, buildPiRuntimeSettingsJson */
-/* harmony import */ var node_fs_promises__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(1455);
-/* harmony import */ var node_fs_promises__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__nccwpck_require__.n(node_fs_promises__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var node_os__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(8161);
-/* harmony import */ var node_os__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__nccwpck_require__.n(node_os__WEBPACK_IMPORTED_MODULE_1__);
-/* harmony import */ var node_path__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(6760);
-/* harmony import */ var node_path__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__nccwpck_require__.n(node_path__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var _skills_registry_js__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(5672);
+/* harmony import */ var node_crypto__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(7598);
+/* harmony import */ var node_crypto__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__nccwpck_require__.n(node_crypto__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var node_fs_promises__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(1455);
+/* harmony import */ var node_fs_promises__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__nccwpck_require__.n(node_fs_promises__WEBPACK_IMPORTED_MODULE_1__);
+/* harmony import */ var node_os__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(8161);
+/* harmony import */ var node_os__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__nccwpck_require__.n(node_os__WEBPACK_IMPORTED_MODULE_2__);
+/* harmony import */ var node_path__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(6760);
+/* harmony import */ var node_path__WEBPACK_IMPORTED_MODULE_3___default = /*#__PURE__*/__nccwpck_require__.n(node_path__WEBPACK_IMPORTED_MODULE_3__);
+/* harmony import */ var _skills_registry_js__WEBPACK_IMPORTED_MODULE_4__ = __nccwpck_require__(5672);
+
 
 
 
@@ -32507,32 +32511,49 @@ function buildPiRuntimeSettingsJson() {
  */
 async function writeSkillsForProfiles(configDir, profiles) {
     for (const profile of profiles) {
-        const content = _skills_registry_js__WEBPACK_IMPORTED_MODULE_3__/* .BUILT_IN_SKILLS */ .S[profile];
+        const content = _skills_registry_js__WEBPACK_IMPORTED_MODULE_4__/* .BUILT_IN_SKILLS */ .S[profile];
         if (!content)
             continue;
-        const skillDir = (0,node_path__WEBPACK_IMPORTED_MODULE_2__.join)(configDir, 'skills', profile);
-        await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_0__.mkdir)(skillDir, { recursive: true });
-        await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_0__.writeFile)((0,node_path__WEBPACK_IMPORTED_MODULE_2__.join)(skillDir, 'SKILL.md'), content, 'utf8');
+        const skillDir = (0,node_path__WEBPACK_IMPORTED_MODULE_3__.join)(configDir, 'skills', profile);
+        await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_1__.mkdir)(skillDir, { recursive: true });
+        await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_1__.writeFile)((0,node_path__WEBPACK_IMPORTED_MODULE_3__.join)(skillDir, 'SKILL.md'), content, 'utf8');
+    }
+}
+/** Configure owned or newly allocated runtime files without exposing partial writes. */
+async function writePiRuntimeConfig(configDir, config) {
+    await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_1__.mkdir)(configDir, { recursive: true, mode: 0o700 });
+    const files = [
+        ['settings.json', buildPiRuntimeSettingsJson()],
+    ];
+    if (config)
+        files.push(['models.json', buildPiRuntimeModelsJson(config)]);
+    for (const [name, contents] of files) {
+        const temporary = (0,node_path__WEBPACK_IMPORTED_MODULE_3__.join)(configDir, `${name}.${(0,node_crypto__WEBPACK_IMPORTED_MODULE_0__.randomUUID)()}.tmp`);
+        try {
+            await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_1__.writeFile)(temporary, contents, { mode: 0o600 });
+            await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_1__.rename)(temporary, (0,node_path__WEBPACK_IMPORTED_MODULE_3__.join)(configDir, name));
+        }
+        finally {
+            await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_1__.rm)(temporary, { force: true });
+        }
     }
 }
 async function preparePiRuntimeConfig(config, options) {
-    const configDir = await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_0__.mkdtemp)((0,node_path__WEBPACK_IMPORTED_MODULE_2__.join)((0,node_os__WEBPACK_IMPORTED_MODULE_1__.tmpdir)(), 'acr-pi-'));
+    const configDir = await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_1__.mkdtemp)((0,node_path__WEBPACK_IMPORTED_MODULE_3__.join)((0,node_os__WEBPACK_IMPORTED_MODULE_2__.tmpdir)(), 'acr-pi-'));
     try {
-        await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_0__.mkdir)(configDir, { recursive: true });
-        await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_0__.writeFile)((0,node_path__WEBPACK_IMPORTED_MODULE_2__.join)(configDir, 'models.json'), buildPiRuntimeModelsJson(config), 'utf8');
-        await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_0__.writeFile)((0,node_path__WEBPACK_IMPORTED_MODULE_2__.join)(configDir, 'settings.json'), buildPiRuntimeSettingsJson(), 'utf8');
+        await writePiRuntimeConfig(configDir, config);
         if (options?.profiles && options.profiles.length > 0) {
             await writeSkillsForProfiles(configDir, options.profiles);
         }
     }
     catch (error) {
-        await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_0__.rm)(configDir, { recursive: true, force: true });
+        await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_1__.rm)(configDir, { recursive: true, force: true });
         throw error;
     }
     return {
         configDir,
         async cleanup() {
-            await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_0__.rm)(configDir, { recursive: true, force: true });
+            await (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_1__.rm)(configDir, { recursive: true, force: true });
         },
     };
 }
@@ -34196,14 +34217,19 @@ async function runPi(params) {
 /** Shared isolated transport for security prompts using their own output schema. */
 async function runIsolatedPiPrompt(repositoryPath, prompt, options = {}) {
     const provider = options.provider ?? 'openai';
+    const config = {
+        provider,
+        apiKey: options.apiKey ?? '',
+        baseUrl: options.baseUrl ?? 'https://api.openai.com/v1',
+        model: options.model ?? 'gpt-4o',
+    };
     const runtime = options.configDir
         ? undefined
-        : await (0,adapter_runtime/* preparePiRuntimeConfig */.vk)({
-            provider,
-            apiKey: options.apiKey ?? '',
-            baseUrl: options.baseUrl ?? 'https://api.openai.com/v1',
-            model: options.model ?? 'gpt-4o',
-        });
+        : await (0,adapter_runtime/* preparePiRuntimeConfig */.vk)(config);
+    if (options.configDir) {
+        // Preserve built-in alternative-provider models unless a gateway was supplied.
+        await (0,adapter_runtime/* writePiRuntimeConfig */.Pm)(options.configDir, options.baseUrl ? config : undefined);
+    }
     try {
         const configDir = options.configDir ?? runtime?.configDir;
         if (!configDir)
@@ -44618,6 +44644,8 @@ function applyQualityGate(candidates, context, minSeverity = 'medium', minConfid
 
 
 
+
+
 async function runSecurityWorkflow(context, options, dependencies = {}) {
     const engine = dependencies.engine ??
         (options.profile === 'diff'
@@ -44627,7 +44655,13 @@ async function runSecurityWorkflow(context, options, dependencies = {}) {
         return await runSecurityAssessment(context, options, dependencies, engine);
     }
     finally {
-        await engine.dispose?.();
+        try {
+            await engine.dispose?.();
+        }
+        catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            core.warning(`Security runtime cleanup failed; preserving the assessment: ${(0,redactor/* redactSecrets */.f)(detail).slice(0, 200)}`);
+        }
     }
 }
 async function runSecurityAssessment(context, options, dependencies, engine) {

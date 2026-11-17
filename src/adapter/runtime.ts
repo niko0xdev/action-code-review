@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { LlmConfig } from '../llm/provider.js';
@@ -77,23 +78,34 @@ async function writeSkillsForProfiles(
 	}
 }
 
+/** Configure owned or newly allocated runtime files without exposing partial writes. */
+export async function writePiRuntimeConfig(
+	configDir: string,
+	config?: LlmConfig
+): Promise<void> {
+	await mkdir(configDir, { recursive: true, mode: 0o700 });
+	const files: Array<[string, string]> = [
+		['settings.json', buildPiRuntimeSettingsJson()],
+	];
+	if (config) files.push(['models.json', buildPiRuntimeModelsJson(config)]);
+	for (const [name, contents] of files) {
+		const temporary = join(configDir, `${name}.${randomUUID()}.tmp`);
+		try {
+			await writeFile(temporary, contents, { mode: 0o600 });
+			await rename(temporary, join(configDir, name));
+		} finally {
+			await rm(temporary, { force: true });
+		}
+	}
+}
+
 export async function preparePiRuntimeConfig(
 	config: LlmConfig,
 	options?: { profiles?: readonly ProfileId[] }
 ): Promise<PiRuntimeConfig> {
 	const configDir = await mkdtemp(join(tmpdir(), 'acr-pi-'));
 	try {
-		await mkdir(configDir, { recursive: true });
-		await writeFile(
-			join(configDir, 'models.json'),
-			buildPiRuntimeModelsJson(config),
-			'utf8'
-		);
-		await writeFile(
-			join(configDir, 'settings.json'),
-			buildPiRuntimeSettingsJson(),
-			'utf8'
-		);
+		await writePiRuntimeConfig(configDir, config);
 		if (options?.profiles && options.profiles.length > 0) {
 			await writeSkillsForProfiles(configDir, options.profiles);
 		}
