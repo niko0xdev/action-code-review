@@ -1003,7 +1003,9 @@ export async function runIsolatedPiPrompt(
 	};
 	const runtime = options.configDir
 		? undefined
-		: await preparePiRuntimeConfig(config);
+		: await preparePiRuntimeConfig(
+				options.baseUrl || provider === 'openai' ? config : undefined
+			);
 	if (options.configDir) {
 		// Preserve built-in alternative-provider models unless a gateway was supplied.
 		await writePiRuntimeConfig(

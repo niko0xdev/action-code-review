@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultTools, runPrelint } from '../../src/context/prelint.js';
+import { runIsolatedPiPrompt } from '../../src/harness/pi.js';
 import { MAX_ANALYSER_OUTPUT_BYTES } from '../../src/security/analyser-process.js';
 import { PiSecurityEngine } from '../../src/security/engines/pi-security-engine.js';
 import { runSecurityWorkflow } from '../../src/security/orchestrator.js';
@@ -326,6 +327,34 @@ describe('PiSecurityEngine fallback spawn', () => {
 			JSON.parse(await readFile(join(configDir, 'settings.json'), 'utf8'))
 				.compaction.enabled
 		).toBe(false);
+	});
+
+	it('preserves native provider configuration in a newly allocated isolated transport', async () => {
+		const { existsSync, readFileSync } = await import('node:fs');
+		const { join } = await import('node:path');
+		let configDir = '';
+		let hasOverride = true;
+		let compactionEnabled = true;
+		mockSpawn.mockImplementationOnce((_binary, _args, options) => {
+			configDir = (options?.env as NodeJS.ProcessEnv)
+				.PI_CODING_AGENT_DIR as string;
+			hasOverride = existsSync(join(configDir, 'models.json'));
+			compactionEnabled = JSON.parse(
+				readFileSync(join(configDir, 'settings.json'), 'utf8')
+			).compaction.enabled;
+			return fakeProc(assistant('{"findings":[]}'));
+		});
+		await runIsolatedPiPrompt(
+			ctx.repositoryPath,
+			'Return a security assessment.',
+			{
+				provider: 'anthropic',
+				extraEnv: { ANTHROPIC_API_KEY: 'synthetic-provider-key' },
+			}
+		);
+		expect(hasOverride).toBe(false);
+		expect(compactionEnabled).toBe(false);
+		expect(existsSync(configDir)).toBe(false);
 	});
 
 	it('reuses one owned config directory for discovery and confirmation, then removes it', async () => {

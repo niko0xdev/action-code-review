@@ -100,7 +100,7 @@ export async function writePiRuntimeConfig(
 }
 
 export async function preparePiRuntimeConfig(
-	config: LlmConfig,
+	config: LlmConfig | undefined,
 	options?: { profiles?: readonly ProfileId[] }
 ): Promise<PiRuntimeConfig> {
 	const configDir = await mkdtemp(join(tmpdir(), 'acr-pi-'));

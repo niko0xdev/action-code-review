@@ -67,7 +67,7 @@ The repository's own Linux review workflow explicitly installs `ripgrep` and `fd
 
 ## Self-review follow-up
 
-Live self-review identified a genuine owned-runtime configuration gap: fallback runs created an isolated directory but did not write gateway models or disable compaction there. The shared configuration writer now installs those files atomically while retaining built-in alternative-provider models when no gateway override is supplied. Regression tests cover both cases.
+Live self-review identified a genuine owned-runtime configuration gap: fallback runs created an isolated directory but did not write gateway models or disable compaction there. The shared configuration writer now installs those files atomically while retaining built-in alternative-provider models when no gateway override is supplied, for both caller-owned and newly allocated directories. Regression tests cover both cases.
 
 The exported security engine contract now documents the complete confirmation partition and its explicit refutation ledger, and the secondary module re-exports that canonical type. Cleanup failures produce a redacted warning while preserving a completed assessment or the original error.
 

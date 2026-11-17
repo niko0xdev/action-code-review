@@ -34225,7 +34225,7 @@ async function runIsolatedPiPrompt(repositoryPath, prompt, options = {}) {
     };
     const runtime = options.configDir
         ? undefined
-        : await (0,adapter_runtime/* preparePiRuntimeConfig */.vk)(config);
+        : await (0,adapter_runtime/* preparePiRuntimeConfig */.vk)(options.baseUrl || provider === 'openai' ? config : undefined);
     if (options.configDir) {
         // Preserve built-in alternative-provider models unless a gateway was supplied.
         await (0,adapter_runtime/* writePiRuntimeConfig */.Pm)(options.configDir, options.baseUrl ? config : undefined);
