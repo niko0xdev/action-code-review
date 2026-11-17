@@ -1,5 +1,6 @@
 // Pure helpers for the weekly research workflow. No I/O, so they are unit tested.
 
+export const MAX_ROWS_PER_SCOUT = 12;
 export const SCOUTS = ['github', 'web', 'lists'];
 export const PERMISSIVE_LICENCES = new Set([
 	'MIT',
@@ -73,7 +74,9 @@ export function dedupeByUrl(items) {
 export function dropCovered(items, corpus) {
 	const haystack = corpus.toLowerCase();
 	return items.filter((item) => {
-		const path = new URL(item.url).pathname.replace(/^\/|\/$/g, '').toLowerCase();
+		const path = new URL(item.url).pathname
+			.replace(/^\/|\/$/g, '')
+			.toLowerCase();
 		return !(path.length > 3 && haystack.includes(path));
 	});
 }
@@ -87,11 +90,20 @@ export function licenceFlag(spdx) {
 export function parseModelJson(text) {
 	const source = String(text ?? '').trim();
 	const fenced = source.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
-	const attempts = [source, fenced, ...[['[', ']'], ['{', '}']].map(([open, close]) => {
-		const start = source.indexOf(open);
-		const end = source.lastIndexOf(close);
-		return start !== -1 && end > start ? source.slice(start, end + 1) : undefined;
-	})];
+	const attempts = [
+		source,
+		fenced,
+		...[
+			['[', ']'],
+			['{', '}'],
+		].map(([open, close]) => {
+			const start = source.indexOf(open);
+			const end = source.lastIndexOf(close);
+			return start !== -1 && end > start
+				? source.slice(start, end + 1)
+				: undefined;
+		}),
+	];
 	for (const attempt of attempts) {
 		if (!attempt) continue;
 		try {
@@ -107,7 +119,8 @@ export function parseModelJson(text) {
 export function scrubSecrets(text, secrets = []) {
 	let out = String(text ?? '');
 	for (const secret of secrets) {
-		if (secret && secret.length >= 8) out = out.split(secret).join('[REDACTED]');
+		if (secret && secret.length >= 8)
+			out = out.split(secret).join('[REDACTED]');
 	}
 	return out
 		.replace(/\b(?:sk|pk)-[A-Za-z0-9_-]{16,}/g, '[REDACTED]')
@@ -132,6 +145,7 @@ export function validateRanked(rows, allowedUrls) {
 	if (!Array.isArray(rows)) return [];
 	const out = [];
 	for (const row of rows) {
+		if (out.length >= MAX_ROWS_PER_SCOUT) break;
 		const url = safeUrl(row?.url);
 		if (!url || !allowed.has(url.toLowerCase())) continue;
 		const mode = ['idea', 'dependency', 'reference'].includes(row.adoption_mode)
@@ -156,7 +170,9 @@ export function validateRanked(rows, allowedUrls) {
 }
 
 export function rankByPriority(rows) {
-	return [...rows].sort((a, b) => b.priority - a.priority || a.name.localeCompare(b.name));
+	return [...rows].sort(
+		(a, b) => b.priority - a.priority || a.name.localeCompare(b.name)
+	);
 }
 
 const cell = (value) => escapeMd(sanitiseText(value, 240));
@@ -172,7 +188,9 @@ export function renderReport({ date, rows, limitations, scoutsRun }) {
 		'',
 		'## Limitations',
 		'',
-		...(limitations.length ? limitations.map((l) => `- ${cell(l)}`) : ['- None recorded.']),
+		...(limitations.length
+			? limitations.map((l) => `- ${cell(l)}`)
+			: ['- None recorded.']),
 		'',
 		'## Ranked candidates',
 		'',
@@ -186,12 +204,14 @@ export function renderReport({ date, rows, limitations, scoutsRun }) {
 		);
 		ranked.forEach((r, i) => {
 			lines.push(
-				`| ${i + 1} | [${cell(r.name)}](${r.url}) | ${cell(r.licence ?? 'unknown')} | ${r.adoption_mode} | ${r.impact} | ${r.fit} | ${r.effort} | ${r.priority} | ${cell(r.what)} | ${cell(r.how)} |`
+				`| ${i + 1} | [${cell(r.name)}](${linkTarget(r.url)}) | ${cell(r.licence ?? 'unknown')} | ${r.adoption_mode} | ${r.impact} | ${r.fit} | ${r.effort} | ${r.priority} | ${cell(r.what)} | ${cell(r.how)} |`
 			);
 		});
 		lines.push('', '## Top 5', '');
 		ranked.slice(0, 5).forEach((r, i) => {
-			lines.push(`${i + 1}. **${cell(r.name)}** (priority ${r.priority}): ${cell(r.how)}`);
+			lines.push(
+				`${i + 1}. **${cell(r.name)}** (priority ${r.priority}): ${cell(r.how)}`
+			);
 		});
 	}
 	lines.push(
@@ -202,6 +222,14 @@ export function renderReport({ date, rows, limitations, scoutsRun }) {
 		''
 	);
 	return lines.join('\n');
+}
+
+/** Percent-encode characters that would end a Markdown link target early. */
+export function linkTarget(url) {
+	return safeUrl(url).replace(
+		/[()<>\s]/g,
+		(c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')}`
+	);
 }
 
 export function indexRow(date) {

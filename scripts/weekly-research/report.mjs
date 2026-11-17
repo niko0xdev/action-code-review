@@ -4,7 +4,14 @@
 // Usage: node report.mjs <scoutsDir> <repoRoot>
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SCOUTS, dropCovered, indexRow, isoDate, licenceFlag, renderReport } from './lib.mjs';
+import {
+	SCOUTS,
+	dropCovered,
+	indexRow,
+	isoDate,
+	licenceFlag,
+	renderReport,
+} from './lib.mjs';
 
 const [scoutsDir, root] = process.argv.slice(2);
 if (!scoutsDir || !root) {
@@ -32,7 +39,8 @@ const researchDir = join(root, 'docs', 'research');
 // Exclude today's own report so a same-day rerun does not treat itself as prior art.
 const corpus = readdirSync(researchDir)
 	.filter((f) => f !== `weekly-${date}.md`)
-	.map((f) => readFileSync(join(researchDir, f), 'utf8')).join('\n');
+	.map((f) => readFileSync(join(researchDir, f), 'utf8'))
+	.join('\n');
 const seen = new Set();
 rows = dropCovered(rows, corpus).filter((r) => {
 	const key = r.url.toLowerCase();
@@ -42,17 +50,37 @@ rows = dropCovered(rows, corpus).filter((r) => {
 });
 
 // Verify GitHub repositories and attach licence; drop what does not exist.
+// The step has a hard deadline so a slow API cannot exhaust the job timeout.
+const VERIFY_DEADLINE = Date.now() + 8 * 60_000;
 const verified = [];
 for (const row of rows) {
-	const match = new URL(row.url).hostname === 'github.com' && new URL(row.url).pathname.match(/^\/([^/]+\/[^/]+?)\/?$/);
+	if (Date.now() > VERIFY_DEADLINE) {
+		limitations.push(
+			`Verification deadline reached; ${row.url} and later candidates were not verified and are omitted.`
+		);
+		break;
+	}
+	const match =
+		new URL(row.url).hostname === 'github.com' &&
+		new URL(row.url).pathname.match(/^\/([^/]+\/[^/]+?)\/?$/);
 	if (!match) {
-		verified.push({ ...row, licence: 'n/a (not a repository)', adoption_mode: row.adoption_mode === 'dependency' ? 'idea' : row.adoption_mode });
+		verified.push({
+			...row,
+			licence: 'n/a (not a repository)',
+			adoption_mode:
+				row.adoption_mode === 'dependency' ? 'idea' : row.adoption_mode,
+		});
 		continue;
 	}
 	try {
 		const res = await fetch(`https://api.github.com/repos/${match[1]}`, {
-			headers: { 'user-agent': 'weekly-research', ...(process.env.GITHUB_TOKEN ? { authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}) },
-			signal: AbortSignal.timeout(20_000),
+			headers: {
+				'user-agent': 'weekly-research',
+				...(process.env.GITHUB_TOKEN
+					? { authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
+					: {}),
+			},
+			signal: AbortSignal.timeout(10_000),
 		});
 		if (!res.ok) {
 			limitations.push(`Dropped ${row.url}: GitHub answered ${res.status}.`);
@@ -60,27 +88,47 @@ for (const row of rows) {
 		}
 		const repo = await res.json();
 		if (repo.archived) continue;
-		const spdx = repo.license?.spdx_id && repo.license.spdx_id !== 'NOASSERTION' ? repo.license.spdx_id : null;
+		const spdx =
+			repo.license?.spdx_id && repo.license.spdx_id !== 'NOASSERTION'
+				? repo.license.spdx_id
+				: null;
 		const flag = licenceFlag(spdx);
-		verified.push({ ...row, licence: spdx ?? 'unknown', adoption_mode: flag === 'permissive' ? row.adoption_mode : 'reference' });
+		verified.push({
+			...row,
+			licence: spdx ?? 'unknown',
+			adoption_mode: flag === 'permissive' ? row.adoption_mode : 'reference',
+		});
 	} catch (e) {
 		limitations.push(`Could not verify ${row.url}: ${e.message}.`);
 	}
 }
 
-writeFileSync(join(researchDir, `weekly-${date}.md`), renderReport({ date, rows: verified, limitations, scoutsRun }));
+writeFileSync(
+	join(researchDir, `weekly-${date}.md`),
+	renderReport({ date, rows: verified, limitations, scoutsRun })
+);
 
 const indexPath = join(root, 'docs', 'index.md');
 const index = readFileSync(indexPath, 'utf8');
 const marker = '\n## Historical decisions';
 const at = index.indexOf(marker);
 if (at !== -1 && !index.includes(`weekly-${date}.md`)) {
-	writeFileSync(indexPath, `${index.slice(0, at).replace(/\n+$/, '\n')}${indexRow(date)}${index.slice(at)}`);
+	writeFileSync(
+		indexPath,
+		`${index.slice(0, at).replace(/\n+$/, '\n')}${indexRow(date)}${index.slice(at)}`
+	);
 }
 
 const statePath = join(root, '.product-intelligence', 'state.json');
 const state = JSON.parse(readFileSync(statePath, 'utf8'));
 state.last_weekly_scan = date;
-state.previous_research = [...new Set([...(state.previous_research ?? []), `docs/research/weekly-${date}.md`])];
+state.previous_research = [
+	...new Set([
+		...(state.previous_research ?? []),
+		`docs/research/weekly-${date}.md`,
+	]),
+];
 writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
-console.log(`report written: docs/research/weekly-${date}.md (${verified.length} candidates)`);
+console.log(
+	`report written: docs/research/weekly-${date}.md (${verified.length} candidates)`
+);

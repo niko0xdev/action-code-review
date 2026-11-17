@@ -225,3 +225,66 @@ describe('hardening helpers', () => {
 		expect(parseModelJson('Answer: [1,2] bye')).toEqual([1, 2]);
 	});
 });
+
+describe('collect.mjs with a stubbed network', () => {
+	it('collects, normalises, dedupes, and records per-query failures', () => {
+		const stub = join(tmp, 'fetch-stub.mjs');
+		writeFileSync(
+			stub,
+			`globalThis.fetch = async (url) => {
+	const u = String(url);
+	if (u.includes('topic%3Asast')) return new Response('nope', { status: 500 });
+	if (u.includes('api.github.com/search')) {
+		return Response.json({ items: [
+			{ full_name: 'a/b', html_url: 'https://github.com/a/b', description: 'x @evil <b>', stargazers_count: 50, pushed_at: '2026-11-01' },
+			{ full_name: 'bad', html_url: 'javascript:alert(1)', description: 'x' },
+		] });
+	}
+	return Response.json({ items: [] });
+};`
+		);
+		const out = join(tmp, 'out');
+		const res = spawnSync(
+			'node',
+			['--import', stub, join(scripts, 'collect.mjs'), 'github', out],
+			{ encoding: 'utf8' }
+		);
+		expect(res.status).toBe(0);
+		const data = JSON.parse(readFileSync(join(out, 'candidates.json'), 'utf8'));
+		expect(data.items).toHaveLength(1);
+		expect(data.items[0].description).not.toMatch(/[<>@]/);
+		expect(data.errors.join(' ')).toMatch(/topic:sast: .*500/);
+	});
+
+	it('exits non-zero when every source fails', () => {
+		const stub = join(tmp, 'fail-stub.mjs');
+		writeFileSync(
+			stub,
+			"globalThis.fetch = async () => new Response('x', { status: 503 });"
+		);
+		const res = spawnSync(
+			'node',
+			['--import', stub, join(scripts, 'collect.mjs'), 'web', join(tmp, 'o2')],
+			{ encoding: 'utf8' }
+		);
+		expect(res.status).toBe(1);
+	});
+});
+
+describe('untrusted-data bounds', () => {
+	it('caps rows per scout and encodes link targets', async () => {
+		const { validateRanked, linkTarget, MAX_ROWS_PER_SCOUT } = await import(
+			'../scripts/weekly-research/lib.mjs'
+		);
+		const urls = Array.from(
+			{ length: 30 },
+			(_, i) => `https://github.com/a/r${i}`
+		);
+		const rows = validateRanked(
+			urls.map((url) => ({ name: url, url, impact: 3, fit: 3, effort: 3 })),
+			urls
+		);
+		expect(rows).toHaveLength(MAX_ROWS_PER_SCOUT);
+		expect(linkTarget('https://e.org/a_(b)')).toBe('https://e.org/a_%28b%29');
+	});
+});

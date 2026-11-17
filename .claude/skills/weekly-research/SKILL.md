@@ -20,7 +20,8 @@ names in the PR title or body.
 Monday at 02:00 UTC (and on `workflow_dispatch`). Three matrix jobs (`github`,
 `web`, `lists`, `max-parallel: 3`) collect public data with
 `scripts/weekly-research/collect.mjs`, then rank it with the tool-free Pi
-harness (`--no-tools`) (`rank.mjs`) in a directory that holds only the collected data. A final
+harness (`rank.mjs`): the candidates are embedded in the prompt and every tool is
+disabled (`--no-tools`), so the model cannot read files or run commands. A final
 job (`report.mjs`) verifies repositories against the GitHub API, writes
 `docs/research/weekly-YYYY-MM-DD.md`, and opens a report-only PR. It reuses the
 existing `OPENAI_API_KEY`, `OPENAI_API_URL`, and `OPENAI_API_MODEL` secrets, and
