@@ -35,3 +35,5 @@ Keep tests deterministic by default. Real-model quality and deterministic live G
 - Each subprocess receives its own complete guard file; a concurrency regression prevents shared-file truncation during parallel startup.
 
 - Linux workflows install the offline search prerequisites; the review workflow uses an explicit 120-call maximum after repeated exhaustion of the default 60 on this large remediation. Actual offline grep is covered by the runtime suite.
+
+- The measured selected patch set exceeds 86,000 characters. The repository workflow supplies 150,000 characters so the complete selected input fits; omitted input remains incomplete.

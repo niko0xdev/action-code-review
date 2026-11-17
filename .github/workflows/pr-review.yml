@@ -41,6 +41,7 @@ jobs:
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
           exclude-patterns: "*.md,*.txt"
           track-progress: 'true'
+          max-context-chars: '150000'
           review-prompt: >-
             Focus on actionable correctness, security, and regression issues in the
             supplied patches. Use targeted source reads and searches rather than
