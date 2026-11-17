@@ -365,3 +365,10 @@ MIIEowIBAAKCAQEA0Yq3...fake...private...key...data
 		);
 	});
 });
+
+it('redacts an entire long provider key without retaining its tail', () => {
+	const key = `sk-proj-${'A'.repeat(180)}TAILCANARY`;
+	expect(redactSecrets(`key: ${key} end`)).toBe(
+		'key: [REDACTED_OPENAI_KEY] end'
+	);
+});

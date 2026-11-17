@@ -8,7 +8,10 @@ import {
 	mapPrContentInputs,
 } from '../adapter/legacy-inputs.js';
 import { fetchPrContext } from '../context/pr.js';
-import { updatePrContent } from '../github/pr-content.js';
+import {
+	PrContentConflictError,
+	updatePrContent,
+} from '../github/pr-content.js';
 import { buildJobSummary } from '../github/review.js';
 import { OpenAiCompatibleProvider } from '../llm/openai-compatible.js';
 import {
@@ -42,6 +45,11 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 	const client = github.getOctokit(options.githubToken);
 	const octokit = toPublisherOctokit(client);
 	const prContext = await fetchPrContext(octokit, repoInfo, prNumber);
+	const expectedSnapshot = {
+		headSha: prContext.pullRequest.headSha,
+		title: prContext.pullRequest.title,
+		body: prContext.pullRequest.body,
+	};
 	let templateContent = '';
 	try {
 		const template = await client.rest.repos.getContent({
@@ -57,7 +65,7 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 			);
 		}
 	} catch {
-		// Missing template is valid and matches V1 behavior.
+		// Missing template is valid and matches V1 behaviour.
 	}
 	const config = resolveEngineConfig(options);
 	const provider = new OpenAiCompatibleProvider(config);
@@ -99,8 +107,10 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 		await updatePrContent(octokit, repoInfo.owner, repoInfo.repo, prNumber, {
 			response: completion.content,
 			templateContent,
+			expectedSnapshot,
 		});
 	} catch (error) {
+		if (error instanceof PrContentConflictError) throw error;
 		budget = escalateMaxTokens(budget);
 		core.warning(
 			`First parse failed (${error instanceof Error ? error.message : String(error)}); retrying with max_tokens=${budget}`
@@ -109,6 +119,7 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 		await updatePrContent(octokit, repoInfo.owner, repoInfo.repo, prNumber, {
 			response: completion.content,
 			templateContent,
+			expectedSnapshot,
 		});
 	}
 	const durationMs = performance.now() - started;

@@ -16,7 +16,7 @@ import { scanFences } from './helpers/pipeline.js';
 const DIFF_START = 'Changed Code Diffs (UNTRUSTED DATA):';
 const DIFF_END = 'Respond ONLY with a JSON object in this exact schema:';
 const CONFIRM_START = 'Diff Context (UNTRUSTED DATA):';
-const CONFIRM_END = 'Analyze whether this is a genuine security issue';
+const CONFIRM_END = 'Analyse whether this is a genuine security issue';
 
 function securityContext(
 	files: Array<{ filename: string; patch: string }>
@@ -43,7 +43,9 @@ async function capture(
 	const engine = new PiSecurityEngine();
 	const spy = vi
 		.spyOn(engine as never as { executePi: () => Promise<string> }, 'executePi')
-		.mockResolvedValue('{"findings": [], "confirmed": false}');
+		.mockResolvedValue(
+			'{"findings": [], "confirmed": false, "reason": "No vulnerable path exists in this fixture"}'
+		);
 	await run(engine);
 	return (spy.mock.calls[0] as unknown as [unknown, string])[1];
 }

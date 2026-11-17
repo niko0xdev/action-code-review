@@ -258,7 +258,8 @@ export async function publishReview(
 	// Honor the frozen block-on-issues contract: when the caller turns
 	// blocking off, findings are posted as plain COMMENTs instead of
 	// REQUEST_CHANGES (docs/v1-interface-contract.md).
-	const shouldBlock = params.blockOnIssues !== false && hasBlockingFinding;
+	const shouldBlock =
+		params.blockOnIssues !== false && hasWrite && hasBlockingFinding;
 	// A re-run with nothing new to post must not add another body-only
 	// REQUEST_CHANGES to the timeline when the bot's latest review already
 	// requests changes on this exact head.
@@ -533,7 +534,7 @@ async function areAiThreadsResolved(
  * `GET /user` (403 Resource not accessible by integration), in which case this
  * returns null and marker-based attribution is used on its own.
  */
-async function resolveSelfLogin(
+export async function resolveSelfLogin(
 	octokit: PublisherOctokit
 ): Promise<string | null> {
 	const getAuthenticated =
@@ -553,18 +554,16 @@ async function resolveSelfLogin(
  * sticky summary. Both are written only by this action.
  */
 /**
- * True when a comment author can be this action. GitHub reserves the `[bot]`
- * login suffix, so when the token cannot resolve its own login (a workflow
- * GITHUB_TOKEN is refused on `GET /user`) an exact match is impossible but a
- * bot-authored comment still cannot be forged by a human account.
+ * Match the authenticated publisher. When GET /user refuses a workflow token,
+ * only the standard Actions publisher is trusted, rather than every bot.
  */
-function isTrustedAuthor(
+export function isTrustedAuthor(
 	login: string | null | undefined,
 	selfLogin: string | null
 ): boolean {
 	if (!login) return false;
 	if (selfLogin) return login === selfLogin;
-	return login.endsWith('[bot]');
+	return login === 'github-actions[bot]';
 }
 
 export function isOwnCommentBody(body: string | null | undefined): boolean {
@@ -658,7 +657,7 @@ async function hasCurrentBlockingReview(
 	}
 }
 
-async function listAll<T>(
+export async function listAll<T>(
 	method:
 		| ((args: Record<string, unknown>) => Promise<{ data: T[] }>)
 		| undefined,
@@ -692,6 +691,7 @@ async function fetchExistingCommentIds(
 			repo,
 			pull_number: prNumber,
 		});
+		const selfLogin = await resolveSelfLogin(octokit);
 		for (const review of reviews) {
 			const comments = await listAll(octokit.rest.pulls.listCommentsForReview, {
 				owner,
@@ -701,6 +701,7 @@ async function fetchExistingCommentIds(
 				per_page: 100,
 			});
 			for (const comment of comments) {
+				if (!isTrustedAuthor(comment.user?.login, selfLogin)) continue;
 				const match = comment.body?.match(
 					/<!-- ai-review-id:([a-f0-9]{12}) -->/
 				);

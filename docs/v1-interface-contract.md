@@ -386,3 +386,11 @@ required to know about them and their names may change:
 
 Both must be set together for a reply to post; otherwise the reply step
 is skipped silently.
+
+## Audit completion and source-evidence additions (18/11/2026)
+
+The additive `review-report` output may include `contextCoverage` with `suppliedPaths` and `omittedPaths`. A supplied path means its complete patch fitted in the prompt, not that a tool inspected it. Partial or absent patches remain omitted even if a truncation marker cannot fit. Omitted mandatory context makes the assessment incomplete and prevents approval.
+
+`diagnostics.verifyVerdicts`, when present, records candidate `id`, `verdict` (`supported`, `refuted`, `uncertain`, or `error`), `reason`, and `evidenceIds`. Source evidence is drawn from the same base/head patches. Only a complete source-backed refutation removes a candidate; malformed or uncertain verification retains findings and makes the review incomplete. These fields are additive and retain schema version 1.
+
+Security failure thresholds use every validated occurrence before publication filters and caps. The publisher only trusts its own markers. More precise security identity can produce a one-off new comment after upgrading from the older fingerprint algorithm. Auto-approval remains opt-in.

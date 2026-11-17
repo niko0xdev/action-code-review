@@ -153,7 +153,7 @@ const DETECTORS: Detector[] = [
 	// OpenAI API Key
 	regexDetector(
 		'openai_key',
-		/sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,80}/dg
+		/sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,}/dg
 	),
 	// AWS Access Key ID
 	regexDetector(

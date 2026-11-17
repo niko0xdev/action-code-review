@@ -119,6 +119,8 @@ export interface ReviewReport {
 	counts: FindingCounts;
 	coverage: ReviewReportCoverage;
 	findings: ReviewReportFinding[];
+	/** Prompt supply accounting, distinct from evidence of source inspection. */
+	contextCoverage?: ReviewResult['contextCoverage'];
 	usage: ReviewReportUsage;
 	diagnostics?: ReviewDiagnostics;
 	ruleCoverage?: RuleCoverage;
@@ -154,7 +156,12 @@ function deriveStatus(result: ReviewResult): ReviewReportStatus {
 		typeof result.diagnostics?.failedGroups === 'number'
 			? result.diagnostics.failedGroups
 			: 0;
-	if (failedGroups > 0 || result.filesTruncated) return 'incomplete';
+	if (
+		failedGroups > 0 ||
+		result.filesTruncated ||
+		result.contextCoverage?.omittedPaths.length
+	)
+		return 'incomplete';
 	const status = result.reviewStatus;
 	if (status === 'failed' || status === 'stale' || status === 'incomplete')
 		return status;
@@ -228,8 +235,17 @@ export function buildReviewReport(input: BuildReviewReportInput): ReviewReport {
 		findings: result.findings.map(copyFinding),
 		usage: buildUsage(result),
 	};
+	if (result.contextCoverage)
+		report.contextCoverage = {
+			suppliedPaths: [...result.contextCoverage.suppliedPaths],
+			omittedPaths: [...result.contextCoverage.omittedPaths],
+		};
 	if (result.diagnostics) {
 		report.diagnostics = { ...result.diagnostics };
+		if (result.diagnostics.verifyVerdicts)
+			report.diagnostics.verifyVerdicts = result.diagnostics.verifyVerdicts.map(
+				(verdict) => ({ ...verdict, evidenceIds: [...verdict.evidenceIds] })
+			);
 		if (result.diagnostics.prelintRan)
 			report.diagnostics.prelintRan = [...result.diagnostics.prelintRan];
 		if (result.diagnostics.prelintSkipped)

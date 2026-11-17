@@ -1246,6 +1246,7 @@ describe('review decision on re-runs and fallback', () => {
 		const posted = (opts.postedIds ?? []).map((id) => ({
 			id: 1,
 			body: `x\n\n<!-- ai-review-id:${id} -->`,
+			user: { login: 'bot' },
 		}));
 		const createReview = vi.fn(async (args: { comments?: unknown[] }) => {
 			if (opts.batchFails && (args.comments?.length ?? 0) > 0)
@@ -1359,6 +1360,7 @@ describe('repeat REQUEST_CHANGES suppression on re-runs', () => {
 					listCommentsForReview: vi.fn(async () => ({
 						data: postedIds.map((id) => ({
 							body: `x\n\n<!-- ai-review-id:${id} -->`,
+							user: { login: login ?? 'github-actions[bot]' },
 						})),
 					})),
 					listThreads: vi.fn(async () => []),
@@ -1535,4 +1537,144 @@ describe('repeat REQUEST_CHANGES suppression on re-runs', () => {
 		expect(args.event).toBe('REQUEST_CHANGES');
 		expect(args.comments).toHaveLength(1);
 	});
+});
+
+describe('publisher trust and escalation boundaries', () => {
+	function client(author: string, login: string | null = 'review-bot') {
+		return {
+			rest: {
+				pulls: {
+					createReview: vi.fn(async (_args: Record<string, unknown>) => ({
+						data: {},
+					})),
+					listReviews: vi.fn(async () => ({ data: [{ id: 1 }] })),
+					listCommentsForReview: vi.fn(async () => ({
+						data: [
+							{
+								body: `<!-- ai-review-id:${normalizeCommentId(finding())} -->`,
+								user: { login: author },
+							},
+						],
+					})),
+					listThreads: vi.fn(async () => []),
+				},
+				repos: {
+					getCollaboratorPermissionLevel: vi.fn(async () => ({
+						data: { permission: 'read' },
+					})),
+				},
+				issues: {
+					createComment: vi.fn(async () => ({ data: {} })),
+					updateComment: vi.fn(async () => ({ data: {} })),
+					listComments: vi.fn(async () => ({
+						data: [
+							{
+								id: 8,
+								body: '<!-- ai-review-summary:acme/widget#1 -->',
+								user: { login: author },
+							},
+						],
+					})),
+				},
+			},
+			users: {
+				getAuthenticated: vi.fn(async () => {
+					if (!login) throw new Error('Resource not accessible by integration');
+					return { data: { login } };
+				}),
+			},
+		};
+	}
+	function options() {
+		return {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 1,
+			headSha: 'head',
+			result: {
+				findings: [finding()],
+				summary: '',
+				risk: 'high' as const,
+				counts: { critical: 0, high: 1, medium: 0, low: 0 },
+				filesReviewed: ['src/a.ts'],
+			},
+			stickySummary: true,
+		};
+	}
+	it.each(['outsider', 'other-app[bot]'])(
+		'does not suppress findings using a marker from %s',
+		async (author) => {
+			const octokit = client(author);
+			await publishReview(octokit as never, options());
+			expect(octokit.rest.pulls.createReview).toHaveBeenCalledWith(
+				expect.objectContaining({
+					comments: [expect.objectContaining({ path: 'src/a.ts' })],
+				})
+			);
+		}
+	);
+	it('trusts only the workflow publisher when its login cannot be queried', async () => {
+		const octokit = client('other-app[bot]', null);
+		await publishReview(octokit as never, options());
+		expect(octokit.rest.issues.updateComment).not.toHaveBeenCalled();
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledWith(
+			expect.objectContaining({ comments: [expect.anything()] })
+		);
+	});
+	it('reuses trusted markers without dropping current blockers', async () => {
+		const octokit = client('review-bot');
+		const params = { ...options(), autoApproveWhenResolved: true };
+		await publishReview(octokit as never, params);
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledWith(
+			expect.objectContaining({ event: 'REQUEST_CHANGES', comments: [] })
+		);
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalledWith(
+			expect.objectContaining({ event: 'APPROVE' })
+		);
+	});
+	it('does not approve a recurring critical finding whose own thread was resolved', async () => {
+		const octokit = client('review-bot');
+		const critical = finding({ severity: 'critical' });
+		const body = `<!-- ai-review-id:${normalizeCommentId(critical)} -->`;
+		octokit.rest.pulls.listCommentsForReview.mockResolvedValue({
+			data: [{ body, user: { login: 'review-bot' } }],
+		});
+		octokit.rest.pulls.listThreads = vi.fn(async () => [
+			{ resolved: true, comments: [{ body, user: { login: 'review-bot' } }] },
+		]);
+		const params = options();
+		params.result.findings = [critical];
+		params.result.counts = { critical: 1, high: 0, medium: 0, low: 0 };
+		await publishReview(octokit as never, {
+			...params,
+			autoApproveWhenResolved: true,
+		});
+		expect(octokit.rest.pulls.createReview).toHaveBeenCalledWith(
+			expect.objectContaining({ event: 'REQUEST_CHANGES', comments: [] })
+		);
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalledWith(
+			expect.objectContaining({ event: 'APPROVE' })
+		);
+	});
+	it.each([false, true])(
+		'does not request changes without write permission (deduplicated=%s)',
+		async (duplicate) => {
+			const octokit = client(duplicate ? 'review-bot' : 'outsider');
+			await publishReview(octokit as never, {
+				...options(),
+				requireWritePermissions: true,
+				actor: 'outsider',
+			});
+			expect(octokit.rest.pulls.createReview).not.toHaveBeenCalledWith(
+				expect.objectContaining({ event: 'REQUEST_CHANGES' })
+			);
+			if (!duplicate)
+				expect(octokit.rest.pulls.createReview).toHaveBeenCalledWith(
+					expect.objectContaining({
+						event: 'COMMENT',
+						comments: [expect.anything()],
+					})
+				);
+		}
+	);
 });

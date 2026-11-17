@@ -30,14 +30,17 @@ export interface HarnessOutput {
 	findings: Partial<Finding>[];
 	summary: string;
 	risk: RiskLevel;
+	reviewStatus?: ReviewResult['reviewStatus'];
 }
 const SEVERITIES: Severity[] = ['critical', 'high', 'medium', 'low'];
 const RISKS: RiskLevel[] = ['critical', 'high', 'medium', 'low', 'none'];
 
-interface RenderedFiles {
+export interface ReviewDiffAllocation {
 	text: string;
-	/** Files whose whole patch is in the prompt; cut-off files are excluded. */
-	included: string[];
+	/** Complete patches supplied as context, not proof of inspection. */
+	suppliedPaths: string[];
+	/** Missing or partially supplied patches, including paths without a marker. */
+	omittedPaths: string[];
 }
 
 /** Header line for a file; the name is escaped so it cannot span lines. */
@@ -55,22 +58,23 @@ function renderFileBlock(f: ChangedFile, patch: string, note?: string): string {
  * boundaries so every code fence is closed and the trailing security
  * instruction can never be swallowed by an unterminated block.
  */
-function renderChangedFiles(
+export function allocateReviewDiff(
 	files: ChangedFile[],
 	maxChars: number
-): RenderedFiles {
+): ReviewDiffAllocation {
+	const sizeLimit = Number.isFinite(maxChars) ? Math.max(0, maxChars) : 0;
 	const blocks: string[] = [];
 	const included: string[] = [];
 	let used = 0;
 	const room = (block: string) =>
-		used + (blocks.length > 0 ? 2 : 0) + block.length <= maxChars;
+		used + (blocks.length > 0 ? 2 : 0) + block.length <= sizeLimit;
 	for (const f of files) {
 		const patch = f.patch
 			? scrubSecrets(f.patch)
-			: '(binary or too large — inspect with tools)';
+			: '(patch unavailable – use inspection tools)';
 		let block = renderFileBlock(f, patch);
 		if (room(block)) {
-			included.push(f.filename);
+			if (f.patch) included.push(f.filename);
 		} else {
 			const hunks = patch.split(/\n(?=@@ )/);
 			let kept = hunks.length;
@@ -79,18 +83,25 @@ function renderChangedFiles(
 				block = renderFileBlock(
 					f,
 					hunks.slice(0, kept).join('\n'),
-					`[TRUNCATED: ${kept} of ${hunks.length} hunks shown; not fully analysed]`
+					`[TRUNCATED: ${kept} of ${hunks.length} hunks supplied; full patch omitted]`
 				);
 			} while (kept > 0 && !room(block));
 			if (kept === 0) {
-				block = `${fileHeader(f)} [OMITTED: context limit; not analysed]`;
+				block = `${fileHeader(f)} [OMITTED: context limit; patch not supplied]`;
 				if (!room(block)) continue;
 			}
 		}
 		used += (blocks.length > 0 ? 2 : 0) + block.length;
 		blocks.push(block);
 	}
-	return { text: blocks.join('\n\n'), included };
+	const suppliedPaths = [...new Set(included)];
+	return {
+		text: blocks.join('\n\n'),
+		suppliedPaths,
+		omittedPaths: [...new Set(files.map((file) => file.filename))].filter(
+			(path) => !suppliedPaths.includes(path)
+		),
+	};
 }
 
 export function buildReviewPrompt(
@@ -110,9 +121,17 @@ export function buildReviewPromptWithCoverage(
 		toolFindings?: ToolFinding[];
 		scorecardContext?: string;
 	} = {}
-): { prompt: string; includedFiles: string[] } {
+): {
+	prompt: string;
+	includedFiles: string[];
+	contextCoverage: NonNullable<ReviewResult['contextCoverage']>;
+} {
 	const { pullRequest, diff, profiles } = context;
-	const { text: boundedFileLines, included } = renderChangedFiles(
+	const {
+		text: boundedFileLines,
+		suppliedPaths,
+		omittedPaths,
+	} = allocateReviewDiff(
 		diff.files,
 		options.maxContextChars ?? Number.MAX_SAFE_INTEGER
 	);
@@ -156,7 +175,11 @@ export function buildReviewPromptWithCoverage(
 	]
 		.filter((part) => part !== '')
 		.join('\n');
-	return { prompt, includedFiles: included };
+	return {
+		prompt,
+		includedFiles: suppliedPaths,
+		contextCoverage: { suppliedPaths, omittedPaths },
+	};
 }
 
 export function parseHarnessFindings(
@@ -167,15 +190,19 @@ export function parseHarnessFindings(
 		throw new Error(
 			`Unable to parse harness output as JSON. Output started with: ${raw.slice(0, 120)}`
 		);
-	if (!json.findings && !('summary' in json))
-		throw new Error('harness output JSON does not look like a review result');
-	if ('findings' in json && !Array.isArray(json.findings))
+	if (!Array.isArray(json.findings))
 		throw new Error('harness output findings must be an array');
-	const findings = Array.isArray(json.findings)
-		? json.findings.map(coerceFinding).filter((f): f is Finding => f !== null)
-		: [];
+	const findings = json.findings
+		.map(coerceFinding)
+		.filter((f): f is Finding => f !== null);
+	const complete =
+		typeof json.summary === 'string' &&
+		RISKS.includes(json.risk as RiskLevel) &&
+		findings.length === json.findings.length &&
+		json.findings.every(isWellFormedCandidate);
 	return {
 		findings,
+		reviewStatus: complete ? 'complete' : 'incomplete',
 		summary: typeof json.summary === 'string' ? json.summary : '',
 		risk: RISKS.includes(json.risk as RiskLevel)
 			? (json.risk as RiskLevel)
@@ -185,7 +212,8 @@ export function parseHarnessFindings(
 
 export function toReviewResult(
 	output: HarnessOutput & { findings: Finding[] },
-	filesReviewed: string[]
+	filesReviewed: string[],
+	contextCoverage?: ReviewResult['contextCoverage']
 ): ReviewResult {
 	const counts = { critical: 0, high: 0, medium: 0, low: 0 };
 	for (const finding of output.findings) counts[finding.severity] += 1;
@@ -195,7 +223,35 @@ export function toReviewResult(
 		risk: output.risk,
 		counts,
 		filesReviewed,
+		reviewStatus:
+			output.reviewStatus === 'incomplete' ||
+			contextCoverage?.omittedPaths.length
+				? 'incomplete'
+				: (output.reviewStatus ?? 'complete'),
+		...(contextCoverage ? { contextCoverage } : {}),
 	};
+}
+
+/** Coercion can preserve useful candidates without certifying malformed output. */
+function isWellFormedCandidate(item: unknown): boolean {
+	if (!item || typeof item !== 'object') return false;
+	const finding = item as Record<string, unknown>;
+	return (
+		SEVERITIES.includes(finding.severity as Severity) &&
+		typeof finding.path === 'string' &&
+		finding.path.trim().length > 0 &&
+		Number.isSafeInteger(finding.line) &&
+		Number(finding.line) > 0 &&
+		typeof finding.confidence === 'number' &&
+		Number.isFinite(finding.confidence) &&
+		finding.confidence >= 0 &&
+		finding.confidence <= 1 &&
+		['title', 'description', 'impact', 'category'].every(
+			(key) =>
+				typeof finding[key] === 'string' &&
+				String(finding[key]).trim().length > 0
+		)
+	);
 }
 
 function coerceFinding(item: unknown): Finding | null {

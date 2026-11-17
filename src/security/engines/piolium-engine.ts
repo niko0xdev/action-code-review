@@ -11,6 +11,7 @@ import type { SecurityEngine } from './security-engine.js';
  */
 export class PioliumSecurityEngine implements SecurityEngine {
 	readonly name = 'piolium';
+	readonly rejectedConfirmations: SecurityFinding[] = [];
 
 	async diff(ctx: SecurityContext): Promise<SecurityFinding[]> {
 		return this.audit(ctx, 'lite');
@@ -73,6 +74,13 @@ export class PioliumSecurityEngine implements SecurityEngine {
 	): Promise<SecurityFinding[]> {
 		const { PiSecurityEngine } = await import('./pi-security-engine.js');
 		const piEngine = new PiSecurityEngine();
-		return piEngine.confirm(ctx, findings);
+		this.rejectedConfirmations.length = 0;
+		try {
+			const confirmed = await piEngine.confirm(ctx, findings);
+			this.rejectedConfirmations.push(...piEngine.rejectedConfirmations);
+			return confirmed;
+		} finally {
+			await piEngine.dispose();
+		}
 	}
 }

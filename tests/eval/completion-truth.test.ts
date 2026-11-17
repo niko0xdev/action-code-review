@@ -53,12 +53,15 @@ function harnessFor(s: IncompleteScenario): ReviewHarness {
 				name: 'truncating-stub',
 				async review(context) {
 					// Same coverage accounting the Pi harness uses.
-					const { includedFiles } = buildReviewPromptWithCoverage(
-						context,
-						undefined,
-						{ maxContextChars: s.maxContextChars }
+					const { includedFiles, contextCoverage } =
+						buildReviewPromptWithCoverage(context, undefined, {
+							maxContextChars: s.maxContextChars,
+						});
+					return toReviewResult(
+						parseHarnessFindings(reply),
+						includedFiles,
+						contextCoverage
 					);
-					return toReviewResult(parseHarnessFindings(reply), includedFiles);
 				},
 			};
 		case 'group-failure':

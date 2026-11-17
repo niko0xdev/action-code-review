@@ -283,3 +283,60 @@ describe('PrelintResult shape', () => {
 		expect(Array.isArray(result.skipped)).toBe(true);
 	});
 });
+
+it('maps Biome object paths and UTF-8 byte spans to source line numbers', async () => {
+	const repo = makeRepo({ 'src/app.ts': 'é😀\nconst value = danger;\n' });
+	const binDir = join(scratch, 'trusted');
+	mkdirSync(binDir, { recursive: true });
+	const binary = join(binDir, 'biome');
+	const report = JSON.stringify({
+		diagnostics: [
+			{
+				location: { path: { file: 'src/app.ts' }, span: [13, 18] },
+				severity: 'error',
+				category: 'lint/example',
+				description: 'Synthetic diagnostic',
+			},
+		],
+	});
+	writeFileSync(binary, `#!/bin/sh\nprintf '%s\\n' '${report}'\n`);
+	chmodSync(binary, 0o755);
+	process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR = binDir;
+	const runner = defaultTools().find((tool) => tool.id === 'biome');
+	const findings = await runner?.run({
+		repositoryPath: repo,
+		files: [changedFile('src/app.ts')],
+		timeoutMs: 1000,
+	});
+	expect(findings).toEqual([
+		expect.objectContaining({ path: 'src/app.ts', line: 2 }),
+	]);
+});
+
+it('reads SQLFluff array reports and start_line_no positions', async () => {
+	const repo = makeRepo({ 'query.sql': '\nselect 1;\n' });
+	const binDir = join(scratch, 'trusted');
+	mkdirSync(binDir, { recursive: true });
+	const binary = join(binDir, 'sqlfluff');
+	const report = JSON.stringify([
+		{
+			filepath: 'query.sql',
+			violations: [
+				{ start_line_no: 2, code: 'CP01', description: 'Synthetic diagnostic' },
+			],
+		},
+	]);
+	writeFileSync(binary, `#!/bin/sh\nprintf '%s\\n' '${report}'\n`);
+	chmodSync(binary, 0o755);
+	process.env.AI_REVIEW_TRUSTED_ANALYZER_DIR = binDir;
+	const findings = await defaultTools()
+		.find((tool) => tool.id === 'sqlfluff')
+		?.run({
+			repositoryPath: repo,
+			files: [changedFile('query.sql')],
+			timeoutMs: 1000,
+		});
+	expect(findings).toEqual([
+		expect.objectContaining({ path: 'query.sql', line: 2, code: 'CP01' }),
+	]);
+});

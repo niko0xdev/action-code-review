@@ -61,14 +61,14 @@ afterEach(() => {
 });
 
 describe('buildPiArgs', () => {
-	it('runs non-interactive text mode with a read-only toolset', () => {
+	it('runs non-interactive structured mode with a read-only toolset', () => {
 		// Text mode prints only the final assistant message. JSON mode
 		// re-serializes every streamed delta and measured 64 MiB of stdout for a
 		// normal review, which killed healthy groups on the output cap.
 		const args = buildPiArgs('/repo');
 		expect(args).toContain('-p');
 		expect(args).toContain('--mode');
-		expect(args[args.indexOf('--mode') + 1]).toBe('text');
+		expect(args[args.indexOf('--mode') + 1]).toBe('json');
 		expect(args).toContain('--tools');
 		expect(args[args.indexOf('--tools') + 1].split(',').sort()).toEqual(
 			[...PI_READONLY_TOOLS].sort()
@@ -360,6 +360,7 @@ sleep 30
 	});
 
 	it('marks a spawn failure as a failed process without poisoning totals', async () => {
+		mkdirSync(scratchRoot, { recursive: true });
 		const harness = new PiHarness({
 			binaryPath: join(scratchRoot, 'does-not-exist'),
 		});

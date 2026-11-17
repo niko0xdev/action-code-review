@@ -1,5 +1,10 @@
 import * as core from '@actions/core';
-import type { PublisherOctokit } from '../../github/review.js';
+import {
+	type PublisherOctokit,
+	isTrustedAuthor,
+	listAll,
+	resolveSelfLogin,
+} from '../../github/review.js';
 import { redactSecrets } from '../redaction/redactor.js';
 import type { SecurityResult } from '../types.js';
 import { formatInlineSecurityComment } from './inline-reporter.js';
@@ -124,16 +129,16 @@ async function publishOrUpdateStickyComment(
 		return;
 	}
 
-	const comments = await octokit.rest.issues.listComments({
+	const comments = await listAll(octokit.rest.issues.listComments, {
 		owner,
 		repo,
 		issue_number: prNumber,
-		page: 1,
-		per_page: 50,
 	});
-
-	const existingSticky = comments.data.find((c) =>
-		c.body?.includes(STICKY_SUMMARY_MARKER)
+	const selfLogin = await resolveSelfLogin(octokit);
+	const existingSticky = comments.find(
+		(comment) =>
+			comment.body?.includes(STICKY_SUMMARY_MARKER) &&
+			isTrustedAuthor(comment.user?.login, selfLogin)
 	);
 
 	if (existingSticky && octokit.rest.issues.updateComment) {
@@ -168,25 +173,21 @@ async function fetchExistingSecurityCommentIds(
 	}
 
 	try {
-		const reviews = await octokit.rest.pulls.listReviews({
+		const reviews = await listAll(octokit.rest.pulls.listReviews, {
 			owner,
 			repo,
 			pull_number: prNumber,
-			page: 1,
-			per_page: 50,
 		});
-
-		for (const review of reviews.data) {
-			const comments = await octokit.rest.pulls.listCommentsForReview({
+		const selfLogin = await resolveSelfLogin(octokit);
+		for (const review of reviews) {
+			const comments = await listAll(octokit.rest.pulls.listCommentsForReview, {
 				owner,
 				repo,
 				pull_number: prNumber,
 				review_id: review.id,
-				page: 1,
-				per_page: 100,
 			});
-
-			for (const comment of comments.data) {
+			for (const comment of comments) {
+				if (!isTrustedAuthor(comment.user?.login, selfLogin)) continue;
 				if (!comment.body) continue;
 				const match = comment.body.match(COMMENT_ID_REGEX);
 				if (match?.[1]) {

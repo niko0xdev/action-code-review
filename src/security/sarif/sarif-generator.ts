@@ -142,7 +142,12 @@ export function generateSarif(
 		],
 	};
 
-	return JSON.stringify(sarifObject, null, 2);
+	return JSON.stringify(
+		sarifObject,
+		(_key, value: unknown) =>
+			typeof value === 'string' ? redactSecrets(value) : value,
+		2
+	);
 }
 
 function mapSeverityToSarifLevel(

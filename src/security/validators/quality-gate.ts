@@ -40,10 +40,9 @@ export function applyQualityGate(
 	const minSevRank = SEVERITY_RANKS[minSeverity] ?? 2;
 	const minConfRank = CONFIDENCE_RANKS[minConfidence] ?? 1;
 
-	// Deduplicate before gating
-	const deduped = deduplicateFindings(candidates);
-
-	for (const finding of deduped) {
+	// Validate each occurrence before related reports can merge.
+	for (const candidate of candidates) {
+		const finding = { ...candidate, evidence: [...candidate.evidence] };
 		const fileName = finding.file?.trim();
 		const startLine = finding.startLine;
 		const endLine = finding.endLine ?? startLine;
@@ -119,7 +118,8 @@ export function applyQualityGate(
 	}
 
 	// Sort validated findings by severity desc, then confidence desc
-	validated.sort((a, b) => {
+	const deduped = deduplicateFindings(validated);
+	deduped.sort((a, b) => {
 		const sevDiff =
 			(SEVERITY_RANKS[b.severity] ?? 0) - (SEVERITY_RANKS[a.severity] ?? 0);
 		if (sevDiff !== 0) return sevDiff;
@@ -130,14 +130,14 @@ export function applyQualityGate(
 	});
 
 	// Apply maxFindings cap
-	let cappedValidated = validated;
-	if (validated.length > maxFindings) {
-		const excess = validated.slice(maxFindings);
+	let cappedValidated = deduped;
+	if (deduped.length > maxFindings) {
+		const excess = deduped.slice(maxFindings);
 		for (const f of excess) {
 			f.status = 'rejected';
 			rejected.push(f);
 		}
-		cappedValidated = validated.slice(0, maxFindings);
+		cappedValidated = deduped.slice(0, maxFindings);
 	}
 
 	return {

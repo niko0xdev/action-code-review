@@ -192,8 +192,8 @@ describe('truncation across files and hunks', () => {
 			lines.filter((l) => l === '```').length
 		);
 		expect(small.prompt.endsWith(trustedTail)).toBe(true);
-		expect(small.prompt).toMatch(/\[TRUNCATED: \d+ of \d+ hunks shown/);
-		// A file that was cut mid-patch must not count as fully analysed.
+		expect(small.prompt).toMatch(/\[TRUNCATED: \d+ of \d+ hunks supplied/);
+		// A file that was cut mid-patch must not count as fully supplied.
 		expect(small.includedFiles.length).toBeLessThan(files.length);
 		const hunkHeaders = lines.filter((l) => l.startsWith('@@ '));
 		for (const header of hunkHeaders)
@@ -208,7 +208,9 @@ describe('truncation across files and hunks', () => {
 				maxContextChars: 90,
 			}
 		);
-		expect(result.prompt).toContain('[OMITTED: context limit; not analysed]');
+		expect(result.prompt).toContain(
+			'[OMITTED: context limit; patch not supplied]'
+		);
 		expect(result.includedFiles).toEqual([]);
 		expect(scanFences(result.prompt).unterminated).toBe(false);
 	});

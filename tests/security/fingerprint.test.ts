@@ -51,6 +51,26 @@ describe('FingerprintAndDeduplication', () => {
 		expect(fp1).not.toBe(fp3);
 	});
 
+	it('preserves case-sensitive paths and distinct untruncated sources', () => {
+		const base = {
+			title: 'Injection',
+			file: 'src/Auth.ts',
+			sink: 'query',
+			source: 'request.a',
+		};
+		expect(computeFindingFingerprint(base)).not.toBe(
+			computeFindingFingerprint({ ...base, file: 'src/auth.ts' })
+		);
+		expect(computeFindingFingerprint(base)).not.toBe(
+			computeFindingFingerprint({ ...base, source: 'request.b' })
+		);
+		expect(
+			computeFindingFingerprint({ ...base, sink: `${'x'.repeat(100)}a` })
+		).not.toBe(
+			computeFindingFingerprint({ ...base, sink: `${'x'.repeat(100)}b` })
+		);
+	});
+
 	it('deduplicates findings with the same fingerprint and preserves highest severity/confidence', () => {
 		const fp = computeFindingFingerprint(
 			{

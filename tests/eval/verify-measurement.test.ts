@@ -101,7 +101,7 @@ function resultOf(c: Case): ReviewResult {
 /**
  * Scripted provider that follows the prompt's own protocol: it reads the
  * candidates (each with an `id`) from the prompt actually sent and answers
- * with exactly one verdict per id, `verified` true or false, never omitting.
+ * with exactly one verdict per id, explicit source-backed verdicts, never omitting.
  */
 function scripted(c: Case, calls: string[]) {
 	return async (prompt: string) => {
@@ -113,7 +113,12 @@ function scripted(c: Case, calls: string[]) {
 		}>;
 		const verdicts = candidates.map((cand) => {
 			const l = c.findings.find((x) => `Finding ${x.id}` === cand.title);
-			return { id: cand.id, verified: l?.approve ?? true, reason: 'scripted' };
+			return {
+				id: cand.id,
+				verdict: (l?.approve ?? true) ? 'supported' : 'refuted',
+				evidenceIds: ['e1'],
+				reason: 'scripted',
+			};
 		});
 		return JSON.stringify({ verdicts });
 	};
@@ -142,6 +147,18 @@ async function verified(c: Case, minSeverity?: 'medium') {
 		toolFindings: [],
 		title: 't',
 		body: '',
+		changedFiles: [
+			{
+				filename: 'src/app.ts',
+				status: 'modified',
+				additions: 1,
+				deletions: 1,
+				changes: 2,
+				patch: '@@ -10 +10 @@\n-old\n+new',
+			},
+		],
+		baseSha: 'base',
+		headSha: 'head',
 		verify: scripted(c, calls),
 		...(minSeverity ? { minSeverity } : {}),
 	});
