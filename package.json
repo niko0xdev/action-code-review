@@ -10,8 +10,8 @@
 		"test:eval:live": "EVAL_LIVE=1 vitest run tests/eval/live/live.test.ts",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
-		"lint": "biome check src/ tests/",
-		"lint:fix": "biome check --apply src/ tests/",
+		"lint": "biome check src/ tests/ scripts/weekly-research/",
+		"lint:fix": "biome check --apply src/ tests/ scripts/weekly-research/",
 		"format": "biome format --write src/ tests/",
 		"typecheck": "tsc --noEmit"
 	},

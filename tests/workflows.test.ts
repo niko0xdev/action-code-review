@@ -13,6 +13,7 @@ describe('repository workflows', () => {
 		'.github/workflows/pr-review.yml',
 		'.github/workflows/ci.yml',
 		'.github/workflows/dependency-review.yml',
+		'.github/workflows/weekly-research.yml',
 	];
 
 	it.each(files)('%s pins third-party actions to commit SHAs', (file) => {

@@ -1,0 +1,137 @@
+name: Weekly Research
+
+# Three scouts (GitHub, web, curated lists) run in parallel, so concurrency
+# never exceeds three jobs. Each scout collects public data deterministically,
+# then the Pi harness ranks it with every tool disabled and no repository access. Only the
+# final job holds a write token, and it never runs a model.
+on:
+  schedule:
+    - cron: '0 2 * * 1' # Mondays 02:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: weekly-research
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scout:
+    name: Scout (${{ matrix.scout }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        scout: [github, web, lists]
+    steps:
+      - name: Harden runner (audit)
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - name: Install the pinned harness
+        run: |
+          npm ci --prefix pr-review/pi-runtime --ignore-scripts --no-audit --no-fund --silent
+          echo "$GITHUB_WORKSPACE/pr-review/pi-runtime/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Collect public data
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/weekly-research/collect.mjs "${{ matrix.scout }}" "$RUNNER_TEMP/data"
+
+      - name: Rank with the tool-free harness
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_URL: ${{ secrets.OPENAI_API_URL }}
+          OPENAI_API_MODEL: ${{ secrets.OPENAI_API_MODEL }}
+        run: node scripts/weekly-research/rank.mjs "$RUNNER_TEMP/data"
+
+      - name: Upload ranked candidates
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scout-${{ matrix.scout }}
+          path: ${{ runner.temp }}/data/ranked.json
+          retention-days: 7
+          if-no-files-found: error
+
+  report:
+    name: Report and pull request
+    needs: scout
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Harden runner (audit)
+        uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+
+      - name: Download scout results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: scout-*
+          path: ${{ runner.temp }}/scouts
+
+      - name: Build the report
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/weekly-research/report.mjs "$RUNNER_TEMP/scouts" "$GITHUB_WORKSPACE"
+
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          date="$(date -u +%Y-%m-%d)"
+          branch="docs/weekly-research-${date}"
+          if gh api "repos/${{ github.repository }}/branches/${branch}" >/dev/null 2>&1; then
+            echo "Branch $branch already exists; skipping."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add docs .product-intelligence
+          if git diff --cached --quiet; then
+            echo "Nothing to commit; skipping."
+            exit 0
+          fi
+          git commit -m "docs(research): weekly research ${date}"
+          # Pass the credential through git's environment config so the token
+          # never appears in a process argument list or in the log.
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git push origin "$branch"
+          unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+          gh pr create --base "${{ github.event.repository.default_branch }}" --head "$branch" \
+            --title "docs(research): weekly research ${date}" \
+            --body "Automated weekly scan of GitHub, the web, and goodailist.com for code-review tooling. Every candidate was verified against the GitHub API and all descriptions are untrusted summaries. Review the report and pick at most one bounded item to build; nothing here changes runtime code."
