@@ -29,7 +29,10 @@ for (const scout of SCOUTS) {
 
 // Skip anything already covered by earlier research.
 const researchDir = join(root, 'docs', 'research');
-const corpus = readdirSync(researchDir).map((f) => readFileSync(join(researchDir, f), 'utf8')).join('\n');
+// Exclude today's own report so a same-day rerun does not treat itself as prior art.
+const corpus = readdirSync(researchDir)
+	.filter((f) => f !== `weekly-${date}.md`)
+	.map((f) => readFileSync(join(researchDir, f), 'utf8')).join('\n');
 const seen = new Set();
 rows = dropCovered(rows, corpus).filter((r) => {
 	const key = r.url.toLowerCase();

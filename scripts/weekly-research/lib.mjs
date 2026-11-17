@@ -83,23 +83,42 @@ export function licenceFlag(spdx) {
 	return PERMISSIVE_LICENCES.has(spdx) ? 'permissive' : 'review';
 }
 
-/** Pull the first JSON array or object out of model output. */
+/** Pull a JSON array or object out of model output (plain, fenced, or surrounded by prose). */
 export function parseModelJson(text) {
-	const source = String(text ?? '');
-	for (const [open, close] of [
-		['[', ']'],
-		['{', '}'],
-	]) {
+	const source = String(text ?? '').trim();
+	const fenced = source.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+	const attempts = [source, fenced, ...[['[', ']'], ['{', '}']].map(([open, close]) => {
 		const start = source.indexOf(open);
 		const end = source.lastIndexOf(close);
-		if (start === -1 || end <= start) continue;
+		return start !== -1 && end > start ? source.slice(start, end + 1) : undefined;
+	})];
+	for (const attempt of attempts) {
+		if (!attempt) continue;
 		try {
-			return JSON.parse(source.slice(start, end + 1));
+			return JSON.parse(attempt);
 		} catch {
 			/* try the next shape */
 		}
 	}
 	throw new Error('Model output did not contain parseable JSON');
+}
+
+/** Redact known secret values and common token shapes from text bound for logs or files. */
+export function scrubSecrets(text, secrets = []) {
+	let out = String(text ?? '');
+	for (const secret of secrets) {
+		if (secret && secret.length >= 8) out = out.split(secret).join('[REDACTED]');
+	}
+	return out
+		.replace(/\b(?:sk|pk)-[A-Za-z0-9_-]{16,}/g, '[REDACTED]')
+		.replace(/\b(?:ghp|gho|ghs|ghu|ghr)_[A-Za-z0-9]{20,}/g, '[REDACTED]')
+		.replace(/\bgithub_pat_[A-Za-z0-9_]{20,}/g, '[REDACTED]')
+		.replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/g, 'Bearer [REDACTED]');
+}
+
+/** Escape Markdown control characters so untrusted text cannot form links or headings. */
+export function escapeMd(text) {
+	return String(text ?? '').replace(/[\\[\]()*_#!~]/g, (c) => `\\${c}`);
 }
 
 const clampScore = (n) => Math.min(5, Math.max(1, Math.round(Number(n)) || 1));
@@ -140,7 +159,7 @@ export function rankByPriority(rows) {
 	return [...rows].sort((a, b) => b.priority - a.priority || a.name.localeCompare(b.name));
 }
 
-const cell = (value) => sanitiseText(value, 240).replace(/\|/g, '/');
+const cell = (value) => escapeMd(sanitiseText(value, 240));
 
 /** Render the dated weekly report (British English, no em dashes). */
 export function renderReport({ date, rows, limitations, scoutsRun }) {

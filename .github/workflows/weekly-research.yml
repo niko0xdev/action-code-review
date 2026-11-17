@@ -2,7 +2,7 @@ name: Weekly Research
 
 # Three scouts (GitHub, web, curated lists) run in parallel, so concurrency
 # never exceeds three jobs. Each scout collects public data deterministically,
-# then the read-only Pi harness ranks it with no repository access. Only the
+# then the Pi harness ranks it with every tool disabled and no repository access. Only the
 # final job holds a write token, and it never runs a model.
 on:
   schedule:
@@ -54,7 +54,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/weekly-research/collect.mjs "${{ matrix.scout }}" "$RUNNER_TEMP/data"
 
-      - name: Rank with the read-only harness
+      - name: Rank with the tool-free harness
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_URL: ${{ secrets.OPENAI_API_URL }}
@@ -112,7 +112,7 @@ jobs:
           set -euo pipefail
           date="$(date -u +%Y-%m-%d)"
           branch="docs/weekly-research-${date}"
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+          if gh api "repos/${{ github.repository }}/branches/${branch}" >/dev/null 2>&1; then
             echo "Branch $branch already exists; skipping."
             exit 0
           fi
@@ -120,9 +120,18 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$branch"
           git add docs .product-intelligence
+          if git diff --cached --quiet; then
+            echo "Nothing to commit; skipping."
+            exit 0
+          fi
           git commit -m "docs(research): weekly research ${date}"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" \
-            push origin "$branch"
+          # Pass the credential through git's environment config so the token
+          # never appears in a process argument list or in the log.
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git push origin "$branch"
+          unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
           gh pr create --base "${{ github.event.repository.default_branch }}" --head "$branch" \
             --title "docs(research): weekly research ${date}" \
             --body "Automated weekly scan of GitHub, the web, and goodailist.com for code-review tooling. Every candidate was verified against the GitHub API and all descriptions are untrusted summaries. Review the report and pick at most one bounded item to build; nothing here changes runtime code."

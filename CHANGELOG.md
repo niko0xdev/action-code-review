@@ -20,7 +20,7 @@ Questions) lives in `docs/v3-decisions.md`.
   writes a dated report, then plans, implements, tests, and opens a PR for at most
   one bounded item. Capped at three concurrent agents; fetched content is untrusted.
 - **Scheduled `weekly-research` workflow (no runtime effect).** Mondays 02:00 UTC, three
-  parallel scout jobs collect public data, rank it with the read-only Pi harness over
+  parallel scout jobs collect public data, rank it with the tool-free Pi harness (`--no-tools`) over
   the existing OpenAI-compatible secrets, and a final job opens a report-only PR.
   Model output is validated against the collected URLs; only the final job holds a write token.
 - **Opt-in `security-skills` input (default `'all'`, additive).** `'auto'` limits the

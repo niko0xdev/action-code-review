@@ -19,8 +19,8 @@ names in the PR title or body.
 `.github/workflows/weekly-research.yml` runs Phases 1 and 2 unattended every
 Monday at 02:00 UTC (and on `workflow_dispatch`). Three matrix jobs (`github`,
 `web`, `lists`, `max-parallel: 3`) collect public data with
-`scripts/weekly-research/collect.mjs`, then rank it with the read-only Pi
-harness (`rank.mjs`) in a directory that holds only the collected data. A final
+`scripts/weekly-research/collect.mjs`, then rank it with the tool-free Pi
+harness (`--no-tools`) (`rank.mjs`) in a directory that holds only the collected data. A final
 job (`report.mjs`) verifies repositories against the GitHub API, writes
 `docs/research/weekly-YYYY-MM-DD.md`, and opens a report-only PR. It reuses the
 existing `OPENAI_API_KEY`, `OPENAI_API_URL`, and `OPENAI_API_MODEL` secrets, and
