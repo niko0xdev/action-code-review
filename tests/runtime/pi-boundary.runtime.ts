@@ -8,7 +8,7 @@ import { PiHarness } from '../../src/harness/pi.js';
 import type { ReviewContext } from '../../src/types/context.js';
 
 async function fixture(
-	paths: string[],
+	paths: Array<string | { name: string; input: Record<string, unknown> }>,
 	caps: { maxToolCalls?: number; maxAssistantBytes?: number } = {}
 ) {
 	const root = await mkdtemp(join(tmpdir(), 'acr-real-pi-'));
@@ -52,8 +52,13 @@ async function fixture(
 						id: `call-${index}`,
 						type: 'function',
 						function: {
-							name: 'read',
-							arguments: JSON.stringify({ path: paths[index] }),
+							name:
+								typeof paths[index] === 'string' ? 'read' : paths[index].name,
+							arguments: JSON.stringify(
+								typeof paths[index] === 'string'
+									? { path: paths[index] }
+									: paths[index].input
+							),
 						},
 					},
 				],
@@ -147,6 +152,29 @@ describe('pinned Pi runtime against a loopback provider', () => {
 			expect(f.harness.lastRun?.stdout).not.toContain(
 				'"type":"message_update"'
 			);
+		} finally {
+			await f.cleanup();
+		}
+	});
+	it('searches repository source with the real offline grep tool', async () => {
+		const f = await fixture([
+			{ name: 'grep', input: { pattern: 'SOURCE_CANARY', path: '.' } },
+			{
+				name: 'grep',
+				input: { pattern: 'OUTSIDE_CREDENTIAL_CANARY', path: '..' },
+			},
+		]);
+		try {
+			await f.harness.review(f.context);
+			const replies = f.requests
+				.flatMap((request) => request.messages)
+				.filter((message) => message.role === 'tool');
+			expect(JSON.stringify(replies)).toContain('a.ts:1:');
+			expect(JSON.stringify(replies)).toContain('SOURCE_CANARY');
+			expect(JSON.stringify(replies)).not.toContain(
+				'OUTSIDE_CREDENTIAL_CANARY'
+			);
+			expect(JSON.stringify(replies)).not.toContain('not available');
 		} finally {
 			await f.cleanup();
 		}

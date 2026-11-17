@@ -42,7 +42,7 @@ git diff --exit-code -- pr-review/dist pr-content/dist
 
 The parity check is run after the rebuilt bundles have been committed. Before committing, inspect their diff and smoke-run both entrypoints with an explicitly unsupported event.
 
-Run actual-runtime boundary tests without external model traffic:
+Run actual-runtime boundary tests without external model traffic. Install `ripgrep` on the host first; offline Pi search requires the host binary:
 
 ```sh
 npm ci --prefix pr-review/pi-runtime --ignore-scripts --no-audit --no-fund
@@ -60,3 +60,7 @@ This is an application-enforced tool boundary, not a claim of an OS sandbox. The
 ## Delivery and live verification
 
 The implementation PR must pass the full quality and runtime gates before merge. After merge, use an isolated canary PR based on that exact main revision, inspect actual workflow execution and published review state, then push a safe correction and inspect the rerun. Close the canary without merging deliberate defects. Record the merge SHA, workflow/run identifiers, review outcomes, and any genuine limitations in the delivery report.
+
+## Repository review workflow allowance
+
+The repository's own Linux review workflow explicitly installs `ripgrep` and `fd-find` before starting offline inspection. Repeated large-remediation reviews exhausted the default 60-call ceiling without producing a complete assessment. The workflow therefore allows at most 120 calls and asks the reviewer to plan within 100, while retaining timeout/output limits and incomplete-result handling. The distributed Action's default remains 60. The runtime suite additionally exercises actual offline grep with repository-relative and blocked outside paths.
