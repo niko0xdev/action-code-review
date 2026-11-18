@@ -188,7 +188,7 @@ export function parseHarnessFindings(
 	const json = extractJsonBlock(raw, ['findings', 'summary']);
 	if (!json)
 		throw new Error(
-			`Unable to parse harness output as JSON. Output started with: ${raw.slice(0, 120)}`
+			`Unable to parse harness output as JSON. Output started with: ${scrubSecrets(raw).slice(0, 120)}`
 		);
 	if (!Array.isArray(json.findings))
 		throw new Error('harness output findings must be an array');

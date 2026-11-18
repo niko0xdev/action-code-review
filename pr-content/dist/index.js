@@ -33397,7 +33397,7 @@ function buildReviewPromptWithCoverage(context, extraRules, options = {}) {
 function parseHarnessFindings(raw) {
     const json = (0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_1__/* .extractJsonBlock */ .zR)(raw, ['findings', 'summary']);
     if (!json)
-        throw new Error(`Unable to parse harness output as JSON. Output started with: ${raw.slice(0, 120)}`);
+        throw new Error(`Unable to parse harness output as JSON. Output started with: ${(0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_1__/* .scrubSecrets */ .Zg)(raw).slice(0, 120)}`);
     if (!Array.isArray(json.findings))
         throw new Error('harness output findings must be an array');
     const findings = json.findings
@@ -33798,7 +33798,9 @@ function extractAssistantResult(stdout) {
 }
 /** Human-readable Pi failure, or undefined when the message is not a failure. */
 function describeAssistantFailure(message) {
-    const detail = message.errorMessage?.trim();
+    const detail = message.errorMessage
+        ? (0,redactor/* redactSecrets */.f)(message.errorMessage).trim()
+        : undefined;
     if (detail)
         return detail;
     if (message.stopReason && message.stopReason !== 'stop') {
@@ -34382,7 +34384,7 @@ async function runPi(params) {
                 return;
             }
             if (code !== 0)
-                finish(new Error(`Pi review process failed (exit ${code}): ${stderr.slice(-500)}`));
+                finish(new Error(`Pi review process failed (exit ${code}): ${(0,redactor/* redactSecrets */.f)(stderr).slice(-500)}`));
             else
                 finish();
         });

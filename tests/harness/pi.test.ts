@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseHarnessFindings } from '../../src/harness/harness.js';
 import {
 	AGENT_DEBUG_MAX_CHARS,
 	DEFAULT_MAX_OUTPUT_BYTES,
@@ -320,6 +321,39 @@ EOF
 		await expect(harness.review(makeContext())).rejects.toThrow(
 			/tool-call ceiling/
 		);
+	});
+
+	it('redacts provider error details before exposing them to callers', () => {
+		const syntheticKey = `sk-${'z'.repeat(1000)}`;
+		const stream = JSON.stringify({
+			type: 'message_end',
+			message: {
+				role: 'assistant',
+				content: [],
+				stopReason: 'error',
+				errorMessage: `Invalid credential: ${syntheticKey}`,
+			},
+		});
+		const result = extractAssistantResult(stream);
+		expect(result.error).toContain('Invalid credential:');
+		expect(result.error).not.toContain(syntheticKey);
+	});
+
+	it('redacts malformed output before clipping the parser diagnostic', () => {
+		const syntheticKey = `sk-${'z'.repeat(1000)}`;
+		const parse = () => parseHarnessFindings(syntheticKey);
+		expect(parse).toThrow(/Unable to parse/);
+		expect(parse).not.toThrow(syntheticKey.slice(0, 100));
+	});
+
+	it('redacts stderr before clipping a long credential-shaped value', async () => {
+		const syntheticKey = `sk-${'z'.repeat(1000)}`;
+		const bin = writeFakePi(
+			`#!/bin/sh\nprintf '%s' '${syntheticKey}' >&2\nexit 7\n`
+		);
+		const pending = new PiHarness({ binaryPath: bin }).review(makeContext());
+		await expect(pending).rejects.toThrow(/exit 7/);
+		await expect(pending).rejects.not.toThrow(syntheticKey.slice(-100));
 	});
 
 	it('reports a clear error when the binary is missing', async () => {

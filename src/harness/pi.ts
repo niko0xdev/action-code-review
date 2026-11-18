@@ -289,7 +289,9 @@ export function describeAssistantFailure(message: {
 	errorMessage?: string;
 	content?: unknown[];
 }): string | undefined {
-	const detail = message.errorMessage?.trim();
+	const detail = message.errorMessage
+		? redactSecrets(message.errorMessage).trim()
+		: undefined;
 	if (detail) return detail;
 	if (message.stopReason && message.stopReason !== 'stop') {
 		if (message.stopReason === 'length')
@@ -973,7 +975,7 @@ export async function runPi(params: RunPiParams): Promise<PiRunLog> {
 			if (code !== 0)
 				finish(
 					new Error(
-						`Pi review process failed (exit ${code}): ${stderr.slice(-500)}`
+						`Pi review process failed (exit ${code}): ${redactSecrets(stderr).slice(-500)}`
 					)
 				);
 			else finish();
