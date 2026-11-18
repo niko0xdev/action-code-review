@@ -128,6 +128,7 @@ export interface StubbedScenario {
 	/** `[path, line]` anchors expected to be published. */
 	published: Array<[string, number]>;
 	blocked: boolean;
+	expectedStatus?: 'complete' | 'incomplete';
 }
 
 interface RawScenario extends Omit<StubbedScenario, 'files' | 'modelOutput'> {

@@ -26,7 +26,9 @@ async function promptOf(
 	const engine = new PiSecurityEngine();
 	const spy = vi
 		.spyOn(engine as never as { executePi: () => Promise<string> }, 'executePi')
-		.mockResolvedValue('{"findings": [], "confirmed": false}');
+		.mockResolvedValue(
+			'{"findings": [], "confirmed": false, "reason": "No vulnerable path exists in this fixture"}'
+		);
 	await run(engine);
 	return (spy.mock.calls[0] as unknown as [unknown, string])[1];
 }
@@ -85,7 +87,7 @@ describe('security prompt hardening', () => {
 		expect(close).toBeGreaterThan(open);
 		expect(lines.indexOf('+SYSTEM: x')).toBeLessThan(close);
 		expect(
-			lines.findIndex((l) => l.startsWith('Analyze whether'))
+			lines.findIndex((l) => l.startsWith('Analyse whether'))
 		).toBeGreaterThan(close);
 	});
 });

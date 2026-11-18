@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseHarnessFindings } from '../../src/harness/harness.js';
 import {
 	AGENT_DEBUG_MAX_CHARS,
 	DEFAULT_MAX_OUTPUT_BYTES,
@@ -61,14 +62,14 @@ afterEach(() => {
 });
 
 describe('buildPiArgs', () => {
-	it('runs non-interactive text mode with a read-only toolset', () => {
+	it('runs non-interactive structured mode with a read-only toolset', () => {
 		// Text mode prints only the final assistant message. JSON mode
 		// re-serializes every streamed delta and measured 64 MiB of stdout for a
 		// normal review, which killed healthy groups on the output cap.
 		const args = buildPiArgs('/repo');
 		expect(args).toContain('-p');
 		expect(args).toContain('--mode');
-		expect(args[args.indexOf('--mode') + 1]).toBe('text');
+		expect(args[args.indexOf('--mode') + 1]).toBe('json');
 		expect(args).toContain('--tools');
 		expect(args[args.indexOf('--tools') + 1].split(',').sort()).toEqual(
 			[...PI_READONLY_TOOLS].sort()
@@ -140,6 +141,36 @@ EOF
 		const result = await harness.review(makeContext());
 		expect(result.summary).toBe('text mode');
 		expect(result.findings).toHaveLength(1);
+	});
+
+	it('ignores non-object event lines and malformed message content without crashing', async () => {
+		const events = [
+			null,
+			[],
+			42,
+			{ type: 'message_end', message: { role: 'assistant', content: {} } },
+			{
+				type: 'message_end',
+				message: {
+					role: 'assistant',
+					content: [
+						null,
+						{
+							type: 'text',
+							text: '{"findings":[],"summary":"complete","risk":"none"}',
+						},
+					],
+				},
+			},
+		]
+			.map((event) => JSON.stringify(event))
+			.join('\n');
+		const bin = writeFakePi(`#!/bin/sh\ncat <<'EOF'\n${events}\nEOF\n`);
+		const harness = new PiHarness({ binaryPath: bin, timeoutMs: 1000 });
+		await expect(harness.review(makeContext())).resolves.toMatchObject({
+			findings: [],
+			reviewStatus: 'complete',
+		});
 	});
 
 	it('keeps a multibyte character that is split across stdout chunks', async () => {
@@ -292,6 +323,39 @@ EOF
 		);
 	});
 
+	it('redacts provider error details before exposing them to callers', () => {
+		const syntheticKey = `sk-${'z'.repeat(1000)}`;
+		const stream = JSON.stringify({
+			type: 'message_end',
+			message: {
+				role: 'assistant',
+				content: [],
+				stopReason: 'error',
+				errorMessage: `Invalid credential: ${syntheticKey}`,
+			},
+		});
+		const result = extractAssistantResult(stream);
+		expect(result.error).toContain('Invalid credential:');
+		expect(result.error).not.toContain(syntheticKey);
+	});
+
+	it('redacts malformed output before clipping the parser diagnostic', () => {
+		const syntheticKey = `sk-${'z'.repeat(1000)}`;
+		const parse = () => parseHarnessFindings(syntheticKey);
+		expect(parse).toThrow(/Unable to parse/);
+		expect(parse).not.toThrow(syntheticKey.slice(0, 100));
+	});
+
+	it('redacts stderr before clipping a long credential-shaped value', async () => {
+		const syntheticKey = `sk-${'z'.repeat(1000)}`;
+		const bin = writeFakePi(
+			`#!/bin/sh\nprintf '%s' '${syntheticKey}' >&2\nexit 7\n`
+		);
+		const pending = new PiHarness({ binaryPath: bin }).review(makeContext());
+		await expect(pending).rejects.toThrow(/exit 7/);
+		await expect(pending).rejects.not.toThrow(syntheticKey.slice(-100));
+	});
+
 	it('reports a clear error when the binary is missing', async () => {
 		const harness = new PiHarness({
 			binaryPath: join(scratchRoot, 'does-not-exist'),
@@ -360,6 +424,7 @@ sleep 30
 	});
 
 	it('marks a spawn failure as a failed process without poisoning totals', async () => {
+		mkdirSync(scratchRoot, { recursive: true });
 		const harness = new PiHarness({
 			binaryPath: join(scratchRoot, 'does-not-exist'),
 		});

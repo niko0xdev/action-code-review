@@ -5,9 +5,9 @@ import { redactSecrets } from '../security/redaction/redactor.js';
 export interface PrContentOctokit {
 	rest: {
 		pulls: {
-			get(
-				args: unknown
-			): Promise<{ data: { title: string; body?: string | null } }>;
+			get(args: unknown): Promise<{
+				data: { title: string; body?: string | null; head: { sha: string } };
+			}>;
 			listFiles(args: Record<string, unknown>): Promise<{ data: unknown[] }>;
 			update(args: Record<string, unknown>): Promise<{ data: unknown }>;
 		};
@@ -21,6 +21,20 @@ export interface PrContentUpdateOptions {
 	prNumber: number;
 	response: string;
 	templateContent?: string;
+	expectedSnapshot: PrContentSnapshot;
+}
+
+export interface PrContentSnapshot {
+	headSha: string;
+	title: string;
+	body: string;
+}
+
+export class PrContentConflictError extends Error {
+	constructor() {
+		super('PR content or head changed during generation; update skipped.');
+		this.name = 'PrContentConflictError';
+	}
 }
 
 function parseUpdate(response: string): { title: string; description: string } {
@@ -49,7 +63,7 @@ function applyTemplate(description: string, templateContent?: string): string {
 		!DESCRIPTION_ANCHOR.test(templateContent)
 	)
 		return description;
-	let result = templateContent.replace(DESCRIPTION_ANCHOR, description);
+	let result = templateContent.replace(DESCRIPTION_ANCHOR, () => description);
 	if (description.includes('## How Has This Been Tested')) {
 		const match = description.match(
 			/## How Has This Been Tested\s*\n([\s\S]*?)(?=\n##|\n\n|$)/
@@ -57,7 +71,7 @@ function applyTemplate(description: string, templateContent?: string): string {
 		if (match) {
 			result = result.replace(
 				/<!-- AI will fill this section with testing information -->/,
-				match[1].trim()
+				() => match[1].trim()
 			);
 		}
 	}
@@ -69,7 +83,10 @@ export async function updatePrContent(
 	owner: string,
 	repo: string,
 	prNumber: number,
-	options: Pick<PrContentUpdateOptions, 'response' | 'templateContent'>
+	options: Pick<
+		PrContentUpdateOptions,
+		'response' | 'templateContent' | 'expectedSnapshot'
+	>
 ): Promise<void> {
 	const parsed = parseUpdate(options.response);
 	// The description is written to the PR: a secret echoed from the diff must not be.
@@ -82,6 +99,14 @@ export async function updatePrContent(
 		repo,
 		pull_number: prNumber,
 	});
+	const expected = options.expectedSnapshot;
+	if (
+		current.data.head.sha !== expected.headSha ||
+		current.data.title !== expected.title ||
+		(current.data.body ?? '') !== expected.body
+	) {
+		throw new PrContentConflictError();
+	}
 	if (
 		current.data.title === update.title &&
 		current.data.body === description

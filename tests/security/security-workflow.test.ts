@@ -3,10 +3,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runSecurityWorkflow } from '../../src/security/orchestrator.js';
+import { scanSecretsInDiff } from '../../src/security/scanners/secret-scanner.js';
 import type {
 	SecurityContext,
+	SecurityEngine,
 	SecurityOptions,
 } from '../../src/security/types.js';
+
+const engine: SecurityEngine = {
+	name: 'deterministic-test-engine',
+	diff: async () => [],
+	audit: async () => [],
+	confirm: async (_context, findings) => findings,
+};
 
 describe('SecurityWorkflowIntegration', () => {
 	it('runs diff security profile with scanner findings and SARIF generation', async () => {
@@ -47,7 +56,19 @@ describe('SecurityWorkflowIntegration', () => {
 				options,
 			};
 
-			const result = await runSecurityWorkflow(context, options);
+			const result = await runSecurityWorkflow(context, options, {
+				engine,
+				runScanners: async (ctx) => ({
+					findings: scanSecretsInDiff(ctx.changedFiles),
+					executions: [
+						{
+							name: 'secret-scan',
+							status: 'success',
+							findings: scanSecretsInDiff(ctx.changedFiles).length,
+						},
+					],
+				}),
+			});
 
 			expect(result.findings.length).toBeGreaterThanOrEqual(1);
 			expect(result.conclusion.risk).toBe('critical');
@@ -91,9 +112,23 @@ describe('SecurityWorkflowIntegration', () => {
 			options,
 		};
 
-		const result = await runSecurityWorkflow(context, options);
+		const result = await runSecurityWorkflow(context, options, {
+			engine,
+			runScanners: async (ctx) => ({
+				findings: scanSecretsInDiff(ctx.changedFiles),
+				executions: [
+					{
+						name: 'secret-scan',
+						status: 'success',
+						findings: scanSecretsInDiff(ctx.changedFiles).length,
+					},
+				],
+			}),
+		});
 		expect(result.findings).toHaveLength(0);
 		expect(result.conclusion.risk).toBe('none');
+		expect(result.conclusion.incomplete).toBe(false);
+		expect(result.conclusion.engineStatus).toBe('success');
 		expect(result.conclusion.failThresholdReached).toBe(false);
 	});
 });

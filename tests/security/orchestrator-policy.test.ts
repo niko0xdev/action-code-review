@@ -1,6 +1,7 @@
 import { chmod, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as core from '@actions/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
 	SecurityContext,
@@ -11,16 +12,33 @@ import type {
 const engine = vi.hoisted(() => ({
 	findings: [] as unknown[],
 	confirmFails: false,
+	disposeFails: false,
+	confirmIds: undefined as string[] | undefined,
+	confirmed: [] as unknown[],
+	confirmOutput: undefined as unknown[] | undefined,
+	refutations: [] as unknown[],
 }));
 
 vi.mock('../../src/security/engines/pi-security-engine.js', () => ({
 	PiSecurityEngine: class {
+		async dispose() {
+			if (engine.disposeFails) throw new Error('Synthetic cleanup failure');
+		}
+		get rejectedConfirmations() {
+			return engine.refutations;
+		}
 		async diff() {
 			return engine.findings;
 		}
 		async confirm(_ctx: unknown, findings: unknown[]) {
 			if (engine.confirmFails) throw new Error('confirm exploded');
-			return findings;
+			engine.confirmed = findings;
+			if (engine.confirmOutput) return engine.confirmOutput;
+			return engine.confirmIds
+				? findings.filter((f) =>
+						engine.confirmIds?.includes((f as { id: string }).id)
+					)
+				: findings;
 		}
 	},
 }));
@@ -84,17 +102,36 @@ function run(overrides: Partial<SecurityOptions>, outputDir?: string) {
 }
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	engine.findings = [];
 	engine.confirmFails = false;
+	engine.disposeFails = false;
+	engine.confirmIds = undefined;
+	engine.confirmed = [];
+	engine.confirmOutput = undefined;
+	engine.refutations = [];
 });
 
 describe('security orchestrator policy', () => {
 	it('marks the review incomplete when the confirm pass fails', async () => {
+		const warning = vi.spyOn(core, 'warning').mockImplementation(() => {});
 		engine.findings = [finding('a', 'high')];
 		engine.confirmFails = true;
 		const result = await run({});
 		expect(result.conclusion.incomplete).toBe(true);
 		expect(result.summaryMarkdown).toMatch(/incomplete/i);
+		expect(warning).toHaveBeenCalledWith(
+			expect.stringContaining('confirm exploded')
+		);
+	});
+
+	it('preserves the completed assessment when runtime cleanup fails', async () => {
+		engine.findings = [finding('a', 'high')];
+		engine.disposeFails = true;
+		const result = await run({ confirmFindings: false });
+		expect(result.findings).toMatchObject([{ id: 'a', severity: 'high' }]);
+		expect(result.conclusion.incomplete).toBe(false);
+		expect(result.conclusion.engineStatus).toBe('success');
 	});
 
 	it('clears sarifPath when the SARIF write fails', async () => {
@@ -117,5 +154,181 @@ describe('security orchestrator policy', () => {
 		const result = await run({ minSeverity: 'high', failOn: 'low' });
 		expect(result.findings).toHaveLength(0);
 		expect(result.conclusion.failThresholdReached).toBe(true);
+	});
+});
+
+describe('full validated security policy', () => {
+	it('applies fail-on independently of a zero publication cap', async () => {
+		engine.findings = [finding('a', 'high')];
+		const result = await run({ maxFindings: 0, failOn: 'high' });
+		expect(result.findings).toEqual([]);
+		expect(result.conclusion.failThresholdReached).toBe(true);
+		expect(result.conclusion.validatedFindings).toBe(1);
+		expect(result.conclusion.publishedFindings).toBe(0);
+		expect(result.conclusion.risk).toBe('high');
+	});
+
+	it('confirms high candidates even when publication and fail-on thresholds hide them', async () => {
+		engine.findings = [finding('a', 'high')];
+		engine.confirmFails = true;
+		const result = await run({
+			minSeverity: 'critical',
+			failOn: 'none',
+			maxFindings: 0,
+		});
+		expect(result.conclusion.incomplete).toBe(true);
+		expect(result.conclusion.validatedFindings).toBe(1);
+		expect(result.conclusion.failThresholdReached).toBe(false);
+	});
+
+	it.each([undefined, '', 'Use a verified replacement.'])(
+		'preserves existing remediation unless confirmation supplies an improvement: %j',
+		async (remediation) => {
+			const original = {
+				...finding('a', 'high'),
+				remediation: 'Keep the existing remediation.',
+			};
+			engine.findings = [original];
+			engine.confirmOutput = [{ ...original, remediation }];
+			const result = await run({});
+			expect(result.conclusion.incomplete).toBe(false);
+			expect(result.findings[0].remediation).toBe(
+				remediation || original.remediation
+			);
+		}
+	);
+
+	it('redacts explicit refutations in the serialised action conclusion', async () => {
+		const syntheticKey = `sk-${'z'.repeat(1000)}`;
+		const candidate = {
+			...finding(syntheticKey, 'high'),
+			fingerprint: syntheticKey,
+			title: syntheticKey,
+		};
+		engine.findings = [candidate];
+		engine.confirmIds = [];
+		engine.refutations = [
+			{
+				...candidate,
+				status: 'rejected',
+				evidence: [
+					{
+						type: 'reasoning',
+						description: `Constant source: ${syntheticKey}`,
+					},
+				],
+			},
+		];
+		const result = await run({});
+		expect(result.conclusion.refutations).toHaveLength(1);
+		expect(JSON.stringify(result.conclusion)).not.toContain(syntheticKey);
+		expect(JSON.stringify(result.conclusion)).not.toContain(
+			syntheticKey.slice(-100)
+		);
+		expect(result.reportMarkdown).not.toContain(syntheticKey);
+	});
+
+	it('fills the publication cap after explicit confirmation refutes the first candidate', async () => {
+		engine.findings = [finding('a', 'critical'), finding('b', 'high')];
+		engine.confirmIds = ['b'];
+		engine.refutations = [
+			{
+				...finding('a', 'critical'),
+				status: 'rejected',
+				evidence: [
+					{ type: 'reasoning', description: 'The source is constant' },
+				],
+			},
+		];
+		const result = await run({ maxFindings: 1, failOn: 'high' });
+		expect(result.findings.map((f) => f.id)).toEqual(['b']);
+		expect(result.conclusion.failThresholdReached).toBe(true);
+		expect(result.conclusion.validatedFindings).toBe(1);
+	});
+
+	it('retains high candidates and failure policy if confirmation returns an unknown candidate', async () => {
+		engine.findings = [finding('a', 'high')];
+		const options = { minSeverity: 'critical', failOn: 'high' } as const;
+		engine.confirmOutput = [finding('unknown', 'high')];
+		const result = await run(options);
+		expect(result.conclusion.incomplete).toBe(true);
+		expect(result.conclusion.failThresholdReached).toBe(true);
+		expect(result.conclusion.validatedFindings).toBe(1);
+	});
+});
+
+describe('confirmation boundary validation', () => {
+	it.each([
+		{ confidence: 'unknown' },
+		{ severity: 'low' },
+		{ evidence: null },
+		{ title: 'A different claim' },
+		{ remediation: 42 },
+		{ id: 'another-id' },
+	])(
+		'retains candidates when confirmation returns malformed fields: %j',
+		async (change) => {
+			engine.findings = [finding('a', 'high')];
+			engine.confirmOutput = [{ ...finding('a', 'high'), ...change }];
+			const result = await run({ failOn: 'high' });
+			expect(result.findings).toMatchObject([
+				{
+					id: 'a',
+					severity: 'high',
+					confidence: 'high',
+					evidence: [{ type: 'code', description: 'evidence' }],
+				},
+			]);
+			expect(result.conclusion).toMatchObject({
+				incomplete: true,
+				failThresholdReached: true,
+			});
+		}
+	);
+});
+
+describe('complete explicit confirmation partitions', () => {
+	it.each([
+		{ output: [], refuted: [] },
+		{ output: [], refuted: ['unknown'] },
+		{ output: [], refuted: ['a', 'a'] },
+		{ output: ['a'], refuted: ['a'] },
+		{ output: [], refuted: ['a'], evidence: [] },
+		{
+			output: [],
+			refuted: ['a'],
+			evidence: [{ type: 'reasoning', description: '   ' }],
+		},
+	])(
+		'keeps the whole candidate pool on an invalid partition: %j',
+		async ({ output, refuted, evidence }) => {
+			engine.findings = [finding('a', 'high')];
+			engine.confirmOutput = output.map((id) => finding(id, 'high'));
+			engine.refutations = refuted.map((id) => ({
+				...finding(id, 'high'),
+				status: 'rejected',
+				evidence: evidence ?? [
+					{ type: 'reasoning', description: 'The source is constant' },
+				],
+			}));
+			const result = await run({ failOn: 'high' });
+			expect(result.findings.map((f) => f.id)).toEqual(['a']);
+			expect(result.rejectedFindings).toEqual([]);
+			expect(result.conclusion).toMatchObject({
+				incomplete: true,
+				failThresholdReached: true,
+			});
+		}
+	);
+
+	it('retains all candidates when a confirmation batch only assesses the first occurrence', async () => {
+		engine.findings = [
+			finding('a', 'high'),
+			{ ...finding('b', 'high'), fingerprint: 'fp-a', startLine: 100 },
+		];
+		engine.confirmOutput = [finding('a', 'high')];
+		const result = await run({ failOn: 'high' });
+		expect(result.findings.map((f) => f.startLine)).toEqual([1, 100]);
+		expect(result.conclusion.incomplete).toBe(true);
 	});
 });

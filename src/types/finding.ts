@@ -98,6 +98,8 @@ export interface ReviewResult {
 	counts: FindingCounts;
 	/** Files actually included in the review pass. */
 	filesReviewed: string[];
+	/** Prompt supply accounting only; it does not certify source inspection. */
+	contextCoverage?: { suppliedPaths: string[]; omittedPaths: string[] };
 	/** True when the PR file list was capped by pagination safety limits. */
 	filesTruncated?: boolean;
 	/** Static-analyzer findings surfaced as evidence for the LLM review. */
@@ -156,6 +158,14 @@ export interface ToolFinding {
  * Diagnostics about the review pipeline (not published inline, surfaced
  * only in tool output / job summary for debugging).
  */
+/** A verifier judgement about an unchanged main-pass candidate. */
+export interface ReviewVerificationVerdict {
+	id: string;
+	verdict: 'supported' | 'refuted' | 'uncertain' | 'error';
+	reason: string;
+	evidenceIds: string[];
+}
+
 export interface ReviewDiagnostics {
 	/** Number of tool findings emitted across all tools. */
 	toolFindingsTotal?: number;
@@ -187,6 +197,7 @@ export interface ReviewDiagnostics {
 	/** Verify pass: estimated cost in USD. */
 	verifyCostUsd?: number;
 	verifyStatus?: 'complete' | 'error' | 'incomplete' | 'skipped';
+	verifyVerdicts?: ReviewVerificationVerdict[];
 }
 
 /**

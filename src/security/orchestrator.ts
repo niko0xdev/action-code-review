@@ -1,8 +1,11 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import * as core from '@actions/core';
 import { classifyPrRisk } from './classifier/risk-classifier.js';
 import { PiSecurityEngine } from './engines/pi-security-engine.js';
 import { PioliumSecurityEngine } from './engines/piolium-engine.js';
+import { findingOccurrenceKey } from './findings/dedupe.js';
+import { redactSecrets } from './redaction/redactor.js';
 import { buildFullAuditReport } from './reporters/audit-reporter.js';
 import { buildStickySecuritySummary } from './reporters/sticky-summary.js';
 import { generateSarif } from './sarif/sarif-generator.js';
@@ -14,6 +17,7 @@ import type {
 	SecurityEngine,
 	SecurityFinding,
 	SecurityOptions,
+	SecurityRefutation,
 	SecurityResult,
 	SecuritySeverity,
 } from './types.js';
@@ -24,9 +28,64 @@ import { applyQualityGate } from './validators/quality-gate.js';
  * Main security workflow orchestrator.
  * Spec reference: §5.2, §8, §9, §11, §18, §19, §26.
  */
+function logEngineFailure(stage: string, error: unknown): void {
+	const detail = error instanceof Error ? error.message : String(error);
+	core.warning(
+		`Security ${stage} failed: ${redactSecrets(detail).slice(0, 200)}`
+	);
+}
+
+function summariseRefutation(finding: SecurityFinding): SecurityRefutation {
+	const reason =
+		finding.evidence
+			.filter(
+				(evidence) =>
+					evidence?.type === 'reasoning' &&
+					typeof evidence.description === 'string' &&
+					evidence.description.trim()
+			)
+			.at(-1)?.description ?? '';
+	return {
+		id: redactSecrets(finding.id),
+		fingerprint: redactSecrets(finding.fingerprint),
+		title: redactSecrets(finding.title),
+		file: finding.file === undefined ? undefined : redactSecrets(finding.file),
+		startLine: finding.startLine,
+		reason: redactSecrets(reason),
+	};
+}
+
+export interface SecurityWorkflowDependencies {
+	engine?: SecurityEngine;
+	runScanners?: typeof runSecurityScanners;
+}
+
 export async function runSecurityWorkflow(
 	context: SecurityContext,
-	options: SecurityOptions
+	options: SecurityOptions,
+	dependencies: SecurityWorkflowDependencies = {}
+): Promise<SecurityResult> {
+	const engine: SecurityEngine =
+		dependencies.engine ??
+		(options.profile === 'diff'
+			? new PiSecurityEngine()
+			: new PioliumSecurityEngine());
+	try {
+		return await runSecurityAssessment(context, options, dependencies, engine);
+	} finally {
+		try {
+			await engine.dispose?.();
+		} catch (error) {
+			logEngineFailure('runtime cleanup', error);
+		}
+	}
+}
+
+async function runSecurityAssessment(
+	context: SecurityContext,
+	options: SecurityOptions,
+	dependencies: SecurityWorkflowDependencies,
+	engine: SecurityEngine
 ): Promise<SecurityResult> {
 	const startTime = Date.now();
 	context.scope = options.profile === 'diff' ? 'diff' : 'audit';
@@ -36,17 +95,11 @@ export async function runSecurityWorkflow(
 	context.riskClassification = riskClassification;
 
 	// 2. Deterministic Static Scanners
-	const scannerResult = await runSecurityScanners(context);
+	const scannerResult = await (dependencies.runScanners ?? runSecurityScanners)(
+		context
+	);
 	const scannerCandidates = scannerResult.findings;
 	const scannerExecutions = scannerResult.executions;
-
-	// 3. Engine selection based on profile
-	let engine: SecurityEngine;
-	if (options.profile === 'diff') {
-		engine = new PiSecurityEngine();
-	} else {
-		engine = new PioliumSecurityEngine();
-	}
 
 	// 4. Run Security Reasoning via selected engine
 	let engineCandidates: SecurityFinding[] = [];
@@ -64,7 +117,8 @@ export async function runSecurityWorkflow(
 						: 'balanced'
 			);
 		}
-	} catch {
+	} catch (error) {
+		logEngineFailure('reasoning', error);
 		// Static findings remain useful, but a failed reasoning engine is never
 		// equivalent to a clean audit and must be visible to policy/reporters.
 		engineCandidates = [];
@@ -73,37 +127,20 @@ export async function runSecurityWorkflow(
 
 	const allCandidates = [...scannerCandidates, ...engineCandidates];
 
-	// fail-on is judged on every validated finding, before the min-severity gate
-	// and the max-findings cap, so a fail-on below min-severity still triggers.
-	// It runs first because the gate stamps finding statuses; the published
-	// gate below must have the last word.
-	const failSeverity =
-		options.failOn !== 'none' &&
-		SEVERITY_RANKS[options.failOn] < SEVERITY_RANKS[options.minSeverity]
-			? options.failOn
-			: options.minSeverity;
-	let failPool = applyQualityGate(
+	// Validate the complete assessment before publication thresholds or caps.
+	const assessed = applyQualityGate(
 		allCandidates,
 		context,
-		failSeverity,
+		'info',
 		'medium',
 		Number.POSITIVE_INFINITY
-	).validated;
-
-	// 5. Initial Quality Gate filtering
-	const gated = applyQualityGate(
-		allCandidates,
-		context,
-		options.minSeverity,
-		'medium',
-		options.maxFindings
 	);
-
-	let validatedFindings = gated.validated;
-	const rejectedFindings = gated.rejected;
+	let validatedPool = assessed.validated;
+	const rejectedFindings = assessed.rejected;
 
 	// 6. Independent Confirmation Pass if enabled and high-risk findings exist
 	let confirmFailed = false;
+	const confirmationRefutations: SecurityFinding[] = [];
 	if (
 		options.confirmFindings &&
 		(riskClassification.level === 'high' ||
@@ -114,37 +151,148 @@ export async function runSecurityWorkflow(
 			const needsConfirm = (f: SecurityFinding) =>
 				(f.severity === 'critical' || f.severity === 'high') &&
 				f.confidence !== 'confirmed';
-			const llmHighCandidates = failPool.filter(needsConfirm);
+			const llmHighCandidates = validatedPool.filter(needsConfirm);
 			if (llmHighCandidates.length > 0) {
-				const confirmedHigh = await engine.confirm(context, llmHighCandidates);
-				const confirmedIds = new Set(confirmedHigh.map((f) => f.id));
-				const keep = (f: SecurityFinding) =>
-					!needsConfirm(f) || confirmedIds.has(f.id);
-				validatedFindings = validatedFindings.filter(keep);
-				failPool = failPool.filter(keep);
+				const confirmedHigh = await engine.confirm(
+					context,
+					structuredClone(llmHighCandidates)
+				);
+				const candidatesByKey = new Map(
+					llmHighCandidates.map((f) => [findingOccurrenceKey(f), f])
+				);
+				const confirmedByKey = new Map<string, SecurityFinding>();
+				if (!Array.isArray(confirmedHigh))
+					throw new Error('Invalid security confirmation response');
+				for (const confirmed of confirmedHigh) {
+					const key = findingOccurrenceKey(confirmed);
+					const original = candidatesByKey.get(key);
+					if (
+						!original ||
+						confirmedByKey.has(key) ||
+						confirmed.id !== original.id ||
+						confirmed.title !== original.title ||
+						confirmed.severity !== original.severity ||
+						(confirmed.remediation !== undefined &&
+							typeof confirmed.remediation !== 'string') ||
+						!['confirmed', 'high', 'medium'].includes(confirmed.confidence) ||
+						!['candidate', 'validated'].includes(confirmed.status) ||
+						!['confirmed', 'likely', 'theoretical', 'unknown'].includes(
+							confirmed.exploitability
+						) ||
+						!Array.isArray(confirmed.evidence) ||
+						confirmed.evidence.length === 0 ||
+						!confirmed.evidence.every(
+							(ev) =>
+								ev &&
+								typeof ev.description === 'string' &&
+								ev.description.trim() &&
+								[
+									'code',
+									'scanner',
+									'dataflow',
+									'test',
+									'poc',
+									'reasoning',
+								].includes(ev.type)
+						)
+					) {
+						throw new Error(
+							'Unknown or repeated security confirmation candidate'
+						);
+					}
+					confirmedByKey.set(key, confirmed);
+				}
+				const refuted = new Map<string, SecurityFinding>();
+				for (const verdict of engine.rejectedConfirmations ?? []) {
+					const key = findingOccurrenceKey(verdict);
+					const original = candidatesByKey.get(key);
+					if (
+						!original ||
+						refuted.has(key) ||
+						confirmedByKey.has(key) ||
+						verdict.id !== original.id ||
+						verdict.title !== original.title ||
+						verdict.severity !== original.severity ||
+						verdict.status !== 'rejected' ||
+						!Array.isArray(verdict.evidence) ||
+						!verdict.evidence.some(
+							(evidence) =>
+								evidence?.type === 'reasoning' &&
+								typeof evidence.description === 'string' &&
+								evidence.description.trim()
+						)
+					) {
+						throw new Error('Invalid or overlapping security refutation');
+					}
+					refuted.set(key, verdict);
+				}
+				if (confirmedByKey.size + refuted.size !== candidatesByKey.size)
+					throw new Error('Security confirmation omitted a candidate');
+				// Commit the partition only after every verdict is accounted for.
+				validatedPool = validatedPool.flatMap((finding) => {
+					if (!needsConfirm(finding)) return [finding];
+					const confirmed = confirmedByKey.get(findingOccurrenceKey(finding));
+					return confirmed
+						? [
+								{
+									...finding,
+									confidence: confirmed.confidence,
+									evidence: [
+										...finding.evidence,
+										...confirmed.evidence.filter(
+											(ev) =>
+												!finding.evidence.some(
+													(original) =>
+														JSON.stringify(original) === JSON.stringify(ev)
+												)
+										),
+									],
+									exploitability: confirmed.exploitability,
+									remediation: confirmed.remediation?.trim()
+										? confirmed.remediation
+										: finding.remediation,
+								},
+							]
+						: [];
+				});
+				rejectedFindings.push(...refuted.values());
+				confirmationRefutations.push(...refuted.values());
 			}
-		} catch {
+		} catch (error) {
+			logEngineFailure('confirmation', error);
 			// Unconfirmed high findings stay published, but the run is incomplete.
 			confirmFailed = true;
 		}
 	}
 
-	// 7. Derive overall risk
-	const overallRisk: RiskLevel = deriveOverallRisk(validatedFindings);
-
-	// 8. Evaluate fail-on threshold
-	const failThresholdReached = isFailThresholdReached(failPool, options.failOn);
+	// Policy and risk describe every validated occurrence, including hidden ones.
+	const overallRisk: RiskLevel = deriveOverallRisk(validatedPool);
+	const failThresholdReached = isFailThresholdReached(
+		validatedPool,
+		options.failOn
+	);
+	const published = applyQualityGate(
+		validatedPool,
+		context,
+		options.minSeverity,
+		'medium',
+		options.maxFindings
+	);
+	const validatedFindings = published.validated;
+	rejectedFindings.push(...published.rejected);
 
 	// 9. Build Conclusion
 	const incomplete =
 		engineStatus === 'failed' ||
 		confirmFailed ||
 		scannerExecutions.some((s) => s.status === 'failed');
+	const refutations = confirmationRefutations.map(summariseRefutation);
 	const conclusion: SecurityConclusion = {
 		risk: overallRisk,
 		publishedFindings: validatedFindings.length,
-		validatedFindings: validatedFindings.length,
+		validatedFindings: validatedPool.length,
 		rejectedFindings: rejectedFindings.length,
+		...(refutations.length ? { refutations } : {}),
 		failThresholdReached,
 		scanners: scannerExecutions,
 		domains: riskClassification.domains,
@@ -171,6 +319,8 @@ export async function runSecurityWorkflow(
 		profile: options.profile,
 		riskClassification,
 		findings: validatedFindings,
+		refutations: conclusion.refutations,
+		incomplete,
 		scanners: scannerExecutions,
 		durationMs: Date.now() - startTime,
 	});

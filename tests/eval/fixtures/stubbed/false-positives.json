@@ -120,7 +120,8 @@
 		{
 			"seededDefects": [],
 			"id": "noise-invalid-lines",
-			"description": "Zero and non-numeric lines are dropped at parse time.",
+			"description": "Zero and non-numeric lines are dropped and the malformed review remains incomplete.",
+			"expectedStatus": "incomplete",
 			"cleanPr": true,
 			"modelOutput": {
 				"findings": [
@@ -340,7 +341,8 @@
 				"verdicts": [
 					{
 						"id": "c1",
-						"verified": false,
+						"verdict": "refuted",
+						"evidenceIds": ["e1"],
 						"reason": "canned"
 					}
 				]
@@ -437,7 +439,8 @@
 				"verdicts": [
 					{
 						"id": "c1",
-						"verified": true,
+						"verdict": "supported",
+						"evidenceIds": ["e1"],
 						"reason": "canned"
 					}
 				]

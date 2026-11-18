@@ -1,0 +1,252 @@
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { preparePiRuntimeConfig } from '../../src/adapter/runtime.js';
+import { PiHarness, runIsolatedPiPrompt } from '../../src/harness/pi.js';
+import type { ReviewContext } from '../../src/types/context.js';
+
+async function fixture(
+	paths: Array<string | { name: string; input: Record<string, unknown> }>,
+	caps: { maxToolCalls?: number; maxAssistantBytes?: number } = {}
+) {
+	const root = await mkdtemp(join(tmpdir(), 'acr-real-pi-'));
+	const repo = join(root, 'repo');
+	await mkdir(join(repo, '.pi'), { recursive: true });
+	await writeFile(join(repo, '.pi', 'SYSTEM.md'), 'REPOSITORY_SYSTEM_CANARY');
+	await writeFile(
+		join(repo, '.pi', 'APPEND_SYSTEM.md'),
+		'REPOSITORY_APPEND_CANARY'
+	);
+	await writeFile(join(root, 'outside'), 'OUTSIDE_CREDENTIAL_CANARY');
+	await symlink(join(root, 'outside'), join(repo, 'link'));
+	await mkdir(join(root, 'outside-dir'));
+	await writeFile(
+		join(root, 'outside-dir', 'credential'),
+		'OUTSIDE_CREDENTIAL_CANARY'
+	);
+	await mkdir(join(repo, '\u00a0'));
+	await writeFile(join(repo, '\u00a0', 'credential'), 'ordinary source');
+	await symlink(join(root, 'outside-dir'), join(repo, ' '));
+	await writeFile(join(repo, 'a.ts'), 'export const source = "SOURCE_CANARY";');
+	const requests: Array<{
+		messages: Array<{ role: string; content: unknown }>;
+	}> = [];
+	const server = createServer(async (req, res) => {
+		let raw = '';
+		for await (const chunk of req) raw += chunk;
+		requests.push(JSON.parse(raw));
+		const index = requests.length - 1;
+		res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+		const chunk = (delta: unknown, finish_reason: string | null = null) =>
+			res.write(
+				`data: ${JSON.stringify({ id: `mock-${index}`, object: 'chat.completion.chunk', created: 1, model: 'mock', choices: [{ index: 0, delta, finish_reason }] })}\n\n`
+			);
+		if (index < paths.length) {
+			chunk({
+				role: 'assistant',
+				tool_calls: [
+					{
+						index: 0,
+						id: `call-${index}`,
+						type: 'function',
+						function: {
+							name:
+								typeof paths[index] === 'string' ? 'read' : paths[index].name,
+							arguments: JSON.stringify(
+								typeof paths[index] === 'string'
+									? { path: paths[index] }
+									: paths[index].input
+							),
+						},
+					},
+				],
+			});
+			chunk({}, 'tool_calls');
+		} else {
+			chunk({
+				role: 'assistant',
+				content: '{"findings":[],"summary":"complete","risk":"none"}',
+			});
+			chunk({}, 'stop');
+		}
+		res.write(
+			`data: ${JSON.stringify({ id: `mock-${index}`, choices: [], usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 } })}\n\n`
+		);
+		res.end('data: [DONE]\n\n');
+	});
+	await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+	const address = server.address();
+	if (!address || typeof address === 'string')
+		throw new Error('Loopback server did not start.');
+	const runtime = await preparePiRuntimeConfig({
+		provider: 'openai',
+		baseUrl: `http://127.0.0.1:${address.port}/v1`,
+		apiKey: 'synthetic',
+		model: 'mock',
+	});
+	const harness = new PiHarness({
+		binaryPath: resolve('pr-review/pi-runtime/node_modules/.bin/pi'),
+		configDir: runtime.configDir,
+		apiKey: 'synthetic',
+		model: 'mock',
+		timeoutMs: 15_000,
+		...caps,
+	});
+	const context: ReviewContext = {
+		repository: { owner: 'fixture', repo: 'fixture' },
+		repositoryPath: repo,
+		pullRequest: {
+			number: 1,
+			title: 'Fixture',
+			body: '',
+			author: 'fixture',
+			headRef: 'head',
+			baseRef: 'main',
+			headSha: 'head',
+			baseSha: 'base',
+			draft: false,
+		},
+		profiles: [],
+		diff: { files: [], totalAdditions: 0, totalDeletions: 0 },
+	};
+	return {
+		harness,
+		context,
+		configDir: runtime.configDir,
+		baseUrl: `http://127.0.0.1:${address.port}/v1`,
+		requests,
+		cleanup: async () => {
+			await runtime.cleanup();
+			await new Promise<void>((done, reject) =>
+				server.close((error) => (error ? reject(error) : done()))
+			);
+			await rm(root, { recursive: true, force: true });
+		},
+	};
+}
+
+describe('pinned Pi runtime against a loopback provider', () => {
+	it('blocks traversal and symlink reads, ignores repository system prompts, and records actual usage', async () => {
+		const f = await fixture([
+			'../outside',
+			'link',
+			'\u00a0/credential',
+			'a.ts',
+			{ name: 'find', input: { pattern: '*', path: '..' } },
+			{ name: 'ls', input: { path: '..' } },
+			{ name: 'ls', input: { path: '.' } },
+		]);
+		try {
+			const result = await f.harness.review(f.context);
+			expect(result.findings).toEqual([]);
+			expect(JSON.stringify(f.requests[0].messages[0].content)).toContain(
+				f.context.repositoryPath
+			);
+			const sent = JSON.stringify(f.requests);
+			for (const canary of [
+				'OUTSIDE_CREDENTIAL_CANARY',
+				'REPOSITORY_SYSTEM_CANARY',
+				'REPOSITORY_APPEND_CANARY',
+			])
+				expect(sent).not.toContain(canary);
+			expect(sent).toContain('SOURCE_CANARY');
+			const replies =
+				f.requests
+					.at(-1)
+					?.messages.filter((message) => message.role === 'tool') ?? [];
+			expect(replies).toHaveLength(7);
+			for (const index of [4, 5])
+				expect(JSON.stringify(replies[index].content)).toContain(
+					'outside the permitted source boundary'
+				);
+			expect(JSON.stringify(replies[6].content)).toContain('a.ts');
+			expect(f.harness.usage.toolCallsStarted).toBe(7);
+			expect(f.harness.usage.totalTokens).toBeGreaterThan(0);
+			expect(f.harness.lastRun?.stdout).not.toContain(
+				'"type":"message_update"'
+			);
+		} finally {
+			await f.cleanup();
+		}
+	});
+	it('searches repository source with the real offline grep tool', async () => {
+		const f = await fixture([
+			{ name: 'grep', input: { pattern: 'SOURCE_CANARY', path: '.' } },
+			{
+				name: 'grep',
+				input: { pattern: 'OUTSIDE_CREDENTIAL_CANARY', path: '..' },
+			},
+		]);
+		try {
+			await f.harness.review(f.context);
+			const replies = f.requests
+				.flatMap((request) => request.messages)
+				.filter((message) => message.role === 'tool');
+			expect(JSON.stringify(replies)).toContain('a.ts:1:');
+			expect(JSON.stringify(replies)).toContain('SOURCE_CANARY');
+			expect(JSON.stringify(replies)).not.toContain(
+				'OUTSIDE_CREDENTIAL_CANARY'
+			);
+			expect(JSON.stringify(replies)).not.toContain('not available');
+		} finally {
+			await f.cleanup();
+		}
+	});
+	it('uses an explicit gateway from an initially empty caller-owned configuration', async () => {
+		const f = await fixture([]);
+		try {
+			await rm(join(f.configDir, 'models.json'));
+			await rm(join(f.configDir, 'settings.json'));
+			const output = await runIsolatedPiPrompt(
+				f.context.repositoryPath,
+				'Return the prescribed JSON result.',
+				{
+					binaryPath: resolve('pr-review/pi-runtime/node_modules/.bin/pi'),
+					configDir: f.configDir,
+					baseUrl: f.baseUrl,
+					apiKey: 'synthetic',
+					model: 'mock',
+					timeoutMs: 15_000,
+				}
+			);
+			expect(JSON.parse(output).findings).toEqual([]);
+			expect(f.requests).toHaveLength(1);
+			expect(
+				JSON.parse(await readFile(join(f.configDir, 'settings.json'), 'utf8'))
+					.compaction.enabled
+			).toBe(false);
+		} finally {
+			await f.cleanup();
+		}
+	});
+	it('enforces tool-call limits against the real event protocol', async () => {
+		const f = await fixture(['a.ts', 'a.ts', 'a.ts'], { maxToolCalls: 1 });
+		try {
+			await expect(f.harness.review(f.context)).rejects.toThrow(
+				/tool-call ceiling/
+			);
+			expect(f.harness.usage.processes.failed).toBe(1);
+		} finally {
+			await f.cleanup();
+		}
+	});
+	it('enforces assistant bytes even when the tool ceiling is disabled', async () => {
+		const f = await fixture([], { maxToolCalls: 0, maxAssistantBytes: 8 });
+		try {
+			await expect(f.harness.review(f.context)).rejects.toThrow(
+				/model-output ceiling/
+			);
+		} finally {
+			await f.cleanup();
+		}
+	});
+});

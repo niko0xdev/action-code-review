@@ -47,6 +47,11 @@ export async function runReview(
 	let failedGroups = 0;
 	let filesNotAnalyzed = 0;
 	let truncatedFiles = 0;
+	let incompleteGroups = 0;
+	let filesTruncated = Boolean(context.diff.filesTruncated);
+	const suppliedPaths = new Set<string>();
+	const omittedPaths = new Set<string>();
+	let hasContextCoverage = false;
 
 	for (let start = 0; start < groups.length; start += 3) {
 		const outcomes = await Promise.allSettled(
@@ -66,12 +71,30 @@ export async function runReview(
 		for (const [index, outcome] of outcomes.entries()) {
 			const group = groups[start + index];
 			if (outcome.status === 'fulfilled') {
+				const groupResult = outcome.value.result;
+				filesTruncated ||= Boolean(groupResult.filesTruncated);
+				if (groupResult.reviewStatus && groupResult.reviewStatus !== 'complete')
+					incompleteGroups += 1;
+				if (groupResult.contextCoverage) {
+					hasContextCoverage = true;
+					for (const path of groupResult.contextCoverage.suppliedPaths)
+						if (group.files.includes(path)) suppliedPaths.add(path);
+					for (const path of group.files)
+						if (
+							!groupResult.contextCoverage.suppliedPaths.includes(path) ||
+							groupResult.contextCoverage.omittedPaths.includes(path)
+						)
+							omittedPaths.add(path);
+				}
+
 				// Validate and rank the complete candidate set before applying a
 				// presentation cap, so output ordering cannot hide critical issues.
 				allFindings.push(...outcome.value.result.findings);
 				// A harness that cut files off at its context limit reports only
 				// what it really analysed; the rest is not-analysed, not reviewed.
-				const analysed = outcome.value.result.filesReviewed ?? group.files;
+				const analysed = [
+					...new Set(outcome.value.result.filesReviewed ?? []),
+				].filter((path) => group.files.includes(path));
 				filesReviewed.push(...analysed);
 				const cutOff = group.files.length - analysed.length;
 				if (cutOff > 0) {
@@ -130,11 +153,25 @@ export async function runReview(
 		summary: summaries.join('\n\n').trim(),
 		risk: riskFromFindings(findings),
 		counts: computeCounts(findings),
-		filesReviewed,
-		...(context.diff.filesTruncated ? { filesTruncated: true } : {}),
+		filesReviewed: [...new Set(filesReviewed)],
+		...(hasContextCoverage
+			? {
+					contextCoverage: {
+						suppliedPaths: [...suppliedPaths].filter(
+							(path) => !omittedPaths.has(path)
+						),
+						omittedPaths: [...omittedPaths],
+					},
+				}
+			: {}),
+		...(filesTruncated ? { filesTruncated: true } : {}),
 		ruleCoverage: deriveRuleCoverage(context, findings),
 		reviewStatus:
-			failedGroups > 0 || truncatedFiles > 0 || context.diff.filesTruncated
+			failedGroups > 0 ||
+			incompleteGroups > 0 ||
+			omittedPaths.size > 0 ||
+			truncatedFiles > 0 ||
+			filesTruncated
 				? 'incomplete'
 				: 'complete',
 		// Read after every group settled so failed processes that still emitted

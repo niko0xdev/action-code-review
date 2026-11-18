@@ -49,6 +49,17 @@ jobs:
       - name: Test with coverage floor
         run: pnpm test:coverage
 
+      - name: Install pinned runtime for boundary regression tests
+        run: npm ci --prefix pr-review/pi-runtime --ignore-scripts --no-audit --no-fund
+
+      - name: Install offline search prerequisite
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ripgrep
+
+      - name: Test real runtime boundaries and limits
+        run: pnpm test:runtime
+
       - name: Build bundles
         run: pnpm build
 

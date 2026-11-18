@@ -76,3 +76,28 @@ describe('SarifGeneration', () => {
 		expect(sarifStr).toContain('[REDACTED_GITHUB_TOKEN]');
 	});
 });
+
+it('redacts structured SARIF fields as well as messages', () => {
+	const token = `ghp_${'A'.repeat(36)}`;
+	const finding: SecurityFinding = {
+		id: 'synthetic',
+		fingerprint: token,
+		title: token,
+		severity: 'high',
+		confidence: 'high',
+		status: 'validated',
+		cwe: token,
+		owasp: token,
+		file: `src/${token}.ts`,
+		startLine: 1,
+		evidence: [{ type: 'code', description: token }],
+		exploitability: 'likely',
+		remediation: token,
+	};
+	const output = generateSarif([finding], token, token);
+	expect(output).not.toContain(token);
+	expect(
+		JSON.parse(output).runs[0].results[0].locations[0].physicalLocation
+			.artifactLocation.uri
+	).toContain('[REDACTED_GITHUB_TOKEN]');
+});

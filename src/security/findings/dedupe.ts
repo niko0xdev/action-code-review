@@ -11,9 +11,10 @@ export function deduplicateFindings(
 	const map = new Map<string, SecurityFinding>();
 
 	for (const finding of findings) {
-		const existing = map.get(finding.fingerprint);
+		const key = findingOccurrenceKey(finding);
+		const existing = map.get(key);
 		if (!existing) {
-			map.set(finding.fingerprint, { ...finding });
+			map.set(key, { ...finding, evidence: [...finding.evidence] });
 			continue;
 		}
 
@@ -46,7 +47,12 @@ export function deduplicateFindings(
 		// Merge evidence
 		for (const ev of finding.evidence) {
 			const isDuplicate = existing.evidence.some(
-				(e) => e.description === ev.description && e.type === ev.type
+				(e) =>
+					e.description === ev.description &&
+					e.type === ev.type &&
+					e.file === ev.file &&
+					e.line === ev.line &&
+					e.source === ev.source
 			);
 			if (!isDuplicate) {
 				existing.evidence.push(ev);
@@ -60,4 +66,16 @@ export function deduplicateFindings(
 	}
 
 	return Array.from(map.values());
+}
+
+/** Identity within one reviewed revision; the family fingerprint survives line shifts. */
+export function findingOccurrenceKey(finding: SecurityFinding): string {
+	return JSON.stringify([
+		finding.fingerprint,
+		finding.file,
+		finding.startLine,
+		finding.endLine ?? finding.startLine,
+		finding.source,
+		finding.sink,
+	]);
 }

@@ -86,7 +86,7 @@ describe('SecurityReporters', () => {
 		expect(summary).toContain('• authorization');
 	});
 
-	it('marks a summary incomplete when an engine fails', () => {
+	it('marks summaries and reports incomplete when an engine fails', () => {
 		const summary = buildStickySecuritySummary({
 			risk: 'low',
 			validatedCount: 0,
@@ -103,6 +103,35 @@ describe('SecurityReporters', () => {
 		expect(summary).toContain(
 			'do not treat this report as a clean security pass'
 		);
+		const report = buildFullAuditReport({
+			...auditOptions([]),
+			incomplete: true,
+		});
+		expect(report).toContain('SECURITY REVIEW INCOMPLETE');
+		expect(report).not.toContain('No security vulnerabilities identified');
+	});
+
+	it('renders an inspectable refutation ledger without raw links, HTML, or credentials', () => {
+		const syntheticKey = `sk-${'z'.repeat(1000)}`;
+		const report = buildFullAuditReport({
+			...auditOptions([]),
+			refutations: [
+				{
+					id: 'refuted-1',
+					fingerprint: 'fp-refuted-1',
+					title: '<script>Claim</script>',
+					file: 'src/a.ts',
+					startLine: 3,
+					reason: `Refuted from constant source. [Open](https://invalid.example) ${syntheticKey}`,
+				},
+			],
+		});
+		expect(report).toContain('Explicit Confirmation Refutations');
+		expect(report).toContain('refuted-1');
+		expect(report).toContain('Refuted from constant source');
+		expect(report).not.toContain('<script>');
+		expect(report).not.toContain('[Open](https://invalid.example)');
+		expect(report).not.toContain(syntheticKey);
 	});
 
 	it('builds comprehensive full audit report markdown', () => {

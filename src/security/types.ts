@@ -76,11 +76,22 @@ export interface ScannerExecution {
 	durationMs?: number;
 }
 
+export interface SecurityRefutation {
+	id: string;
+	fingerprint: string;
+	title: string;
+	file?: string;
+	startLine?: number;
+	reason: string;
+}
+
 export interface SecurityConclusion {
 	risk: RiskLevel;
 	publishedFindings: number;
 	validatedFindings: number;
 	rejectedFindings: number;
+	/** Pattern-redacted explicit confirmation refutations, when present. */
+	refutations?: SecurityRefutation[];
 	failThresholdReached: boolean;
 	scanners: ScannerExecution[];
 	domains: string[];
@@ -146,11 +157,21 @@ export interface SecurityOptions {
 
 export interface SecurityEngine {
 	readonly name: string;
+	/** Explicit negative verdicts from the latest successful confirm batch. */
+	readonly rejectedConfirmations?: readonly SecurityFinding[];
+	/** Release engine-owned runtime resources after the assessment. */
+	dispose?(): Promise<void>;
 	diff(ctx: SecurityContext): Promise<SecurityFinding[]>;
 	audit(
 		ctx: SecurityContext,
 		profile: 'lite' | 'balanced' | 'deep'
 	): Promise<SecurityFinding[]>;
+	/**
+	 * Return confirmed candidates. Together with rejectedConfirmations, the
+	 * response must partition the complete input exactly once. Reset the
+	 * refutation ledger per batch and include concrete reasoning evidence.
+	 * Missing, duplicated, or malformed verdicts retain the input as incomplete.
+	 */
 	confirm(
 		ctx: SecurityContext,
 		findings: SecurityFinding[]

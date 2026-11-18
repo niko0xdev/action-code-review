@@ -1,5 +1,19 @@
 # Changelog
 
+## Audit remediation – 17/11/2026
+
+### Security
+- Confine review tools to canonical source paths, isolate runtime startup/home, and share the guarded transport with security fallback.
+- Redact structured SARIF fields and complete long provider-key values.
+- Require publisher authorship for review markers and honour write-permission policy for change requests.
+
+### Fixed
+- Keep malformed, truncated, or unconfirmed assessments incomplete; preserve candidates until explicit source-backed refutation.
+- Preserve distinct security occurrences and evaluate failure policy before publication filters and caps.
+- Protect concurrent PR content edits and preserve literal template text.
+- Correct analyser locations and execute deterministic, locked-runtime regression tests in CI.
+
+
 All notable changes. Format follows Keep a Changelog; each entry maps
 to a merged PR.
 

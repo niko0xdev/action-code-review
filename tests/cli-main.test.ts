@@ -92,7 +92,8 @@ vi.mock('../src/review/verify.js', async (importOriginal) => {
 	};
 });
 
-vi.mock('../src/llm/openai-compatible.js', () => ({
+vi.mock('../src/llm/openai-compatible.js', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../src/llm/openai-compatible.js')>()),
 	OpenAiCompatibleProvider: class {
 		complete = state.complete;
 	},
@@ -325,7 +326,8 @@ describe('main: top-level flows', () => {
 			const verdicts = (JSON.parse(block) as Array<{ id: string }>).map(
 				(c) => ({
 					id: c.id,
-					verified: true,
+					verdict: 'supported',
+					evidenceIds: ['e1'],
 					reason: 'ok',
 				})
 			);

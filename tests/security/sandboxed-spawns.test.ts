@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultTools, runPrelint } from '../../src/context/prelint.js';
+import { runIsolatedPiPrompt } from '../../src/harness/pi.js';
 import { MAX_ANALYSER_OUTPUT_BYTES } from '../../src/security/analyser-process.js';
 import { PiSecurityEngine } from '../../src/security/engines/pi-security-engine.js';
 import { runSecurityWorkflow } from '../../src/security/orchestrator.js';
@@ -188,51 +189,213 @@ describe('PiSecurityEngine fallback spawn', () => {
 	const ctx = {
 		owner: 'o',
 		repo: 'r',
-		repositoryPath: '/repo',
+		repositoryPath: '',
 		options: {},
 		changedFiles: [],
 	} as unknown as SecurityContext;
 	const saved: Record<string, string | undefined> = {};
-	const keys = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'PI_CODING_AGENT_DIR'];
-
-	beforeEach(() => {
+	const keys = [
+		'OPENAI_API_KEY',
+		'ANTHROPIC_API_KEY',
+		'OPENROUTER_API_KEY',
+		'GEMINI_API_KEY',
+		'GROQ_API_KEY',
+		'MISTRAL_API_KEY',
+		'XAI_API_KEY',
+		'PI_CODING_AGENT_DIR',
+	];
+	let engines: PiSecurityEngine[] = [];
+	function engine() {
+		const instance = new PiSecurityEngine();
+		engines.push(instance);
+		return instance;
+	}
+	function assistant(text: string) {
+		return JSON.stringify({
+			type: 'message_end',
+			message: {
+				role: 'assistant',
+				content: [{ type: 'text', text }],
+				stopReason: 'stop',
+			},
+		});
+	}
+	beforeEach(async () => {
+		const { mkdtemp } = await import('node:fs/promises');
+		const { tmpdir } = await import('node:os');
+		const { join } = await import('node:path');
+		ctx.repositoryPath = await mkdtemp(join(tmpdir(), 'acr-security-root-'));
+		engines = [];
+		ctx.options = {} as SecurityOptions;
 		for (const k of keys) {
 			saved[k] = process.env[k];
 			Reflect.deleteProperty(process.env, k);
 		}
 	});
-	afterEach(() => {
+	afterEach(async () => {
+		const { rm } = await import('node:fs/promises');
+		await Promise.all(engines.map((e) => e.dispose()));
+		await rm(ctx.repositoryPath, { recursive: true, force: true });
 		for (const k of keys) {
 			if (saved[k] !== undefined) process.env[k] = saved[k];
 			else Reflect.deleteProperty(process.env, k);
 		}
 	});
 
-	it('reuses the isolated Pi flags and minimal env', async () => {
-		mockSpawn.mockReturnValueOnce(fakeProc('{"findings":[]}'));
-		await new PiSecurityEngine().diff(ctx);
+	it('reuses isolated Pi flags, JSON protocol, and a minimal environment', async () => {
+		mockSpawn.mockImplementationOnce(() =>
+			fakeProc(assistant('{"findings":[]}'))
+		);
+		await engine().diff(ctx);
 		const { args, env } = lastSpawn();
 		for (const flag of ['--no-extensions', '--no-skills', '--no-context-files'])
 			expect(args).toContain(flag);
-		expect(args).toContain('--tools');
+		expect(args[args.indexOf('--mode') + 1]).toBe('json');
+		expect(args[args.indexOf('--tools') + 1]).toBe('read,grep,find,ls');
 		expect(env.GITHUB_TOKEN).toBeUndefined();
 		expect(env.OPENAI_API_KEY_TEST_SECRET).toBeUndefined();
+		expect(env.HOME).toBe(env.PI_CODING_AGENT_DIR);
+		expect(mockSpawn.mock.calls[0][2]?.cwd).toBe(env.PI_CODING_AGENT_DIR);
+		expect(mockSpawn.mock.calls[0][2]?.cwd).not.toBe(ctx.repositoryPath);
 	});
 
-	it('forwards only the configured provider key and its provider id', async () => {
-		process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
-		mockSpawn.mockReturnValueOnce(fakeProc('{"findings":[]}'));
-		await new PiSecurityEngine().diff(ctx);
-		const { args, env } = lastSpawn();
-		expect(args[args.indexOf('--provider') + 1]).toBe('anthropic');
-		expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-test');
-		expect(env.GITHUB_TOKEN).toBeUndefined();
-		expect(env.OPENAI_API_KEY_TEST_SECRET).toBeUndefined();
+	it.each([
+		['ANTHROPIC_API_KEY', 'anthropic'],
+		['OPENROUTER_API_KEY', 'openrouter'],
+		['GEMINI_API_KEY', 'google'],
+		['GROQ_API_KEY', 'groq'],
+		['MISTRAL_API_KEY', 'mistral'],
+		['XAI_API_KEY', 'xai'],
+	])(
+		'forwards only the configured provider key %s and provider %s',
+		async (key, provider) => {
+			process.env[key] = 'synthetic-provider-key';
+			ctx.options = { model: 'gpt-4' } as SecurityOptions;
+			process.env.UNRELATED_PROVIDER_SECRET = 'never-forward-this';
+			try {
+				mockSpawn.mockImplementationOnce(() =>
+					fakeProc(assistant('{"findings":[]}'))
+				);
+				await engine().diff(ctx);
+				const { args, env } = lastSpawn();
+				expect(args[args.indexOf('--provider') + 1]).toBe(provider);
+				expect(env[key]).toBe('synthetic-provider-key');
+				expect(args).not.toContain('--model');
+				expect(env.GITHUB_TOKEN).toBeUndefined();
+				expect(env.UNRELATED_PROVIDER_SECRET).toBeUndefined();
+				expect(env.OPENAI_API_KEY_TEST_SECRET).toBeUndefined();
+			} finally {
+				Reflect.deleteProperty(process.env, 'UNRELATED_PROVIDER_SECRET');
+			}
+		}
+	);
+
+	it.each([
+		{ model: 'native-review-model' },
+		{ model: 'native-review-model-v2' },
+	])('retains explicit native model choices: %j', async (options) => {
+		process.env.ANTHROPIC_API_KEY = 'synthetic-provider-key';
+		ctx.options = options as SecurityOptions;
+		mockSpawn.mockImplementationOnce(() =>
+			fakeProc(assistant('{"findings":[]}'))
+		);
+		await engine().diff(ctx);
+		const { args } = lastSpawn();
+		expect(args[args.indexOf('--model') + 1]).toBe(options.model);
 	});
 
-	it('creates one config directory per engine run, not per finding', async () => {
-		const engine = new PiSecurityEngine();
-		mockSpawn.mockImplementation(() => fakeProc('{"confirmed":true}'));
+	it('does not route an ambient native credential to a custom gateway', async () => {
+		process.env.ANTHROPIC_API_KEY = 'synthetic-provider-key';
+		ctx.options = {
+			baseUrl: 'https://gateway.invalid/v1',
+			model: 'gateway-review',
+		} as SecurityOptions;
+		await expect(engine().diff(ctx)).rejects.toThrow(
+			/gateway.*explicit API key/i
+		);
+		expect(mockSpawn).not.toHaveBeenCalled();
+	});
+
+	it('writes the configured gateway and disables compaction in the owned fallback directory', async () => {
+		ctx.options = {
+			baseUrl: 'https://gateway.invalid/v1',
+			model: 'gateway-review',
+		} as SecurityOptions;
+		mockSpawn.mockImplementationOnce(() =>
+			fakeProc(assistant('{"findings":[]}'))
+		);
+		await engine().diff(ctx);
+		const { env } = lastSpawn();
+		const { readFile } = await import('node:fs/promises');
+		const { join } = await import('node:path');
+		const configDir = env.PI_CODING_AGENT_DIR as string;
+		const models = JSON.parse(
+			await readFile(join(configDir, 'models.json'), 'utf8')
+		);
+		expect(models.providers.openai.baseUrl).toBe(ctx.options.baseUrl);
+		expect(models.providers.openai.models[0].id).toBe(ctx.options.model);
+		const settings = JSON.parse(
+			await readFile(join(configDir, 'settings.json'), 'utf8')
+		);
+		expect(settings.compaction.enabled).toBe(false);
+	});
+
+	it('disables compaction without replacing built-in alternative provider models', async () => {
+		process.env.ANTHROPIC_API_KEY = 'synthetic-provider-key';
+		mockSpawn.mockImplementationOnce(() =>
+			fakeProc(assistant('{"findings":[]}'))
+		);
+		await engine().diff(ctx);
+		const { env } = lastSpawn();
+		const { access, readFile } = await import('node:fs/promises');
+		const { join } = await import('node:path');
+		const configDir = env.PI_CODING_AGENT_DIR as string;
+		await expect(access(join(configDir, 'models.json'))).rejects.toThrow();
+		expect(
+			JSON.parse(await readFile(join(configDir, 'settings.json'), 'utf8'))
+				.compaction.enabled
+		).toBe(false);
+	});
+
+	it('preserves native provider configuration in a newly allocated isolated transport', async () => {
+		const { existsSync, readFileSync } = await import('node:fs');
+		const { join } = await import('node:path');
+		let configDir = '';
+		let hasOverride = true;
+		let compactionEnabled = true;
+		mockSpawn.mockImplementationOnce((_binary, _args, options) => {
+			configDir = (options?.env as NodeJS.ProcessEnv)
+				.PI_CODING_AGENT_DIR as string;
+			hasOverride = existsSync(join(configDir, 'models.json'));
+			compactionEnabled = JSON.parse(
+				readFileSync(join(configDir, 'settings.json'), 'utf8')
+			).compaction.enabled;
+			return fakeProc(assistant('{"findings":[]}'));
+		});
+		await runIsolatedPiPrompt(
+			ctx.repositoryPath,
+			'Return a security assessment.',
+			{
+				provider: 'anthropic',
+				extraEnv: { ANTHROPIC_API_KEY: 'synthetic-provider-key' },
+			}
+		);
+		expect(hasOverride).toBe(false);
+		expect(compactionEnabled).toBe(false);
+		expect(existsSync(configDir)).toBe(false);
+	});
+
+	it('reuses one owned config directory for discovery and confirmation, then removes it', async () => {
+		const instance = engine();
+		mockSpawn.mockImplementationOnce(() =>
+			fakeProc(assistant('{"findings":[]}'))
+		);
+		await instance.diff(ctx);
+		mockSpawn.mockImplementation(() =>
+			fakeProc(
+				assistant('{"confirmed":true,"reason":"The source reaches the sink"}')
+			)
+		);
 		const finding = (id: string) =>
 			({
 				id,
@@ -241,28 +404,25 @@ describe('PiSecurityEngine fallback spawn', () => {
 				title: id,
 				evidence: [],
 			}) as never;
-		await engine.confirm(ctx, [finding('a'), finding('b')]).catch(() => []);
+		await instance.confirm(ctx, [finding('a'), finding('b')]);
 		const dirs = mockSpawn.mock.calls.map(
-			(c) =>
-				(c[2] as { env: NodeJS.ProcessEnv }).env.PI_CODING_AGENT_DIR as string
+			(call) =>
+				(call[2] as { env: NodeJS.ProcessEnv }).env
+					.PI_CODING_AGENT_DIR as string
 		);
-		expect(dirs.length).toBeGreaterThanOrEqual(2);
+		expect(dirs).toHaveLength(3);
 		expect(new Set(dirs).size).toBe(1);
-		mockSpawn.mockReset();
+		const { access } = await import('node:fs/promises');
+		await expect(access(dirs[0])).resolves.toBeUndefined();
+		await instance.dispose();
+		await expect(access(dirs[0])).rejects.toThrow();
 	});
 
-	it('rejects on a non-zero Pi exit and the workflow ends incomplete', async () => {
-		mockSpawn.mockImplementation((cmd: string) => {
-			if (cmd === 'semgrep') {
-				const err = new Error('spawn semgrep ENOENT') as NodeJS.ErrnoException;
-				err.code = 'ENOENT';
-				const proc = fakeProc();
-				setTimeout(() => proc.emit('error', err), 10);
-				return proc;
-			}
-			return fakeProc('', 1, 'boom');
-		});
-		await expect(new PiSecurityEngine().diff(ctx)).rejects.toThrow(/exit 1/);
+	it('rejects a non-zero exit despite a valid response and keeps the workflow incomplete', async () => {
+		mockSpawn.mockImplementation(() =>
+			fakeProc(assistant('{"findings":[]}'), 7, 'synthetic failure')
+		);
+		await expect(engine().diff(ctx)).rejects.toThrow(/exit 7/);
 		const options = {
 			mode: 'security',
 			profile: 'diff',
@@ -274,13 +434,22 @@ describe('PiSecurityEngine fallback spawn', () => {
 			generateSarif: false,
 			maxFindings: 10,
 			riskThreshold: 'high',
-		} as unknown as SecurityOptions;
-		const result = await runSecurityWorkflow(
-			{ ...ctx, options, changedFiles: [] } as SecurityContext,
-			options
-		);
+		} as SecurityOptions;
+		const result = await runSecurityWorkflow({ ...ctx, options }, options, {
+			engine: engine(),
+			runScanners: async () => ({ findings: [], executions: [] }),
+		});
 		expect(result.conclusion.engineStatus).toBe('failed');
 		expect(result.conclusion.incomplete).toBe(true);
-		mockSpawn.mockReset();
+		const { env } = lastSpawn();
+		const { access } = await import('node:fs/promises');
+		await expect(access(env.PI_CODING_AGENT_DIR as string)).rejects.toThrow();
+	});
+
+	it('fails closed for a missing repository root before spawning', async () => {
+		await expect(
+			engine().diff({ ...ctx, repositoryPath: `${ctx.repositoryPath}/missing` })
+		).rejects.toThrow();
+		expect(mockSpawn).not.toHaveBeenCalled();
 	});
 });

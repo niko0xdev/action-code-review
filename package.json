@@ -13,7 +13,8 @@
 		"lint": "biome check src/ tests/ scripts/weekly-research/",
 		"lint:fix": "biome check --apply src/ tests/ scripts/weekly-research/",
 		"format": "biome format --write src/ tests/",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"test:runtime": "vitest run --config vitest.runtime.config.ts"
 	},
 	"keywords": [
 		"github-action",

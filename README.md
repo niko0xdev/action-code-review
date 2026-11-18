@@ -83,6 +83,8 @@ More: [`docs/index.md`](docs/index.md).
 ```bash
 pnpm install
 pnpm test && pnpm typecheck && pnpm lint
+npm ci --prefix pr-review/pi-runtime --ignore-scripts --no-audit --no-fund
+pnpm test:runtime   # actual locked runtime; loopback provider only
 pnpm build   # emits pr-review/dist/index.js + pr-content/dist/index.js
 ```
 

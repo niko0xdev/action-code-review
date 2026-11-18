@@ -25,6 +25,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Install offline inspection tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ripgrep fd-find
+          rg --version
+          fdfind --version
+
       - name: Run AI Code Review
         uses: ./pr-review
         with:
@@ -34,7 +41,16 @@ jobs:
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
           exclude-patterns: "*.md,*.txt"
           track-progress: 'true'
+          max-context-chars: '150000'
+          review-prompt: >-
+            Focus on actionable correctness, security, and regression issues in the
+            supplied patches. Use targeted source reads and searches rather than
+            repeatedly listing the repository. Plan for at most 100 inspection
+            calls within the 120-call hard ceiling. Report incomplete analysis
+            honestly if the available evidence or budget is insufficient.
         env:
+          # Large audit remediations need a bounded allowance above the default 60.
+          AI_REVIEW_PI_MAX_TOOL_CALLS: '120'
           AI_REVIEW_ENABLE_PRELINT: 'true'
           AI_REVIEW_SKIP_DRAFTS: 'true'
           AI_REVIEW_VERIFY_BUDGET_USD: '0.50'
