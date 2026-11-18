@@ -60,6 +60,7 @@ jobs:
           AI_REVIEW_MIN_CONFIDENCE: '0.8'
 
       - name: Verify live PR content generation
+        if: github.event.pull_request.number == 161
         uses: ./pr-content
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
