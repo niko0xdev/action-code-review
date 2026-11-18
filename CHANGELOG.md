@@ -1,31 +1,41 @@
 # Changelog
 
-## Audit remediation – 17/11/2026
-
-### Security
-- Confine review tools to canonical source paths, isolate runtime startup/home, and share the guarded transport with security fallback.
-- Redact structured SARIF fields and complete long provider-key values.
-- Require publisher authorship for review markers and honour write-permission policy for change requests.
-
-### Fixed
-- Keep malformed, truncated, or unconfirmed assessments incomplete; preserve candidates until explicit source-backed refutation.
-- Preserve distinct security occurrences and evaluate failure policy before publication filters and caps.
-- Protect concurrent PR content edits and preserve literal template text.
-- Correct analyser locations and execute deterministic, locked-runtime regression tests in CI.
-
-
-All notable changes. Format follows Keep a Changelog; each entry maps
-to a merged PR.
-
-
-All notable V3 changes. V3 is a **prompt + tooling upgrade layer** on top
-of the V2 engine; the V1 interface contract is unchanged.
-
-The full research artifact that motivated V3 lives in
-`docs/v3-prompt-research.md`. The decision record (resolving 5 Open
-Questions) lives in `docs/v3-decisions.md`.
+Consumer-facing releases are listed first. Earlier development notes are retained below.
 
 ## [Unreleased]
+
+No changes yet.
+
+## [3.0.0] – 18/11/2026
+
+### Upgrade notes
+
+- Automatic approval is now opt-in: `auto-approve-when-resolved` defaults to `false`, rather than the `true` default in v2.0.1. Explicit opt-in also requires a complete assessment, prior resolved AI threads, and no findings hidden by the severity floor.
+- JSON/YAML files are included by the default review filter, except lockfiles. Incomplete or truncated assessments fail the check and cannot approve. See the [upgrade guide](docs/releases/v3.0.0.md) for explicit configuration choices.
+- The action paths and existing input/output names remain available. Additive report metadata retains schema version 1; SARIF retains schema version 2.1.0 and now reports the correct tool release version.
+
+### Added
+
+- Opt-in Scorecard context, automatic security-skill selection, a configurable verification severity floor, and opt-in lockfile review.
+- OSV dependency scanning, defensive review skills, deterministic evaluation fixtures, and a seeded live-evaluation runner.
+- A maintainer research skill and scheduled report workflow.
+
+### Security
+
+- Close the twenty audited runtime, completion, verification, publication, redaction, and analyser-location findings. See the [closure matrix](docs/audit-remediation-2026-11-17.md).
+- Confine tool access to canonical source paths, isolate startup configuration, enforce structured-event limits, and share the guarded transport with security fallback.
+- Require source-backed confirmation partitions, retain uncertain findings, authenticate comment markers, and apply security failure policy before publication filters.
+- Redact structured SARIF fields, complete credential values, and diagnostics before clipping; handle hostile redaction input in linear time.
+
+### Fixed
+
+- Preserve blockers across reruns and report incomplete assessments honestly.
+- Protect concurrent PR content edits, preserve literal replacement text, and fence untrusted prompt content.
+- Correct analyser locations, pin runtime installation, restore native-provider configuration, and preserve results when cleanup fails.
+- Rebuild both distributed bundles and verify their parity and actual runtime boundaries in CI.
+
+## Development history (previously Unreleased)
+
 
 ### Added
 
@@ -276,7 +286,9 @@ Questions) lives in `docs/v3-decisions.md`.
   whenever a harness process fails, so a runaway loop is diagnosable from the
   action log alone.
 
-## [3.0.0] — 2026-08-31
+## Prompt and tooling milestone – 31/08/2026
+
+Historical development notes; this heading does not describe the published v3.0.0 release above.
 
 ### Added
 

@@ -1,8 +1,18 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { generateSarif } from '../../src/security/sarif/sarif-generator.js';
 import type { SecurityFinding } from '../../src/security/types.js';
 
 describe('SarifGeneration', () => {
+	it('reports the package release version without changing the SARIF schema', () => {
+		const { version } = JSON.parse(
+			readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
+		);
+		const sarif = JSON.parse(generateSarif([]));
+		expect(sarif.runs[0].tool.driver.version).toBe(version);
+		expect(sarif.version).toBe('2.1.0');
+	});
+
 	it('generates valid SARIF v2.1.0 JSON format', () => {
 		const findings: SecurityFinding[] = [
 			{
