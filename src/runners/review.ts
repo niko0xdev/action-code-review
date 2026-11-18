@@ -325,6 +325,9 @@ export async function runPrReviewAction(): Promise<void> {
 					toolFindings: prelintResult.findings,
 					title: reviewContext.pullRequest.title,
 					body: reviewContext.pullRequest.body,
+					changedFiles: reviewContext.diff.files,
+					baseSha: reviewContext.pullRequest.baseSha,
+					headSha: reviewContext.pullRequest.headSha,
 					verify: async (prompt: string, maxOutputTokens: number) =>
 						(
 							await verifyProvider.complete(

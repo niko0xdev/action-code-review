@@ -16,8 +16,8 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, realpathSync, statSync } from 'node:fs';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import * as core from '@actions/core';
 import {
@@ -245,7 +245,7 @@ const biomeRunner: ToolRunner = {
 			['lint', '--reporter=json', '--max-diagnostics=50', '--', ...fileList],
 			{ cwd: repositoryPath, timeoutMs }
 		);
-		return parseBiomeOutput(stdout);
+		return parseBiomeOutput(stdout, repositoryPath);
 	},
 };
 
@@ -341,14 +341,17 @@ const sqlfluffRunner: ToolRunner = {
 
 interface BiomeDiagnostic {
 	filename?: string;
-	location?: { path?: string; span?: [number, number] };
+	location?: { path?: string | { file?: string }; span?: [number, number] };
 	severity?: string;
 	category?: string;
 	description?: string;
 	message?: { desc?: string }[];
 }
 
-function parseBiomeOutput(stdout: string): ToolFinding[] {
+function parseBiomeOutput(
+	stdout: string,
+	repositoryPath: string
+): ToolFinding[] {
 	let parsed: { diagnostics?: BiomeDiagnostic[] } | BiomeDiagnostic[] | null =
 		null;
 	try {
@@ -361,9 +364,32 @@ function parseBiomeOutput(stdout: string): ToolFinding[] {
 		: (parsed?.diagnostics ?? []);
 	const findings: ToolFinding[] = [];
 	for (const d of diagnostics) {
-		const filename = d.filename ?? d.location?.path ?? '<unknown>';
+		const rawPath = d.filename ?? d.location?.path;
+		const filename = typeof rawPath === 'string' ? rawPath : rawPath?.file;
+		if (!filename) continue;
 		const spanStart = d.location?.span?.[0];
-		const line = typeof spanStart === 'number' && spanStart > 0 ? spanStart : 1;
+		let line = 1;
+		let sourcePath: string;
+		try {
+			const root = realpathSync(repositoryPath);
+			const absolute = realpathSync(resolve(root, filename));
+			sourcePath = relative(root, absolute);
+			if (
+				sourcePath === '..' ||
+				sourcePath.startsWith(`..${sep}`) ||
+				isAbsolute(sourcePath)
+			)
+				continue;
+			if (spanStart !== undefined) {
+				if (!Number.isInteger(spanStart) || spanStart < 0) continue;
+				const source = readFileSync(absolute);
+				if (spanStart > source.length) continue;
+				for (const byte of source.subarray(0, spanStart))
+					if (byte === 10) line++;
+			}
+		} catch {
+			continue;
+		}
 		const severity = mapBiomeSeverity(d.severity);
 		const code = d.category ?? 'biome';
 		const message =
@@ -373,7 +399,7 @@ function parseBiomeOutput(stdout: string): ToolFinding[] {
 		findings.push({
 			tool: 'biome',
 			code,
-			path: filename,
+			path: sourcePath.split(sep).join('/'),
 			line,
 			severity,
 			message,
@@ -564,6 +590,7 @@ interface SqlfluffFileReport {
 	filepath?: string;
 	violations?: Array<{
 		line_no?: number;
+		start_line_no?: number;
 		line_pos?: number;
 		code?: string;
 		description?: string;
@@ -572,20 +599,21 @@ interface SqlfluffFileReport {
 }
 
 function parseSqlfluffOutput(stdout: string): ToolFinding[] {
-	let parsed: { files?: SqlfluffFileReport[] } | null = null;
+	let parsed: { files?: SqlfluffFileReport[] } | SqlfluffFileReport[] | null =
+		null;
 	try {
 		parsed = JSON.parse(stdout);
 	} catch {
 		return [];
 	}
-	const files = parsed?.files ?? [];
+	const files = Array.isArray(parsed) ? parsed : (parsed?.files ?? []);
 	const findings: ToolFinding[] = [];
 	for (const file of files) {
 		const filename = file.filepath ?? '<unknown>';
 		const violations = file.violations ?? [];
 		for (const v of violations) {
-			const line =
-				typeof v.line_no === 'number' && v.line_no > 0 ? v.line_no : 1;
+			const position = v.start_line_no ?? v.line_no;
+			const line = typeof position === 'number' && position > 0 ? position : 1;
 			findings.push({
 				tool: 'sqlfluff',
 				code: v.code ?? 'sqlfluff',

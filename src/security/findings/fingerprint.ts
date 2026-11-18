@@ -11,10 +11,7 @@ export function computeFindingFingerprint(
 	finding: Partial<SecurityFinding> & { title: string },
 	repo = ''
 ): string {
-	const normalizedPath = (finding.file || '')
-		.trim()
-		.toLowerCase()
-		.replace(/\\/g, '/');
+	const normalizedPath = (finding.file || '').trim().replace(/\\/g, '/');
 	const categoryOrCwe = (finding.cwe || finding.category || 'general')
 		.trim()
 		.toLowerCase();
@@ -22,18 +19,17 @@ export function computeFindingFingerprint(
 		.trim()
 		.toLowerCase()
 		.replace(/\s+/g, ' ');
-	const sinkNormalized = (finding.sink || finding.source || '')
-		.trim()
-		.toLowerCase()
-		.slice(0, 100);
+	const sinkNormalized = (finding.sink || '').trim();
+	const sourceNormalized = (finding.source || '').trim();
 
-	const key = [
+	const key = JSON.stringify([
 		repo.trim().toLowerCase(),
 		normalizedPath,
 		categoryOrCwe,
 		titleNormalized,
 		sinkNormalized,
-	].join('::');
+		sourceNormalized,
+	]);
 
 	return createHash('sha256').update(key).digest('hex').slice(0, 32);
 }

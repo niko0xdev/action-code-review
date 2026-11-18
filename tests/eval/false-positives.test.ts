@@ -35,6 +35,9 @@ async function run(s: (typeof scenarios)[number]) {
 			toolFindings: [],
 			title: context.pullRequest.title,
 			body: context.pullRequest.body,
+			changedFiles: context.diff.files,
+			baseSha: context.pullRequest.baseSha,
+			headSha: context.pullRequest.headSha,
 			verify: async () => JSON.stringify(verdict),
 		});
 	}
@@ -46,8 +49,8 @@ describe.each(scenarios)('stubbed provider: $id', (s) => {
 		const result = await run(s);
 		expect(result.findings.map((f) => [f.path, f.line])).toEqual(s.published);
 		expect(result.findings.some(isBlocking)).toBe(s.blocked);
-		// None of these scenarios is a failure; none may report incomplete.
-		expect(result.reviewStatus).toBe('complete');
+		// Malformed candidates are incomplete even when no finding is publishable.
+		expect(result.reviewStatus).toBe(s.expectedStatus ?? 'complete');
 	});
 });
 

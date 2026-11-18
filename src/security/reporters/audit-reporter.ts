@@ -4,6 +4,7 @@ import type {
 	ScannerExecution,
 	SecurityEvidence,
 	SecurityFinding,
+	SecurityRefutation,
 } from '../types.js';
 
 /** Unicode line/paragraph separators a renderer may treat as line breaks. */
@@ -101,6 +102,8 @@ export interface AuditReportOptions {
 	profile: string;
 	riskClassification: RiskClassification;
 	findings: SecurityFinding[];
+	refutations?: readonly SecurityRefutation[];
+	incomplete?: boolean;
 	scanners: ScannerExecution[];
 	durationMs?: number;
 }
@@ -110,6 +113,12 @@ export interface AuditReportOptions {
  * Spec reference: §19.
  */
 export function buildFullAuditReport(options: AuditReportOptions): string {
+	const incomplete =
+		Boolean(options.incomplete) ||
+		options.scanners.some((scanner) => scanner.status === 'failed');
+	const completionNotice = incomplete
+		? '> **SECURITY REVIEW INCOMPLETE** – do not treat this report as a clean security pass.\n'
+		: '';
 	const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
 	for (const f of options.findings) {
 		if (f.severity in counts) counts[f.severity]++;
@@ -165,9 +174,27 @@ ${f.remediation ? proseEscape(f.remediation) : 'Follow secure coding guidelines.
 `;
 	});
 
+	const refutationsSection = options.refutations?.length
+		? `
+## 5. Explicit Confirmation Refutations
+
+| Finding | Location | Fingerprint | Reason |
+|---|---|---|---|
+${options.refutations
+	.map((refutation) => {
+		const location = refutation.file
+			? `${refutation.file}${refutation.startLine ? `:${refutation.startLine}` : ''}`
+			: 'N/A';
+		return `| ${proseEscape(refutation.title)} (${proseEscape(refutation.id)}) | ${proseEscape(location)} | ${proseEscape(refutation.fingerprint)} | ${proseEscape(refutation.reason)} |`;
+	})
+	.join('\n')}
+`
+		: '';
+
 	const raw = `
 # Security Audit Report — ${options.owner}/${options.repo}
 
+${completionNotice}
 - **Audit Profile:** \`${options.profile}\`
 - **Overall Risk Level:** \`${options.riskClassification.level.toUpperCase()}\`
 - **Total Validated Findings:** ${options.findings.length}
@@ -206,7 +233,8 @@ ${options.scanners
 
 ## 4. Validated Security Findings
 
-${findingsSections.join('\n---\n') || '*No security vulnerabilities identified.*'}
+${findingsSections.join('\n---\n') || (incomplete ? '*No validated findings are available; the assessment is incomplete.*' : '*No security vulnerabilities identified.*')}
+${refutationsSection}
 `;
 
 	return redactSecrets(raw.trim());

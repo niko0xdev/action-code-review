@@ -155,3 +155,63 @@ describe('QualityGate', () => {
 		expect(res.rejected).toHaveLength(7);
 	});
 });
+
+describe('scope validation before occurrence deduplication', () => {
+	const finding: SecurityFinding = {
+		id: 'one',
+		fingerprint: 'rule',
+		title: 'Injection',
+		severity: 'high',
+		confidence: 'high',
+		status: 'candidate',
+		file: 'src/auth.ts',
+		startLine: 1,
+		evidence: [{ type: 'code', description: 'SQL reaches query' }],
+		exploitability: 'likely',
+	};
+	const context = {
+		repositoryPath: '/repo',
+		changedFiles: [
+			{
+				filename: 'src/auth.ts',
+				patch: '@@ -99,1 +99,2 @@\n unchanged\n+query(input)',
+				status: 'modified',
+				additions: 1,
+				deletions: 0,
+			},
+		],
+	} as SecurityContext;
+
+	it.each([false, true])(
+		'retains the changed occurrence regardless of candidate order: %s',
+		(reverse) => {
+			const candidates = [finding, { ...finding, startLine: 100 }];
+			const result = applyQualityGate(
+				reverse ? candidates.reverse() : candidates,
+				context
+			);
+			expect(result.validated).toHaveLength(1);
+			expect(result.validated[0].startLine).toBe(100);
+			expect(result.rejected).toHaveLength(1);
+		}
+	);
+
+	it('cannot borrow confidence or evidence from an out-of-scope occurrence', () => {
+		const result = applyQualityGate(
+			[
+				finding,
+				{ ...finding, startLine: 100, confidence: 'low', evidence: [] },
+			],
+			context
+		);
+		expect(result.validated).toHaveLength(0);
+		expect(result.rejected).toHaveLength(2);
+	});
+
+	it('does not modify the candidates when publication rejects them', () => {
+		const candidates = [structuredClone({ ...finding, startLine: 100 })];
+		const before = structuredClone(candidates);
+		applyQualityGate(candidates, context, 'critical');
+		expect(candidates).toEqual(before);
+	});
+});
