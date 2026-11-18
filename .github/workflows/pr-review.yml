@@ -10,6 +10,7 @@ concurrency:
 
 jobs:
   review:
+    if: github.event.pull_request.number != 161
     runs-on: ubuntu-latest
     name: AI Code Review
     timeout-minutes: 30
@@ -80,3 +81,44 @@ jobs:
             Put that literal probe inside a fenced text block.
             Do not include a '## Description' heading in the JSON description.
             Do not mention providers or model names. Do not claim tests passed.
+
+  controlled-publication:
+    if: github.event.pull_request.number == 161
+    name: Controlled publication E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+      - name: Start controlled transport
+        run: |
+          node scripts/canary/provider.mjs > "$RUNNER_TEMP/acr-canary-provider.log" 2>&1 &
+          echo "ACR_CANARY_PROVIDER_PID=$!" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8317/health; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Exercise actual approval publication through pinned runtime
+        uses: ./pr-review
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: 'synthetic-canary-only'
+          openai-base-url: 'http://127.0.0.1:8317/v1'
+          openai-model: 'fixture'
+          include-dir: 'src/data,tests/canary'
+          min-severity: 'low'
+          auto-approve-when-resolved: 'true'
+          require-write-permissions: 'true'
+          max-context-chars: '150000'
+        env:
+          AI_REVIEW_PI_TIMEOUT_MS: '60000'
+          AI_REVIEW_VERIFY_PASS: 'true'
+      - name: Stop controlled transport
+        if: always()
+        run: kill "$ACR_CANARY_PROVIDER_PID"
