@@ -72,3 +72,9 @@ Live self-review identified a genuine owned-runtime configuration gap: fallback 
 The exported security engine contract now documents the complete confirmation partition and its explicit refutation ledger, and the secondary module re-exports that canonical type. Cleanup failures produce a redacted warning while preserving a completed assessment or the original error.
 
 The independent verifier deliberately has a separate 24,000-character evidence budget. Raising the main review context does not raise this second-pass allowance. A candidate whose complete source patch cannot fit is retained with incomplete verification, preventing approval. This is a documented bounded-verification limit, rather than permission to silently discard an unverified candidate.
+
+## Final review decisions
+
+The native fallback does not forward the Action's default `gpt-4` model to a different provider without an explicit gateway. Explicit native model choices and gateway model overrides remain honoured. Regressions cover all six alternative-provider keys. The actual-runtime boundary fixture also exercises denied `find`/`ls` inputs and an allowed repository listing.
+
+Strict security envelope validation is intentional: a malformed candidate makes reasoning incomplete while static findings remain available. The output-byte guard bounds retained structured stdout, an individual pending line, and stderr independently. Accumulated update snapshots are discarded; their total wire volume is not capped. Tool calls, assistant text, and process time have separate limits, so a stream consisting solely of discarded non-text updates can run until the timeout. These remaining limits are explicit and do not constitute clean completion or approval.

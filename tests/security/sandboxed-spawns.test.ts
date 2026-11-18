@@ -270,6 +270,7 @@ describe('PiSecurityEngine fallback spawn', () => {
 		'forwards only the configured provider key %s and provider %s',
 		async (key, provider) => {
 			process.env[key] = 'synthetic-provider-key';
+			ctx.options = { model: 'gpt-4' } as SecurityOptions;
 			process.env.UNRELATED_PROVIDER_SECRET = 'never-forward-this';
 			try {
 				mockSpawn.mockImplementationOnce(() =>
@@ -279,12 +280,30 @@ describe('PiSecurityEngine fallback spawn', () => {
 				const { args, env } = lastSpawn();
 				expect(args[args.indexOf('--provider') + 1]).toBe(provider);
 				expect(env[key]).toBe('synthetic-provider-key');
+				expect(args).not.toContain('--model');
 				expect(env.GITHUB_TOKEN).toBeUndefined();
 				expect(env.UNRELATED_PROVIDER_SECRET).toBeUndefined();
 				expect(env.OPENAI_API_KEY_TEST_SECRET).toBeUndefined();
 			} finally {
 				Reflect.deleteProperty(process.env, 'UNRELATED_PROVIDER_SECRET');
 			}
+		}
+	);
+
+	it.each([
+		{ model: 'native-review-model' },
+		{ model: 'gpt-4', baseUrl: 'https://gateway.invalid/v1' },
+	])(
+		'retains an explicit native model or gateway model: %j',
+		async (options) => {
+			process.env.ANTHROPIC_API_KEY = 'synthetic-provider-key';
+			ctx.options = options as SecurityOptions;
+			mockSpawn.mockImplementationOnce(() =>
+				fakeProc(assistant('{"findings":[]}'))
+			);
+			await engine().diff(ctx);
+			const { args } = lastSpawn();
+			expect(args[args.indexOf('--model') + 1]).toBe(options.model);
 		}
 	);
 

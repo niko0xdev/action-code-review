@@ -26,8 +26,9 @@ import { preparePiBoundary } from './runtime-boundary.js';
 
 export const PI_READONLY_TOOLS = ['read', 'grep', 'find', 'ls'] as const;
 /**
- * Hard ceiling on one harness process' merged stdout+stderr, as a last-resort
- * memory guard.
+ * Memory ceiling for retained structured stdout, any individual stdout line,
+ * and stderr (independently). Discarded accumulated update snapshots do not
+ * count towards an aggregate wire-byte limit.
  *
  * Measured on a real review run: 59 tool calls returned only ~286 KiB of
  * results, while the process emitted 8 MiB of stdout — Pi's JSON event mode

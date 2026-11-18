@@ -26,8 +26,8 @@ Keep tests deterministic by default. Real-model quality and deterministic live G
 ## Local verification on 18/11/2026
 
 - Typecheck and Biome passed.
-- Coverage suite: 1,853 passed, five existing live-evaluation cases skipped, and seven existing measurement placeholders. No new skipped cases.
-- Coverage: lines/statements 90.11%, branches 87.17%, and functions 91.01%. Existing thresholds are unchanged.
+- Coverage suite: 1,855 passed, five existing live-evaluation cases skipped, and seven existing measurement placeholders. No new skipped cases.
+- Coverage: lines/statements 90.12%, branches 87.19%, and functions 91.01%. Existing thresholds are unchanged.
 - Actual pinned-runtime suite: five passed against loopback, including Unicode path-normalisation bypass regression, traversal/symlink isolation, usage, and independent limits.
 - Both bundles rebuilt and both unsupported-event startup guards smoke-ran successfully.
 - Confirmation partition regressions failed before correction, then all 165 focused security tests passed.
@@ -39,3 +39,5 @@ Keep tests deterministic by default. Real-model quality and deterministic live G
 - The measured selected patch set exceeds 86,000 characters. The repository workflow supplies 150,000 characters so the complete selected input fits; omitted input remains incomplete.
 
 - Live self-review follow-up: four new regression cases proved the owned runtime configuration gap and cleanup result loss before correction. A fifth real-runtime case verifies the gateway with an initially empty owned directory. Public security engine types now describe the complete confirmation partition.
+
+- Six alternative-provider default-model assertions failed before correction, then passed. Native model and gateway overrides remain explicit. The real-runtime fixture covers denied find/list calls and an allowed repository listing.

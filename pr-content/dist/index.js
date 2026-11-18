@@ -33421,8 +33421,9 @@ export default function boundary(pi) {
 
 const PI_READONLY_TOOLS = ['read', 'grep', 'find', 'ls'];
 /**
- * Hard ceiling on one harness process' merged stdout+stderr, as a last-resort
- * memory guard.
+ * Memory ceiling for retained structured stdout, any individual stdout line,
+ * and stderr (independently). Discarded accumulated update snapshots do not
+ * count towards an aggregate wire-byte limit.
  *
  * Measured on a real review run: 59 tool calls returned only ~286 KiB of
  * results, while the process emitted 8 MiB of stdout — Pi's JSON event mode
@@ -34899,10 +34900,15 @@ class PiSecurityEngine {
         // CLI fallback shares the regular harness execution boundary.
         const { runIsolatedPiPrompt } = await Promise.resolve(/* import() */).then(__nccwpck_require__.bind(__nccwpck_require__, 9357));
         const keyed = PI_PROVIDER_KEYS.find(([name]) => process.env[name]);
+        const requestedModel = ctx.options.model || process.env.OPENAI_MODEL;
+        // The Action's OpenAI default must not replace a native provider's model.
+        const fallbackModel = keyed && !baseUrl && requestedModel === 'gpt-4'
+            ? undefined
+            : requestedModel;
         this.configDirPromise ??= (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_0__.mkdtemp)((0,node_path__WEBPACK_IMPORTED_MODULE_2__.join)((0,node_os__WEBPACK_IMPORTED_MODULE_1__.tmpdir)(), 'acr-security-pi-'));
         const output = await runIsolatedPiPrompt(ctx.repositoryPath, prompt, {
             binaryPath: ctx.options.piBinaryPath || 'pi',
-            model: ctx.options.model || process.env.OPENAI_MODEL,
+            model: fallbackModel,
             baseUrl,
             piArgs: ctx.options.piArgs,
             provider: keyed?.[1],

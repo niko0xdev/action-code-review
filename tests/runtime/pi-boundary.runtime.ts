@@ -141,6 +141,9 @@ describe('pinned Pi runtime against a loopback provider', () => {
 			'link',
 			'\u00a0/credential',
 			'a.ts',
+			{ name: 'find', input: { pattern: '*', path: '..' } },
+			{ name: 'ls', input: { path: '..' } },
+			{ name: 'ls', input: { path: '.' } },
 		]);
 		try {
 			const result = await f.harness.review(f.context);
@@ -156,7 +159,17 @@ describe('pinned Pi runtime against a loopback provider', () => {
 			])
 				expect(sent).not.toContain(canary);
 			expect(sent).toContain('SOURCE_CANARY');
-			expect(f.harness.usage.toolCallsStarted).toBe(4);
+			const replies =
+				f.requests
+					.at(-1)
+					?.messages.filter((message) => message.role === 'tool') ?? [];
+			expect(replies).toHaveLength(7);
+			for (const index of [4, 5])
+				expect(JSON.stringify(replies[index].content)).toContain(
+					'outside the permitted source boundary'
+				);
+			expect(JSON.stringify(replies[6].content)).toContain('a.ts');
+			expect(f.harness.usage.toolCallsStarted).toBe(7);
 			expect(f.harness.usage.totalTokens).toBeGreaterThan(0);
 			expect(f.harness.lastRun?.stdout).not.toContain(
 				'"type":"message_update"'
