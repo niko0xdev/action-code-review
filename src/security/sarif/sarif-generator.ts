@@ -37,13 +37,13 @@ interface SarifResult {
 }
 
 /**
- * Generate valid SARIF v2.1.0 JSON representation from normalized security findings.
+ * Generate valid SARIF v2.1.0 JSON representation from normalised security findings.
  * Spec reference: §18.
  */
 export function generateSarif(
 	findings: SecurityFinding[],
 	toolName = 'action-code-review',
-	toolVersion = '2.0.0'
+	toolVersion = '3.0.0'
 ): string {
 	const rulesMap = new Map<string, SarifRule>();
 	const results: SarifResult[] = [];
