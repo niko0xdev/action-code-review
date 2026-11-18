@@ -16,8 +16,8 @@ Authorised on 17/11/2026. Audit baseline: ee03388. Implementation base: edbc187,
 - [x] Record each finding as already fixed or corrected here with regression evidence.
 - [x] Complete all focused tests and the full quality gates.
 - [x] Rebuild both bundles and verify parity and startup behaviour.
-- [ ] Review and merge the verified changes.
-- [ ] Run and inspect an actual GitHub PR canary after merge.
+- [x] Review and merge the verified changes.
+- [x] Run and inspect an actual GitHub PR canary after merge.
 
 ## Verification rules
 
@@ -49,3 +49,7 @@ Keep tests deterministic by default. Real-model quality and deterministic live G
 - Three synthetic-credential regressions failed before correction. Provider errors, stderr, and malformed-output diagnostics now redact complete strings before clipping, preventing long credential tails from leaking into errors.
 
 - The explicit refutation ledger is now serialised in the existing security conclusion output and rendered in audit reports, with pattern-redaction and Markdown escaping. Audit reports carry incomplete state. Workflow and rendering regressions failed before correction, then passed.
+
+## Delivery evidence
+
+Implementation PR #160 merged as `a6625f7d5fc2cb9e7857695c53b8a18ba8436b60`. Post-merge main CI passed. Real-provider assessment/content runs and separate controlled-transport positive publication were verified on PR #161, which was closed without merge. See the [delivery report](../docs/audit-delivery-2026-11-18.md) for exact revisions, workflow IDs, review outcomes, bundle identities, and limitations.

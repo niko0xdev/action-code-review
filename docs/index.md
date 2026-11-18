@@ -17,6 +17,7 @@ Operational quick reference for a run that looks wrong:
 
 | Doc | Covers | Read when |
 |-----|--------|-----------|
+| [audit-delivery-2026-11-18.md](audit-delivery-2026-11-18.md) | Merged revision, quality gates, actual PR canary results, and release scope | Verifying delivery of the 20-finding remediation |
 | [audit-remediation-2026-11-17.md](audit-remediation-2026-11-17.md) | Closure and regression evidence for the 20-finding audit | Reviewing runtime, completion, policy, and publication safeguards |
 | [architecture.md](architecture.md) | What was built: pipeline, layout, Pi provisioning, env vars | Running, extending, or debugging the engine |
 | [design-spec.md](design-spec.md) | Full engine spec: profiles, validation, limits, prompts, rollout | Reviewing a change for spec compliance |
