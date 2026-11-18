@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PR_REVIEW_DEFAULTS } from '../../adapter/legacy-inputs.js';
 import { extractJsonBlock, scrubSecrets } from '../../llm/openai-compatible.js';
 import { escapeControlChars, fenced } from '../../shared/prompt-safety.js';
 import { normalizeSecurityFinding } from '../findings/normalizer.js';
@@ -223,7 +224,7 @@ export class PiSecurityEngine implements SecurityEngine {
 		const requestedModel = ctx.options.model || process.env.OPENAI_MODEL;
 		// The Action's OpenAI default must not replace a native provider's model.
 		const fallbackModel =
-			keyed && !baseUrl && requestedModel === 'gpt-4'
+			keyed && !baseUrl && requestedModel === PR_REVIEW_DEFAULTS.openaiModel
 				? undefined
 				: requestedModel;
 		this.configDirPromise ??= mkdtemp(join(tmpdir(), 'acr-security-pi-'));

@@ -175,6 +175,23 @@ describe('full validated security policy', () => {
 		expect(result.conclusion.failThresholdReached).toBe(false);
 	});
 
+	it.each([undefined, '', 'Use a verified replacement.'])(
+		'preserves existing remediation unless confirmation supplies an improvement: %j',
+		async (remediation) => {
+			const original = {
+				...finding('a', 'high'),
+				remediation: 'Keep the existing remediation.',
+			};
+			engine.findings = [original];
+			engine.confirmOutput = [{ ...original, remediation }];
+			const result = await run({});
+			expect(result.conclusion.incomplete).toBe(false);
+			expect(result.findings[0].remediation).toBe(
+				remediation || original.remediation
+			);
+		}
+	);
+
 	it('fills the publication cap after explicit confirmation refutes the first candidate', async () => {
 		engine.findings = [finding('a', 'critical'), finding('b', 'high')];
 		engine.confirmIds = ['b'];
@@ -210,6 +227,7 @@ describe('confirmation boundary validation', () => {
 		{ severity: 'low' },
 		{ evidence: null },
 		{ title: 'A different claim' },
+		{ remediation: 42 },
 		{ id: 'another-id' },
 	])(
 		'retains candidates when confirmation returns malformed fields: %j',

@@ -145,6 +145,8 @@ async function runSecurityAssessment(
 						confirmed.id !== original.id ||
 						confirmed.title !== original.title ||
 						confirmed.severity !== original.severity ||
+						(confirmed.remediation !== undefined &&
+							typeof confirmed.remediation !== 'string') ||
 						!['confirmed', 'high', 'medium'].includes(confirmed.confidence) ||
 						!['candidate', 'validated'].includes(confirmed.status) ||
 						!['confirmed', 'likely', 'theoretical', 'unknown'].includes(
@@ -220,7 +222,9 @@ async function runSecurityAssessment(
 										),
 									],
 									exploitability: confirmed.exploitability,
-									remediation: confirmed.remediation,
+									remediation: confirmed.remediation?.trim()
+										? confirmed.remediation
+										: finding.remediation,
 								},
 							]
 						: [];

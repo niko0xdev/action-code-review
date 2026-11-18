@@ -142,6 +142,36 @@ EOF
 		expect(result.findings).toHaveLength(1);
 	});
 
+	it('ignores non-object event lines and malformed message content without crashing', async () => {
+		const events = [
+			null,
+			[],
+			42,
+			{ type: 'message_end', message: { role: 'assistant', content: {} } },
+			{
+				type: 'message_end',
+				message: {
+					role: 'assistant',
+					content: [
+						null,
+						{
+							type: 'text',
+							text: '{"findings":[],"summary":"complete","risk":"none"}',
+						},
+					],
+				},
+			},
+		]
+			.map((event) => JSON.stringify(event))
+			.join('\n');
+		const bin = writeFakePi(`#!/bin/sh\ncat <<'EOF'\n${events}\nEOF\n`);
+		const harness = new PiHarness({ binaryPath: bin, timeoutMs: 1000 });
+		await expect(harness.review(makeContext())).resolves.toMatchObject({
+			findings: [],
+			reviewStatus: 'complete',
+		});
+	});
+
 	it('keeps a multibyte character that is split across stdout chunks', async () => {
 		// "é" is 0xC3 0xA9; the pause forces the two bytes into separate chunks.
 		const bin = writeFakePi(`#!/bin/sh

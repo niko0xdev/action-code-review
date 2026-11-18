@@ -32439,6 +32439,177 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 9953:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
+/* harmony export */   SR: () => (/* binding */ mapSecurityInputs),
+/* harmony export */   Tj: () => (/* binding */ mapPrContentInputs),
+/* harmony export */   eP: () => (/* binding */ mapPrReviewInputs),
+/* harmony export */   f_: () => (/* binding */ DEFAULT_EXCLUDE_PATTERNS),
+/* harmony export */   nU: () => (/* binding */ PR_REVIEW_DEFAULTS)
+/* harmony export */ });
+/* unused harmony export mapLegacyInputs */
+/* harmony import */ var _llm_config_js__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(3950);
+/* harmony import */ var _security_skills_auto_select_js__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(4654);
+/* harmony import */ var _shared_numeric_js__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(317);
+/**
+ * Legacy input mapping (docs/v1-interface-contract.md). Every V1 action
+ * input maps into engine configuration with identical defaults. Unknown
+ * inputs are ignored; missing inputs fall back to the frozen defaults.
+ */
+
+
+
+const SECURITY_DEFAULTS = {
+    mode: 'auto',
+    profile: 'diff',
+    minSeverity: 'medium',
+    failOn: 'critical',
+    confirmFindings: 'true',
+    inlineComments: 'true',
+    stickyComment: 'true',
+    generateSarif: 'true',
+    maxFindings: '20',
+    riskThreshold: 'high',
+};
+/** Default `exclude-patterns`, split; exported so callers can tell it from a user choice. */
+const DEFAULT_EXCLUDE_PATTERNS = ['*.md', '*.txt'];
+/** Frozen Action defaults shared with native fallback selection. */
+const PR_REVIEW_DEFAULTS = {
+    openaiModel: 'gpt-4',
+    maxFiles: '10',
+    excludePatterns: DEFAULT_EXCLUDE_PATTERNS.join(','),
+    autoApproveWhenResolved: 'false',
+    minSeverity: 'critical',
+    blockOnIssues: 'true',
+    includeFullContent: 'false',
+    maxContextChars: '30000',
+    scorecardContext: 'false',
+    securitySkills: 'all',
+};
+const PR_CONTENT_DEFAULTS = {
+    openaiModel: 'gpt-4',
+    // ponytail: frozen action.yml default is 1000; cli.ts doubles the budget on retries.
+    maxTokens: '1000',
+    includeFileList: 'true',
+    templatePath: '.github/pull_request_template.md',
+};
+function get(inputs, key) {
+    const value = inputs[key];
+    return value === '' ? undefined : value;
+}
+function bool(value, fallback) {
+    return (value ?? fallback) === 'true';
+}
+function int(value, fallback, name) {
+    return (0,_shared_numeric_js__WEBPACK_IMPORTED_MODULE_2__/* .parsePositiveInt */ .EJ)(value, Number.parseInt(fallback, 10), { name });
+}
+function splitList(value) {
+    if (!value) {
+        return [];
+    }
+    return value
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+}
+function mapLegacyInputs(action, inputs) {
+    if (action === 'pr-content') {
+        return mapPrContent(inputs);
+    }
+    return mapPrReview(inputs);
+}
+/** Typed wrapper for the pr-review action path. */
+function mapPrReviewInputs(inputs) {
+    return mapPrReview(inputs);
+}
+/** Typed wrapper for the pr-content action path. */
+function mapPrContentInputs(inputs) {
+    return mapPrContent(inputs);
+}
+/** Typed wrapper for security mode inputs. Spec reference: §4. */
+function mapSecurityInputs(inputs) {
+    const rawBaseUrl = get(inputs, 'openai-base-url') || get(inputs, 'base_url');
+    const rawMode = (0,_shared_numeric_js__WEBPACK_IMPORTED_MODULE_2__/* .parseEnum */ .nL)(get(inputs, 'mode'), ['auto', 'review', 'security', 'agent'], SECURITY_DEFAULTS.mode, 'mode');
+    const rawProfile = (0,_shared_numeric_js__WEBPACK_IMPORTED_MODULE_2__/* .parseEnum */ .nL)(get(inputs, 'security_profile') ?? get(inputs, 'security-profile'), ['diff', 'lite', 'balanced', 'deep', 'confirm'], SECURITY_DEFAULTS.profile, 'security-profile');
+    const rawMinSev = (0,_shared_numeric_js__WEBPACK_IMPORTED_MODULE_2__/* .parseEnum */ .nL)(get(inputs, 'security_min_severity') ??
+        get(inputs, 'security-min-severity') ??
+        get(inputs, 'min-severity'), ['critical', 'high', 'medium', 'low', 'info'], SECURITY_DEFAULTS.minSeverity, 'security-min-severity');
+    const rawFailOn = (0,_shared_numeric_js__WEBPACK_IMPORTED_MODULE_2__/* .parseEnum */ .nL)(get(inputs, 'security_fail_on') ?? get(inputs, 'security-fail-on'), ['critical', 'high', 'medium', 'low', 'info', 'none'], SECURITY_DEFAULTS.failOn, 'security-fail-on');
+    const rawRiskThreshold = (0,_shared_numeric_js__WEBPACK_IMPORTED_MODULE_2__/* .parseEnum */ .nL)(get(inputs, 'security_risk_threshold') ??
+        get(inputs, 'security-risk-threshold'), ['low', 'medium', 'high', 'critical_surface'], SECURITY_DEFAULTS.riskThreshold, 'security-risk-threshold');
+    return {
+        githubToken: get(inputs, 'github-token') ?? get(inputs, 'github_token') ?? '',
+        apiKey: get(inputs, 'openai-api-key') ??
+            get(inputs, 'api_key') ??
+            get(inputs, 'openai_api_key') ??
+            '',
+        baseUrl: rawBaseUrl ? (0,_llm_config_js__WEBPACK_IMPORTED_MODULE_0__/* .normalizeBaseUrl */ .qT)(rawBaseUrl) : undefined,
+        model: get(inputs, 'openai-model') ??
+            get(inputs, 'model') ??
+            PR_REVIEW_DEFAULTS.openaiModel,
+        mode: rawMode,
+        profile: rawProfile,
+        minSeverity: rawMinSev,
+        failOn: rawFailOn,
+        confirmFindings: bool(get(inputs, 'security_confirm_findings') ??
+            get(inputs, 'security-confirm-findings'), SECURITY_DEFAULTS.confirmFindings),
+        inlineComments: bool(get(inputs, 'security_inline_comments') ??
+            get(inputs, 'security-inline-comments'), SECURITY_DEFAULTS.inlineComments),
+        stickyComment: bool(get(inputs, 'security_sticky_comment') ??
+            get(inputs, 'security-sticky-comment') ??
+            get(inputs, 'sticky-summary'), SECURITY_DEFAULTS.stickyComment),
+        generateSarif: bool(get(inputs, 'security_sarif') ?? get(inputs, 'security-sarif'), SECURITY_DEFAULTS.generateSarif),
+        maxFindings: int(get(inputs, 'security_max_findings') ??
+            get(inputs, 'security-max-findings'), SECURITY_DEFAULTS.maxFindings, 'security-max-findings'),
+        riskThreshold: rawRiskThreshold,
+        piArgs: get(inputs, 'pi-args') ?? get(inputs, 'pi_args'),
+        piBinaryPath: get(inputs, 'pi-binary-path') ?? get(inputs, 'pi_binary_path'),
+        trackProgress: bool(get(inputs, 'track-progress') ?? get(inputs, 'track_progress'), 'false'),
+    };
+}
+function mapPrReview(inputs) {
+    const rawBaseUrl = get(inputs, 'openai-base-url');
+    return {
+        githubToken: get(inputs, 'github-token') ?? '',
+        apiKey: get(inputs, 'openai-api-key') ?? '',
+        baseUrl: rawBaseUrl ? (0,_llm_config_js__WEBPACK_IMPORTED_MODULE_0__/* .normalizeBaseUrl */ .qT)(rawBaseUrl) : undefined,
+        model: get(inputs, 'openai-model') ?? PR_REVIEW_DEFAULTS.openaiModel,
+        reviewPrompt: get(inputs, 'review-prompt'),
+        maxFiles: int(get(inputs, 'max-files'), PR_REVIEW_DEFAULTS.maxFiles, 'max-files'),
+        excludePatterns: splitList(get(inputs, 'exclude-patterns') ?? PR_REVIEW_DEFAULTS.excludePatterns),
+        includeDirs: (() => {
+            const dirs = splitList(get(inputs, 'include-dir'));
+            return dirs.length > 0 ? dirs : undefined;
+        })(),
+        autoApproveWhenResolved: bool(get(inputs, 'auto-approve-when-resolved'), PR_REVIEW_DEFAULTS.autoApproveWhenResolved),
+        minSeverity: get(inputs, 'min-severity') ?? PR_REVIEW_DEFAULTS.minSeverity,
+        blockOnIssues: bool(get(inputs, 'block-on-issues'), PR_REVIEW_DEFAULTS.blockOnIssues),
+        includeFullContent: bool(get(inputs, 'include-full-content'), PR_REVIEW_DEFAULTS.includeFullContent),
+        maxContextChars: int(get(inputs, 'max-context-chars'), PR_REVIEW_DEFAULTS.maxContextChars, 'max-context-chars'),
+        scorecardContext: bool(get(inputs, 'scorecard-context'), PR_REVIEW_DEFAULTS.scorecardContext),
+        securitySkills: (0,_shared_numeric_js__WEBPACK_IMPORTED_MODULE_2__/* .parseEnum */ .nL)(get(inputs, 'security-skills'), _security_skills_auto_select_js__WEBPACK_IMPORTED_MODULE_1__/* .SECURITY_SKILLS_MODES */ .j, PR_REVIEW_DEFAULTS.securitySkills, 'security-skills'),
+    };
+}
+function mapPrContent(inputs) {
+    const rawBaseUrl = get(inputs, 'openai-base-url');
+    return {
+        action: 'pr-content',
+        githubToken: get(inputs, 'github-token') ?? '',
+        apiKey: get(inputs, 'openai-api-key') ?? '',
+        baseUrl: rawBaseUrl ? (0,_llm_config_js__WEBPACK_IMPORTED_MODULE_0__/* .normalizeBaseUrl */ .qT)(rawBaseUrl) : undefined,
+        model: get(inputs, 'openai-model') ?? PR_CONTENT_DEFAULTS.openaiModel,
+        maxTokens: int(get(inputs, 'max-tokens'), PR_CONTENT_DEFAULTS.maxTokens, 'max-tokens'),
+        includeFileList: bool(get(inputs, 'include-file-list'), PR_CONTENT_DEFAULTS.includeFileList),
+        customInstructions: get(inputs, 'custom-instructions'),
+        templatePath: get(inputs, 'template-path') ?? PR_CONTENT_DEFAULTS.templatePath,
+    };
+}
+
+
+/***/ }),
+
 /***/ 2142:
 /***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
 
@@ -34139,13 +34310,17 @@ async function runPi(params) {
             assistantBytes += countAssistantBytes(line);
             let event = {};
             try {
-                event = JSON.parse(line);
+                const parsed = JSON.parse(line);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+                    event = parsed;
             }
             catch {
                 /* Plain output remains diagnosable. */
             }
             if (event.type === 'message_end' && event.message?.role === 'assistant') {
-                completedAssistantBytes += Buffer.byteLength((event.message.content ?? []).map((part) => part.text ?? '').join(''), 'utf8');
+                completedAssistantBytes += Buffer.byteLength((Array.isArray(event.message.content) ? event.message.content : [])
+                    .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+                    .join(''), 'utf8');
             }
             if (maxToolCalls > 0 && toolCalls > maxToolCalls) {
                 killAndFail(`Pi exceeded the tool-call ceiling (${toolCalls} > ${maxToolCalls})`);
@@ -34703,6 +34878,186 @@ function killAnalyser(child, signal = 'SIGKILL') {
 
 /***/ }),
 
+/***/ 8000:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
+/* harmony export */   C: () => (/* binding */ classifyPrRisk)
+/* harmony export */ });
+/**
+ * Deterministic Pre-LLM Risk Classifier.
+ * Spec reference: §6.
+ */
+const SECURITY_DOMAIN_PATTERNS = [
+    // Auth & Authorization & Access Control (Critical)
+    {
+        domain: 'authentication',
+        pathRegex: /(?:auth|login|signin|signup|session|jwt|oauth|sso|token|credential|mfa|2fa)/i,
+        contentRegex: /(?:jwt\.verify|jwt\.sign|bcrypt|argon2|passport|authenticate|session\.|createSession|verifyPassword)/i,
+        weight: 4,
+        reason: 'Changes in authentication / session management files',
+    },
+    {
+        domain: 'authorization',
+        pathRegex: /(?:authz|permission|role|rbac|abac|policy|acl|guard|canAccess|access[_-]?control)/i,
+        contentRegex: /(?:hasPermission|requireRole|checkPermission|canAccess|isAuthorized|isAllowed|authorize)/i,
+        weight: 4,
+        reason: 'Changes in authorization / permission enforcement logic',
+    },
+    // Cryptography & Secrets
+    {
+        domain: 'cryptography',
+        pathRegex: /(?:crypto|cipher|secret|key|vault|signature|encrypt|decrypt)/i,
+        contentRegex: /(?:crypto\.createCipher|crypto\.createDecipher|AES|RSA|HMAC|privateKey|publicKey|crypto\.subtle)/i,
+        weight: 3,
+        reason: 'Cryptographic primitive or key handling changes',
+    },
+    // Payment & Billing
+    {
+        domain: 'payments',
+        pathRegex: /(?:payment|billing|stripe|checkout|subscription|invoice|wallet|pricing)/i,
+        contentRegex: /(?:stripe\.charges|stripe\.paymentIntents|refund|charge|creditCard)/i,
+        weight: 3,
+        reason: 'Payment / financial transaction processing changes',
+    },
+    // File Uploads & Parsers
+    {
+        domain: 'file-handling',
+        pathRegex: /(?:upload|storage|s3|file[_-]?handler|multer|busboy|tar|zip|unzip|extractor)/i,
+        contentRegex: /(?:multipart|upload\.single|createWriteStream|extract|unzip|fs\.writeFile)/i,
+        weight: 3,
+        reason: 'File upload, decompression, or filesystem writing logic',
+    },
+    // Serialization & Deserialization
+    {
+        domain: 'serialization',
+        pathRegex: /(?:deserializ|unmarshal|parser|protobuf|msgpack|yaml[_-]?parser)/i,
+        contentRegex: /(?:eval\(|pickle\.loads|yaml\.load\(|JSON\.parse\(|unserialize)/i,
+        weight: 3,
+        reason: 'Data parsing / deserialization boundary changes',
+    },
+    // Client-side rendering (XSS surfaces)
+    {
+        domain: 'client-xss',
+        pathRegex: /(?:template|renderer|markdown|sanitiz|dompurify|rich-text|wysiwyg)/i,
+        contentRegex: /(?:dangerouslySetInnerHTML|innerHTML|outerHTML|insertAdjacentHTML|document\.write|v-html|\[innerHTML\]|bypassSecurityTrustHtml)/i,
+        weight: 3,
+        reason: 'Client-side HTML rendering / DOM sink changes (potential XSS surface)',
+    },
+    // Secrets & credentials in diffs
+    {
+        domain: 'secrets',
+        pathRegex: /(?:\.env|secret|credential|token|keyvault|keystore)/i,
+        contentRegex: /(?:api[_-]?key|secret[_-]?key|BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|xox[bap]-|AKIA[0-9A-Z]{16})/i,
+        weight: 4,
+        reason: 'Potential secret / credential material in changed files',
+    },
+    // Network & HTTP client (SSRF surfaces)
+    {
+        domain: 'network-boundary',
+        pathRegex: /(?:proxy|gateway|fetcher|http[_-]?client|webhook|redirect|crawler)/i,
+        contentRegex: /(?:axios\.|fetch\(|http\.request|needle|got\(|urllib|curl)/i,
+        weight: 3,
+        reason: 'Outbound HTTP client or reverse proxy changes (potential SSRF surface)',
+    },
+    // Database & SQL query construction (SQLi)
+    {
+        domain: 'database-security',
+        pathRegex: /(?:repository|query[_-]?builder|dao|database|sql|migration)/i,
+        contentRegex: /(?:raw\(|\$queryRaw|SELECT .* FROM|\.query\(["'`].*\$\{)/i,
+        weight: 3,
+        reason: 'Dynamic database query construction / raw SQL execution',
+    },
+    // Shell & Command execution (RCE)
+    {
+        domain: 'process-execution',
+        pathRegex: /(?:exec|process|runner|subprocess|terminal|command)/i,
+        contentRegex: /(?:child_process|exec\(|spawn\(|execSync|system\(|shell_exec|execFile)/i,
+        weight: 4,
+        reason: 'Shell / OS process execution changes (potential command injection surface)',
+    },
+    // CI/CD & GitHub Actions Workflows
+    {
+        domain: 'cicd-security',
+        pathRegex: /(?:\.github\/workflows\/.*\.ya?ml|Dockerfile|docker-compose.*\.ya?ml|\.gitlab-ci\.yml|Jenkinsfile)/i,
+        contentRegex: /(?:pull_request_target|permissions:|GITHUB_TOKEN|secrets\.|eval|bash -c)/i,
+        weight: 4,
+        reason: 'CI/CD pipeline, GitHub Action workflow, or container build changes',
+    },
+    // Infrastructure as Code / Kubernetes / Terraform
+    {
+        domain: 'cloud-infrastructure',
+        pathRegex: /(?:terraform|k8s|helm|cloudformation|pulumi|\.tf$|values\.ya?ml)/i,
+        weight: 3,
+        reason: 'Infrastructure as Code / deployment topology changes',
+    },
+    // Dependencies & Lockfiles (Supply Chain)
+    {
+        domain: 'supply-chain',
+        pathRegex: /(?:package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements\.txt|Pipfile|go\.mod|Cargo\.toml|pom\.xml|build\.gradle)/i,
+        weight: 2,
+        reason: 'Dependency manifest or package lockfile modifications',
+    },
+    // AI / LLM / Agent permissions / Tool execution
+    {
+        domain: 'ai-security',
+        pathRegex: /(?:agent|mcp|tool|prompt|openai|anthropic|langchain|llm)/i,
+        contentRegex: /(?:systemPrompt|temperature|tool_choice|executeTool|callTool|modelProvider)/i,
+        weight: 3,
+        reason: 'AI / LLM agent tools, prompts, or MCP integrations',
+    },
+];
+/**
+ * Classifies PR risk level and domain surfaces without calling an LLM.
+ */
+function classifyPrRisk(changedFiles) {
+    const matchedDomains = new Set();
+    const reasons = new Set();
+    let maxWeight = 1;
+    const flaggedFiles = [];
+    for (const file of changedFiles) {
+        let fileMatched = false;
+        const filename = file.filename;
+        const patch = file.patch || '';
+        for (const rule of SECURITY_DOMAIN_PATTERNS) {
+            const pathHit = rule.pathRegex.test(filename);
+            const contentHit = rule.contentRegex
+                ? rule.contentRegex.test(patch)
+                : false;
+            if (pathHit || contentHit) {
+                matchedDomains.add(rule.domain);
+                reasons.add(rule.reason);
+                fileMatched = true;
+                if (rule.weight > maxWeight) {
+                    maxWeight = rule.weight;
+                }
+            }
+        }
+        if (fileMatched) {
+            flaggedFiles.push(filename);
+        }
+    }
+    let level = 'low';
+    if (maxWeight >= 4) {
+        level = 'critical_surface';
+    }
+    else if (maxWeight === 3) {
+        level = 'high';
+    }
+    else if (maxWeight === 2 || matchedDomains.size > 0) {
+        level = 'medium';
+    }
+    return {
+        level,
+        reasons: Array.from(reasons),
+        domains: Array.from(matchedDomains),
+        changedFiles: flaggedFiles,
+    };
+}
+
+
+/***/ }),
+
 /***/ 7924:
 /***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
 
@@ -34715,11 +35070,13 @@ function killAnalyser(child, signal = 'SIGKILL') {
 /* harmony import */ var node_os__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__nccwpck_require__.n(node_os__WEBPACK_IMPORTED_MODULE_1__);
 /* harmony import */ var node_path__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(6760);
 /* harmony import */ var node_path__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__nccwpck_require__.n(node_path__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var _llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(8251);
-/* harmony import */ var _shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_7__ = __nccwpck_require__(1877);
-/* harmony import */ var _findings_normalizer_js__WEBPACK_IMPORTED_MODULE_4__ = __nccwpck_require__(2533);
-/* harmony import */ var _redaction_redactor_js__WEBPACK_IMPORTED_MODULE_5__ = __nccwpck_require__(8759);
-/* harmony import */ var _skills_selector_js__WEBPACK_IMPORTED_MODULE_6__ = __nccwpck_require__(9347);
+/* harmony import */ var _adapter_legacy_inputs_js__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(9953);
+/* harmony import */ var _llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_4__ = __nccwpck_require__(8251);
+/* harmony import */ var _shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_8__ = __nccwpck_require__(1877);
+/* harmony import */ var _findings_normalizer_js__WEBPACK_IMPORTED_MODULE_5__ = __nccwpck_require__(2533);
+/* harmony import */ var _redaction_redactor_js__WEBPACK_IMPORTED_MODULE_6__ = __nccwpck_require__(8759);
+/* harmony import */ var _skills_selector_js__WEBPACK_IMPORTED_MODULE_7__ = __nccwpck_require__(9347);
+
 
 
 
@@ -34792,7 +35149,7 @@ class PiSecurityEngine {
         for (const finding of findings) {
             const prompt = this.buildConfirmationPrompt(ctx, finding);
             const rawOutput = await this.executePi(ctx, prompt);
-            const parsed = (0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_3__/* .extractJsonBlock */ .zR)(rawOutput);
+            const parsed = (0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_4__/* .extractJsonBlock */ .zR)(rawOutput);
             if (!isRecord(parsed) ||
                 'error' in parsed ||
                 typeof parsed.confirmed !== 'boolean' ||
@@ -34837,10 +35194,10 @@ class PiSecurityEngine {
     }
     buildDiffSecurityPrompt(ctx) {
         const domains = ctx.riskClassification?.domains || [];
-        const selectedSkills = (0,_skills_selector_js__WEBPACK_IMPORTED_MODULE_6__/* .selectSecuritySkills */ .N)(domains);
-        const skillsText = (0,_skills_selector_js__WEBPACK_IMPORTED_MODULE_6__/* .renderSkillsForPrompt */ .a)(selectedSkills);
+        const selectedSkills = (0,_skills_selector_js__WEBPACK_IMPORTED_MODULE_7__/* .selectSecuritySkills */ .N)(domains);
+        const skillsText = (0,_skills_selector_js__WEBPACK_IMPORTED_MODULE_7__/* .renderSkillsForPrompt */ .a)(selectedSkills);
         const fileDiffs = ctx.changedFiles
-            .map((f) => `### ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_7__/* .escapeControlChars */ ._s)(f.filename)} (${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_7__/* .escapeControlChars */ ._s)(f.status)}, +${f.additions}/-${f.deletions})\n${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_7__/* .fenced */ .OF)(f.patch ? (0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_3__/* .scrubSecrets */ .Zg)(f.patch) : '(binary or large file)', 'diff')}`)
+            .map((f) => `### ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_8__/* .escapeControlChars */ ._s)(f.filename)} (${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_8__/* .escapeControlChars */ ._s)(f.status)}, +${f.additions}/-${f.deletions})\n${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_8__/* .fenced */ .OF)(f.patch ? (0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_4__/* .scrubSecrets */ .Zg)(f.patch) : '(binary or large file)', 'diff')}`)
             .join('\n\n');
         return [
             PI_SECURITY_SYSTEM_PROMPT,
@@ -34865,13 +35222,13 @@ class PiSecurityEngine {
             '',
             'TASK: Independently verify this candidate security finding. Do not assume the claim is true.',
             '',
-            `Claimed Vulnerability: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_7__/* .escapeControlChars */ ._s)(finding.title)} (${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_7__/* .escapeControlChars */ ._s)(finding.severity.toUpperCase())})`,
-            `CWE: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_7__/* .escapeControlChars */ ._s)(finding.cwe || 'N/A')}`,
-            `Target File: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_7__/* .escapeControlChars */ ._s)(finding.file || 'N/A')}:${finding.startLine ?? 'N/A'}`,
-            `Claimed Evidence: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_7__/* .escapeControlChars */ ._s)(finding.evidence.map((e) => e.description).join('; '))}`,
+            `Claimed Vulnerability: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_8__/* .escapeControlChars */ ._s)(finding.title)} (${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_8__/* .escapeControlChars */ ._s)(finding.severity.toUpperCase())})`,
+            `CWE: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_8__/* .escapeControlChars */ ._s)(finding.cwe || 'N/A')}`,
+            `Target File: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_8__/* .escapeControlChars */ ._s)(finding.file || 'N/A')}:${finding.startLine ?? 'N/A'}`,
+            `Claimed Evidence: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_8__/* .escapeControlChars */ ._s)(finding.evidence.map((e) => e.description).join('; '))}`,
             '',
             'Diff Context (UNTRUSTED DATA):',
-            (0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_7__/* .fenced */ .OF)((0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_3__/* .scrubSecrets */ .Zg)(patchSnippet.slice(0, 5000)), 'diff'),
+            (0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_8__/* .fenced */ .OF)((0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_4__/* .scrubSecrets */ .Zg)(patchSnippet.slice(0, 5000)), 'diff'),
             '',
             'Analyse whether this is a genuine security issue or a false positive.',
             'Respond ONLY with JSON:',
@@ -34895,14 +35252,14 @@ class PiSecurityEngine {
                 { role: 'system', content: PI_SECURITY_SYSTEM_PROMPT },
                 { role: 'user', content: prompt },
             ]);
-            return (0,_redaction_redactor_js__WEBPACK_IMPORTED_MODULE_5__/* .redactSecrets */ .f)(res.content);
+            return (0,_redaction_redactor_js__WEBPACK_IMPORTED_MODULE_6__/* .redactSecrets */ .f)(res.content);
         }
         // CLI fallback shares the regular harness execution boundary.
         const { runIsolatedPiPrompt } = await Promise.resolve(/* import() */).then(__nccwpck_require__.bind(__nccwpck_require__, 9357));
         const keyed = PI_PROVIDER_KEYS.find(([name]) => process.env[name]);
         const requestedModel = ctx.options.model || process.env.OPENAI_MODEL;
         // The Action's OpenAI default must not replace a native provider's model.
-        const fallbackModel = keyed && !baseUrl && requestedModel === 'gpt-4'
+        const fallbackModel = keyed && !baseUrl && requestedModel === _adapter_legacy_inputs_js__WEBPACK_IMPORTED_MODULE_3__/* .PR_REVIEW_DEFAULTS */ .nU.openaiModel
             ? undefined
             : requestedModel;
         this.configDirPromise ??= (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_0__.mkdtemp)((0,node_path__WEBPACK_IMPORTED_MODULE_2__.join)((0,node_os__WEBPACK_IMPORTED_MODULE_1__.tmpdir)(), 'acr-security-pi-'));
@@ -34916,10 +35273,10 @@ class PiSecurityEngine {
             configDir: await this.configDirPromise,
             timeoutMs: 15 * 60_000,
         });
-        return (0,_redaction_redactor_js__WEBPACK_IMPORTED_MODULE_5__/* .redactSecrets */ .f)(output);
+        return (0,_redaction_redactor_js__WEBPACK_IMPORTED_MODULE_6__/* .redactSecrets */ .f)(output);
     }
     parseFindings(raw, repo) {
-        const json = (0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_3__/* .extractJsonBlock */ .zR)(raw);
+        const json = (0,_llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_4__/* .extractJsonBlock */ .zR)(raw);
         if (!isRecord(json) ||
             !Array.isArray(json.findings) ||
             'error' in json ||
@@ -34932,7 +35289,7 @@ class PiSecurityEngine {
         for (const rf of rawFindings) {
             if (!validCandidate(rf))
                 throw new Error('Invalid security finding response');
-            const nf = (0,_findings_normalizer_js__WEBPACK_IMPORTED_MODULE_4__/* .normalizeSecurityFinding */ .X)(rf, repo, 'pi-security');
+            const nf = (0,_findings_normalizer_js__WEBPACK_IMPORTED_MODULE_5__/* .normalizeSecurityFinding */ .X)(rf, repo, 'pi-security');
             if (nf)
                 normalized.push(nf);
         }
@@ -35514,6 +35871,138 @@ function containsSecret(text) {
 
 /***/ }),
 
+/***/ 4654:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
+/* harmony export */   j: () => (/* binding */ SECURITY_SKILLS_MODES),
+/* harmony export */   v: () => (/* binding */ selectReviewSecuritySkills)
+/* harmony export */ });
+/* harmony import */ var _classifier_risk_classifier_js__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(8000);
+/* harmony import */ var _license_clean_js__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(6615);
+/* harmony import */ var _registry_js__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(3677);
+/* harmony import */ var _selector_js__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(9347);
+
+
+
+
+const SECURITY_SKILLS_MODES = ['all', 'auto'];
+const DOC_EXTENSIONS = new Set(['md', 'mdx', 'txt', 'rst']);
+const CODE_EXTENSIONS = new Set([
+    'ts',
+    'tsx',
+    'js',
+    'jsx',
+    'mjs',
+    'cjs',
+    'py',
+    'go',
+    'rs',
+    'java',
+    'kt',
+    'rb',
+    'php',
+    'cs',
+    'swift',
+    'c',
+    'h',
+    'cpp',
+    'sql',
+    'sh',
+    'json',
+    'yml',
+    'yaml',
+    'toml',
+    'tf',
+    'lock',
+    'css',
+    'html',
+    'vue',
+    'svelte',
+    'gradle',
+    'xml',
+    'mod',
+    'sum',
+]);
+const KNOWN_BASENAMES = new Set([
+    'dockerfile',
+    'jenkinsfile',
+    'makefile',
+    'pipfile',
+    'license',
+    'codeowners',
+    '.gitignore',
+    '.dockerignore',
+    '.env',
+]);
+/** Classifier domains with no skill of their own, mapped to the closest one. */
+const DOMAIN_ALIASES = {
+    'process-execution': 'database-security', // injection skill covers command injection
+    'cloud-infrastructure': 'cicd-security',
+    serialization: 'file-handling', // upload and deserialization skill
+};
+function kindOf(filename) {
+    const base = (filename.split('/').pop() ?? '').toLowerCase();
+    if (KNOWN_BASENAMES.has(base) || base.startsWith('dockerfile.'))
+        return 'code';
+    const ext = base.includes('.') ? base.slice(base.lastIndexOf('.') + 1) : '';
+    if (DOC_EXTENSIONS.has(ext))
+        return 'doc';
+    return CODE_EXTENSIONS.has(ext) ? 'code' : 'unknown';
+}
+/**
+ * Chooses the security skills for the review prompt. `all` is exactly the
+ * historical render. `auto` keeps only the skills for domains the existing
+ * risk classifier flags, and always keeps the validation gate. Anything it
+ * cannot classify (no files, truncated file list, unknown file type, classifier
+ * error) returns the full render: it fails safe, never to nothing.
+ */
+function selectReviewSecuritySkills(mode, files, filesTruncated = false) {
+    const full = (0,_selector_js__WEBPACK_IMPORTED_MODULE_3__/* .renderSkillsForPrompt */ .a)(_registry_js__WEBPACK_IMPORTED_MODULE_2__/* .CURATED_SECURITY_SKILLS */ .J);
+    const all = {
+        prompt: full,
+        domains: _registry_js__WEBPACK_IMPORTED_MODULE_2__/* .CURATED_SECURITY_SKILLS */ .J.map((s) => s.domain),
+        savedChars: 0,
+        fellBackToAll: false,
+    };
+    if (mode === 'all')
+        return all;
+    const fallback = { ...all, fellBackToAll: true };
+    if (files.length === 0 || filesTruncated)
+        return fallback;
+    const kinds = files.map((f) => kindOf(f.filename));
+    if (kinds.includes('unknown'))
+        return fallback;
+    let prompt;
+    let domains;
+    try {
+        // Classify first: a flagged domain always wins over the docs shortcut.
+        const flagged = (0,_classifier_risk_classifier_js__WEBPACK_IMPORTED_MODULE_0__/* .classifyPrRisk */ .C)(files).domains.map((d) => DOMAIN_ALIASES[d] ?? d);
+        if (flagged.length === 0 && kinds.every((k) => k === 'doc')) {
+            // Prose only and nothing flagged: no domain skill, the gate still applies.
+            domains = [];
+            prompt = `\n## Targeted Security Review Knowledge\n${_license_clean_js__WEBPACK_IMPORTED_MODULE_1__/* .REVIEW_VALIDATION_GATE */ .F}\n`;
+        }
+        else {
+            const skills = (0,_selector_js__WEBPACK_IMPORTED_MODULE_3__/* .selectSecuritySkills */ .N)(flagged);
+            domains = skills.map((s) => s.domain);
+            prompt = (0,_selector_js__WEBPACK_IMPORTED_MODULE_3__/* .renderSkillsForPrompt */ .a)(skills);
+        }
+    }
+    catch {
+        return fallback;
+    }
+    return {
+        prompt,
+        domains,
+        savedChars: Math.max(0, full.length - prompt.length),
+        fellBackToAll: false,
+    };
+}
+
+
+/***/ }),
+
 /***/ 6615:
 /***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
 
@@ -35807,6 +36296,69 @@ function renderSkillsForPrompt(skills) {
         return '';
     const parts = skills.map((skill) => `#### ${skill.title}\n${skill.promptInstructions.trim()}`);
     return `\n## Targeted Security Review Knowledge\n${parts.join('\n\n')}\n\n${_license_clean_js__WEBPACK_IMPORTED_MODULE_0__/* .REVIEW_VALIDATION_GATE */ .F}\n`;
+}
+
+
+/***/ }),
+
+/***/ 317:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
+/* harmony export */   EJ: () => (/* binding */ parsePositiveInt),
+/* harmony export */   nL: () => (/* binding */ parseEnum),
+/* harmony export */   vd: () => (/* binding */ parseBoundedFloat)
+/* harmony export */ });
+/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(474);
+/* harmony import */ var _actions_core__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__nccwpck_require__.n(_actions_core__WEBPACK_IMPORTED_MODULE_0__);
+
+function fallBack(name, raw, fallback) {
+    _actions_core__WEBPACK_IMPORTED_MODULE_0__.warning(`${name}="${raw}" is not valid – using default ${fallback}`);
+    return fallback;
+}
+/**
+ * Parse a strict positive integer (no suffixes, no decimals). Unset or blank
+ * returns the fallback silently; anything invalid warns and returns the
+ * fallback, so a typo can never switch a safety limit off.
+ */
+function parsePositiveInt(raw, fallback, { name, max }) {
+    const text = raw?.trim();
+    if (!text)
+        return fallback;
+    const value = /^\d+$/.test(text) ? Number(text) : Number.NaN;
+    if (!Number.isSafeInteger(value) || value < 1) {
+        return fallBack(name, text, fallback);
+    }
+    if (max !== undefined && value > max)
+        return fallBack(name, text, fallback);
+    return value;
+}
+/** Parse a finite decimal within [min, max]; invalid values use the fallback. */
+function parseBoundedFloat(raw, fallback, { name, min = 0, max = Number.POSITIVE_INFINITY }) {
+    const text = raw?.trim();
+    if (!text)
+        return fallback;
+    const value = /^\d*\.?\d+$/.test(text) ? Number(text) : Number.NaN;
+    if (!Number.isFinite(value) || value < min || value > max) {
+        return fallBack(name, text, fallback);
+    }
+    return value;
+}
+/**
+ * Parse an enum input against its allowed values. Unset or blank returns the
+ * fallback silently; an unknown value warns and returns the fallback, so a
+ * typo can never silently disable a gate.
+ */
+function parseEnum(raw, allowed, fallback, name) {
+    const text = raw?.trim();
+    if (!text)
+        return fallback;
+    const lower = text.toLowerCase();
+    const match = allowed.find((value) => value === lower);
+    if (match)
+        return match;
+    _actions_core__WEBPACK_IMPORTED_MODULE_0__.warning(`${name}="${text}" is not one of ${allowed.join(', ')} – using default ${fallback}`);
+    return fallback;
 }
 
 
@@ -38275,508 +38827,8 @@ function resolveEngineConfig(input) {
     };
 }
 
-;// CONCATENATED MODULE: ./src/security/classifier/risk-classifier.ts
-/**
- * Deterministic Pre-LLM Risk Classifier.
- * Spec reference: §6.
- */
-const SECURITY_DOMAIN_PATTERNS = [
-    // Auth & Authorization & Access Control (Critical)
-    {
-        domain: 'authentication',
-        pathRegex: /(?:auth|login|signin|signup|session|jwt|oauth|sso|token|credential|mfa|2fa)/i,
-        contentRegex: /(?:jwt\.verify|jwt\.sign|bcrypt|argon2|passport|authenticate|session\.|createSession|verifyPassword)/i,
-        weight: 4,
-        reason: 'Changes in authentication / session management files',
-    },
-    {
-        domain: 'authorization',
-        pathRegex: /(?:authz|permission|role|rbac|abac|policy|acl|guard|canAccess|access[_-]?control)/i,
-        contentRegex: /(?:hasPermission|requireRole|checkPermission|canAccess|isAuthorized|isAllowed|authorize)/i,
-        weight: 4,
-        reason: 'Changes in authorization / permission enforcement logic',
-    },
-    // Cryptography & Secrets
-    {
-        domain: 'cryptography',
-        pathRegex: /(?:crypto|cipher|secret|key|vault|signature|encrypt|decrypt)/i,
-        contentRegex: /(?:crypto\.createCipher|crypto\.createDecipher|AES|RSA|HMAC|privateKey|publicKey|crypto\.subtle)/i,
-        weight: 3,
-        reason: 'Cryptographic primitive or key handling changes',
-    },
-    // Payment & Billing
-    {
-        domain: 'payments',
-        pathRegex: /(?:payment|billing|stripe|checkout|subscription|invoice|wallet|pricing)/i,
-        contentRegex: /(?:stripe\.charges|stripe\.paymentIntents|refund|charge|creditCard)/i,
-        weight: 3,
-        reason: 'Payment / financial transaction processing changes',
-    },
-    // File Uploads & Parsers
-    {
-        domain: 'file-handling',
-        pathRegex: /(?:upload|storage|s3|file[_-]?handler|multer|busboy|tar|zip|unzip|extractor)/i,
-        contentRegex: /(?:multipart|upload\.single|createWriteStream|extract|unzip|fs\.writeFile)/i,
-        weight: 3,
-        reason: 'File upload, decompression, or filesystem writing logic',
-    },
-    // Serialization & Deserialization
-    {
-        domain: 'serialization',
-        pathRegex: /(?:deserializ|unmarshal|parser|protobuf|msgpack|yaml[_-]?parser)/i,
-        contentRegex: /(?:eval\(|pickle\.loads|yaml\.load\(|JSON\.parse\(|unserialize)/i,
-        weight: 3,
-        reason: 'Data parsing / deserialization boundary changes',
-    },
-    // Client-side rendering (XSS surfaces)
-    {
-        domain: 'client-xss',
-        pathRegex: /(?:template|renderer|markdown|sanitiz|dompurify|rich-text|wysiwyg)/i,
-        contentRegex: /(?:dangerouslySetInnerHTML|innerHTML|outerHTML|insertAdjacentHTML|document\.write|v-html|\[innerHTML\]|bypassSecurityTrustHtml)/i,
-        weight: 3,
-        reason: 'Client-side HTML rendering / DOM sink changes (potential XSS surface)',
-    },
-    // Secrets & credentials in diffs
-    {
-        domain: 'secrets',
-        pathRegex: /(?:\.env|secret|credential|token|keyvault|keystore)/i,
-        contentRegex: /(?:api[_-]?key|secret[_-]?key|BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|xox[bap]-|AKIA[0-9A-Z]{16})/i,
-        weight: 4,
-        reason: 'Potential secret / credential material in changed files',
-    },
-    // Network & HTTP client (SSRF surfaces)
-    {
-        domain: 'network-boundary',
-        pathRegex: /(?:proxy|gateway|fetcher|http[_-]?client|webhook|redirect|crawler)/i,
-        contentRegex: /(?:axios\.|fetch\(|http\.request|needle|got\(|urllib|curl)/i,
-        weight: 3,
-        reason: 'Outbound HTTP client or reverse proxy changes (potential SSRF surface)',
-    },
-    // Database & SQL query construction (SQLi)
-    {
-        domain: 'database-security',
-        pathRegex: /(?:repository|query[_-]?builder|dao|database|sql|migration)/i,
-        contentRegex: /(?:raw\(|\$queryRaw|SELECT .* FROM|\.query\(["'`].*\$\{)/i,
-        weight: 3,
-        reason: 'Dynamic database query construction / raw SQL execution',
-    },
-    // Shell & Command execution (RCE)
-    {
-        domain: 'process-execution',
-        pathRegex: /(?:exec|process|runner|subprocess|terminal|command)/i,
-        contentRegex: /(?:child_process|exec\(|spawn\(|execSync|system\(|shell_exec|execFile)/i,
-        weight: 4,
-        reason: 'Shell / OS process execution changes (potential command injection surface)',
-    },
-    // CI/CD & GitHub Actions Workflows
-    {
-        domain: 'cicd-security',
-        pathRegex: /(?:\.github\/workflows\/.*\.ya?ml|Dockerfile|docker-compose.*\.ya?ml|\.gitlab-ci\.yml|Jenkinsfile)/i,
-        contentRegex: /(?:pull_request_target|permissions:|GITHUB_TOKEN|secrets\.|eval|bash -c)/i,
-        weight: 4,
-        reason: 'CI/CD pipeline, GitHub Action workflow, or container build changes',
-    },
-    // Infrastructure as Code / Kubernetes / Terraform
-    {
-        domain: 'cloud-infrastructure',
-        pathRegex: /(?:terraform|k8s|helm|cloudformation|pulumi|\.tf$|values\.ya?ml)/i,
-        weight: 3,
-        reason: 'Infrastructure as Code / deployment topology changes',
-    },
-    // Dependencies & Lockfiles (Supply Chain)
-    {
-        domain: 'supply-chain',
-        pathRegex: /(?:package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements\.txt|Pipfile|go\.mod|Cargo\.toml|pom\.xml|build\.gradle)/i,
-        weight: 2,
-        reason: 'Dependency manifest or package lockfile modifications',
-    },
-    // AI / LLM / Agent permissions / Tool execution
-    {
-        domain: 'ai-security',
-        pathRegex: /(?:agent|mcp|tool|prompt|openai|anthropic|langchain|llm)/i,
-        contentRegex: /(?:systemPrompt|temperature|tool_choice|executeTool|callTool|modelProvider)/i,
-        weight: 3,
-        reason: 'AI / LLM agent tools, prompts, or MCP integrations',
-    },
-];
-/**
- * Classifies PR risk level and domain surfaces without calling an LLM.
- */
-function classifyPrRisk(changedFiles) {
-    const matchedDomains = new Set();
-    const reasons = new Set();
-    let maxWeight = 1;
-    const flaggedFiles = [];
-    for (const file of changedFiles) {
-        let fileMatched = false;
-        const filename = file.filename;
-        const patch = file.patch || '';
-        for (const rule of SECURITY_DOMAIN_PATTERNS) {
-            const pathHit = rule.pathRegex.test(filename);
-            const contentHit = rule.contentRegex
-                ? rule.contentRegex.test(patch)
-                : false;
-            if (pathHit || contentHit) {
-                matchedDomains.add(rule.domain);
-                reasons.add(rule.reason);
-                fileMatched = true;
-                if (rule.weight > maxWeight) {
-                    maxWeight = rule.weight;
-                }
-            }
-        }
-        if (fileMatched) {
-            flaggedFiles.push(filename);
-        }
-    }
-    let level = 'low';
-    if (maxWeight >= 4) {
-        level = 'critical_surface';
-    }
-    else if (maxWeight === 3) {
-        level = 'high';
-    }
-    else if (maxWeight === 2 || matchedDomains.size > 0) {
-        level = 'medium';
-    }
-    return {
-        level,
-        reasons: Array.from(reasons),
-        domains: Array.from(matchedDomains),
-        changedFiles: flaggedFiles,
-    };
-}
-
-// EXTERNAL MODULE: ./src/security/skills/license-clean.ts
-var license_clean = __nccwpck_require__(6615);
-// EXTERNAL MODULE: ./src/security/skills/registry.ts
-var registry = __nccwpck_require__(3677);
-// EXTERNAL MODULE: ./src/security/skills/selector.ts
-var selector = __nccwpck_require__(9347);
-;// CONCATENATED MODULE: ./src/security/skills/auto-select.ts
-
-
-
-
-const SECURITY_SKILLS_MODES = ['all', 'auto'];
-const DOC_EXTENSIONS = new Set(['md', 'mdx', 'txt', 'rst']);
-const CODE_EXTENSIONS = new Set([
-    'ts',
-    'tsx',
-    'js',
-    'jsx',
-    'mjs',
-    'cjs',
-    'py',
-    'go',
-    'rs',
-    'java',
-    'kt',
-    'rb',
-    'php',
-    'cs',
-    'swift',
-    'c',
-    'h',
-    'cpp',
-    'sql',
-    'sh',
-    'json',
-    'yml',
-    'yaml',
-    'toml',
-    'tf',
-    'lock',
-    'css',
-    'html',
-    'vue',
-    'svelte',
-    'gradle',
-    'xml',
-    'mod',
-    'sum',
-]);
-const KNOWN_BASENAMES = new Set([
-    'dockerfile',
-    'jenkinsfile',
-    'makefile',
-    'pipfile',
-    'license',
-    'codeowners',
-    '.gitignore',
-    '.dockerignore',
-    '.env',
-]);
-/** Classifier domains with no skill of their own, mapped to the closest one. */
-const DOMAIN_ALIASES = {
-    'process-execution': 'database-security', // injection skill covers command injection
-    'cloud-infrastructure': 'cicd-security',
-    serialization: 'file-handling', // upload and deserialization skill
-};
-function kindOf(filename) {
-    const base = (filename.split('/').pop() ?? '').toLowerCase();
-    if (KNOWN_BASENAMES.has(base) || base.startsWith('dockerfile.'))
-        return 'code';
-    const ext = base.includes('.') ? base.slice(base.lastIndexOf('.') + 1) : '';
-    if (DOC_EXTENSIONS.has(ext))
-        return 'doc';
-    return CODE_EXTENSIONS.has(ext) ? 'code' : 'unknown';
-}
-/**
- * Chooses the security skills for the review prompt. `all` is exactly the
- * historical render. `auto` keeps only the skills for domains the existing
- * risk classifier flags, and always keeps the validation gate. Anything it
- * cannot classify (no files, truncated file list, unknown file type, classifier
- * error) returns the full render: it fails safe, never to nothing.
- */
-function selectReviewSecuritySkills(mode, files, filesTruncated = false) {
-    const full = (0,selector/* renderSkillsForPrompt */.a)(registry/* CURATED_SECURITY_SKILLS */.J);
-    const all = {
-        prompt: full,
-        domains: registry/* CURATED_SECURITY_SKILLS */.J.map((s) => s.domain),
-        savedChars: 0,
-        fellBackToAll: false,
-    };
-    if (mode === 'all')
-        return all;
-    const fallback = { ...all, fellBackToAll: true };
-    if (files.length === 0 || filesTruncated)
-        return fallback;
-    const kinds = files.map((f) => kindOf(f.filename));
-    if (kinds.includes('unknown'))
-        return fallback;
-    let prompt;
-    let domains;
-    try {
-        // Classify first: a flagged domain always wins over the docs shortcut.
-        const flagged = classifyPrRisk(files).domains.map((d) => DOMAIN_ALIASES[d] ?? d);
-        if (flagged.length === 0 && kinds.every((k) => k === 'doc')) {
-            // Prose only and nothing flagged: no domain skill, the gate still applies.
-            domains = [];
-            prompt = `\n## Targeted Security Review Knowledge\n${license_clean/* REVIEW_VALIDATION_GATE */.F}\n`;
-        }
-        else {
-            const skills = (0,selector/* selectSecuritySkills */.N)(flagged);
-            domains = skills.map((s) => s.domain);
-            prompt = (0,selector/* renderSkillsForPrompt */.a)(skills);
-        }
-    }
-    catch {
-        return fallback;
-    }
-    return {
-        prompt,
-        domains,
-        savedChars: Math.max(0, full.length - prompt.length),
-        fellBackToAll: false,
-    };
-}
-
-;// CONCATENATED MODULE: ./src/shared/numeric.ts
-
-function fallBack(name, raw, fallback) {
-    core.warning(`${name}="${raw}" is not valid – using default ${fallback}`);
-    return fallback;
-}
-/**
- * Parse a strict positive integer (no suffixes, no decimals). Unset or blank
- * returns the fallback silently; anything invalid warns and returns the
- * fallback, so a typo can never switch a safety limit off.
- */
-function parsePositiveInt(raw, fallback, { name, max }) {
-    const text = raw?.trim();
-    if (!text)
-        return fallback;
-    const value = /^\d+$/.test(text) ? Number(text) : Number.NaN;
-    if (!Number.isSafeInteger(value) || value < 1) {
-        return fallBack(name, text, fallback);
-    }
-    if (max !== undefined && value > max)
-        return fallBack(name, text, fallback);
-    return value;
-}
-/** Parse a finite decimal within [min, max]; invalid values use the fallback. */
-function parseBoundedFloat(raw, fallback, { name, min = 0, max = Number.POSITIVE_INFINITY }) {
-    const text = raw?.trim();
-    if (!text)
-        return fallback;
-    const value = /^\d*\.?\d+$/.test(text) ? Number(text) : Number.NaN;
-    if (!Number.isFinite(value) || value < min || value > max) {
-        return fallBack(name, text, fallback);
-    }
-    return value;
-}
-/**
- * Parse an enum input against its allowed values. Unset or blank returns the
- * fallback silently; an unknown value warns and returns the fallback, so a
- * typo can never silently disable a gate.
- */
-function parseEnum(raw, allowed, fallback, name) {
-    const text = raw?.trim();
-    if (!text)
-        return fallback;
-    const lower = text.toLowerCase();
-    const match = allowed.find((value) => value === lower);
-    if (match)
-        return match;
-    core.warning(`${name}="${text}" is not one of ${allowed.join(', ')} – using default ${fallback}`);
-    return fallback;
-}
-
-;// CONCATENATED MODULE: ./src/adapter/legacy-inputs.ts
-/**
- * Legacy input mapping (docs/v1-interface-contract.md). Every V1 action
- * input maps into engine configuration with identical defaults. Unknown
- * inputs are ignored; missing inputs fall back to the frozen defaults.
- */
-
-
-
-const SECURITY_DEFAULTS = {
-    mode: 'auto',
-    profile: 'diff',
-    minSeverity: 'medium',
-    failOn: 'critical',
-    confirmFindings: 'true',
-    inlineComments: 'true',
-    stickyComment: 'true',
-    generateSarif: 'true',
-    maxFindings: '20',
-    riskThreshold: 'high',
-};
-/** Default `exclude-patterns`, split; exported so callers can tell it from a user choice. */
-const DEFAULT_EXCLUDE_PATTERNS = ['*.md', '*.txt'];
-const PR_REVIEW_DEFAULTS = {
-    openaiModel: 'gpt-4',
-    maxFiles: '10',
-    excludePatterns: DEFAULT_EXCLUDE_PATTERNS.join(','),
-    autoApproveWhenResolved: 'false',
-    minSeverity: 'critical',
-    blockOnIssues: 'true',
-    includeFullContent: 'false',
-    maxContextChars: '30000',
-    scorecardContext: 'false',
-    securitySkills: 'all',
-};
-const PR_CONTENT_DEFAULTS = {
-    openaiModel: 'gpt-4',
-    // ponytail: frozen action.yml default is 1000; cli.ts doubles the budget on retries.
-    maxTokens: '1000',
-    includeFileList: 'true',
-    templatePath: '.github/pull_request_template.md',
-};
-function get(inputs, key) {
-    const value = inputs[key];
-    return value === '' ? undefined : value;
-}
-function bool(value, fallback) {
-    return (value ?? fallback) === 'true';
-}
-function legacy_inputs_int(value, fallback, name) {
-    return parsePositiveInt(value, Number.parseInt(fallback, 10), { name });
-}
-function splitList(value) {
-    if (!value) {
-        return [];
-    }
-    return value
-        .split(',')
-        .map((part) => part.trim())
-        .filter(Boolean);
-}
-function mapLegacyInputs(action, inputs) {
-    if (action === 'pr-content') {
-        return mapPrContent(inputs);
-    }
-    return mapPrReview(inputs);
-}
-/** Typed wrapper for the pr-review action path. */
-function mapPrReviewInputs(inputs) {
-    return mapPrReview(inputs);
-}
-/** Typed wrapper for the pr-content action path. */
-function mapPrContentInputs(inputs) {
-    return mapPrContent(inputs);
-}
-/** Typed wrapper for security mode inputs. Spec reference: §4. */
-function mapSecurityInputs(inputs) {
-    const rawBaseUrl = get(inputs, 'openai-base-url') || get(inputs, 'base_url');
-    const rawMode = parseEnum(get(inputs, 'mode'), ['auto', 'review', 'security', 'agent'], SECURITY_DEFAULTS.mode, 'mode');
-    const rawProfile = parseEnum(get(inputs, 'security_profile') ?? get(inputs, 'security-profile'), ['diff', 'lite', 'balanced', 'deep', 'confirm'], SECURITY_DEFAULTS.profile, 'security-profile');
-    const rawMinSev = parseEnum(get(inputs, 'security_min_severity') ??
-        get(inputs, 'security-min-severity') ??
-        get(inputs, 'min-severity'), ['critical', 'high', 'medium', 'low', 'info'], SECURITY_DEFAULTS.minSeverity, 'security-min-severity');
-    const rawFailOn = parseEnum(get(inputs, 'security_fail_on') ?? get(inputs, 'security-fail-on'), ['critical', 'high', 'medium', 'low', 'info', 'none'], SECURITY_DEFAULTS.failOn, 'security-fail-on');
-    const rawRiskThreshold = parseEnum(get(inputs, 'security_risk_threshold') ??
-        get(inputs, 'security-risk-threshold'), ['low', 'medium', 'high', 'critical_surface'], SECURITY_DEFAULTS.riskThreshold, 'security-risk-threshold');
-    return {
-        githubToken: get(inputs, 'github-token') ?? get(inputs, 'github_token') ?? '',
-        apiKey: get(inputs, 'openai-api-key') ??
-            get(inputs, 'api_key') ??
-            get(inputs, 'openai_api_key') ??
-            '',
-        baseUrl: rawBaseUrl ? (0,config/* normalizeBaseUrl */.qT)(rawBaseUrl) : undefined,
-        model: get(inputs, 'openai-model') ??
-            get(inputs, 'model') ??
-            PR_REVIEW_DEFAULTS.openaiModel,
-        mode: rawMode,
-        profile: rawProfile,
-        minSeverity: rawMinSev,
-        failOn: rawFailOn,
-        confirmFindings: bool(get(inputs, 'security_confirm_findings') ??
-            get(inputs, 'security-confirm-findings'), SECURITY_DEFAULTS.confirmFindings),
-        inlineComments: bool(get(inputs, 'security_inline_comments') ??
-            get(inputs, 'security-inline-comments'), SECURITY_DEFAULTS.inlineComments),
-        stickyComment: bool(get(inputs, 'security_sticky_comment') ??
-            get(inputs, 'security-sticky-comment') ??
-            get(inputs, 'sticky-summary'), SECURITY_DEFAULTS.stickyComment),
-        generateSarif: bool(get(inputs, 'security_sarif') ?? get(inputs, 'security-sarif'), SECURITY_DEFAULTS.generateSarif),
-        maxFindings: legacy_inputs_int(get(inputs, 'security_max_findings') ??
-            get(inputs, 'security-max-findings'), SECURITY_DEFAULTS.maxFindings, 'security-max-findings'),
-        riskThreshold: rawRiskThreshold,
-        piArgs: get(inputs, 'pi-args') ?? get(inputs, 'pi_args'),
-        piBinaryPath: get(inputs, 'pi-binary-path') ?? get(inputs, 'pi_binary_path'),
-        trackProgress: bool(get(inputs, 'track-progress') ?? get(inputs, 'track_progress'), 'false'),
-    };
-}
-function mapPrReview(inputs) {
-    const rawBaseUrl = get(inputs, 'openai-base-url');
-    return {
-        githubToken: get(inputs, 'github-token') ?? '',
-        apiKey: get(inputs, 'openai-api-key') ?? '',
-        baseUrl: rawBaseUrl ? (0,config/* normalizeBaseUrl */.qT)(rawBaseUrl) : undefined,
-        model: get(inputs, 'openai-model') ?? PR_REVIEW_DEFAULTS.openaiModel,
-        reviewPrompt: get(inputs, 'review-prompt'),
-        maxFiles: legacy_inputs_int(get(inputs, 'max-files'), PR_REVIEW_DEFAULTS.maxFiles, 'max-files'),
-        excludePatterns: splitList(get(inputs, 'exclude-patterns') ?? PR_REVIEW_DEFAULTS.excludePatterns),
-        includeDirs: (() => {
-            const dirs = splitList(get(inputs, 'include-dir'));
-            return dirs.length > 0 ? dirs : undefined;
-        })(),
-        autoApproveWhenResolved: bool(get(inputs, 'auto-approve-when-resolved'), PR_REVIEW_DEFAULTS.autoApproveWhenResolved),
-        minSeverity: get(inputs, 'min-severity') ?? PR_REVIEW_DEFAULTS.minSeverity,
-        blockOnIssues: bool(get(inputs, 'block-on-issues'), PR_REVIEW_DEFAULTS.blockOnIssues),
-        includeFullContent: bool(get(inputs, 'include-full-content'), PR_REVIEW_DEFAULTS.includeFullContent),
-        maxContextChars: legacy_inputs_int(get(inputs, 'max-context-chars'), PR_REVIEW_DEFAULTS.maxContextChars, 'max-context-chars'),
-        scorecardContext: bool(get(inputs, 'scorecard-context'), PR_REVIEW_DEFAULTS.scorecardContext),
-        securitySkills: parseEnum(get(inputs, 'security-skills'), SECURITY_SKILLS_MODES, PR_REVIEW_DEFAULTS.securitySkills, 'security-skills'),
-    };
-}
-function mapPrContent(inputs) {
-    const rawBaseUrl = get(inputs, 'openai-base-url');
-    return {
-        action: 'pr-content',
-        githubToken: get(inputs, 'github-token') ?? '',
-        apiKey: get(inputs, 'openai-api-key') ?? '',
-        baseUrl: rawBaseUrl ? (0,config/* normalizeBaseUrl */.qT)(rawBaseUrl) : undefined,
-        model: get(inputs, 'openai-model') ?? PR_CONTENT_DEFAULTS.openaiModel,
-        maxTokens: legacy_inputs_int(get(inputs, 'max-tokens'), PR_CONTENT_DEFAULTS.maxTokens, 'max-tokens'),
-        includeFileList: bool(get(inputs, 'include-file-list'), PR_CONTENT_DEFAULTS.includeFileList),
-        customInstructions: get(inputs, 'custom-instructions'),
-        templatePath: get(inputs, 'template-path') ?? PR_CONTENT_DEFAULTS.templatePath,
-    };
-}
-
+// EXTERNAL MODULE: ./src/adapter/legacy-inputs.ts
+var legacy_inputs = __nccwpck_require__(9953);
 ;// CONCATENATED MODULE: ./src/context/pr.ts
 async function fetchPrContext(octokit, repository, prNumber, options = {}) {
     const pageSize = options.pageSize ?? 100;
@@ -41001,7 +41053,7 @@ async function runPrContent(options) {
 }
 /** Reads the `pr-content` action inputs and runs the PR-content flow. */
 async function runPrContentAction() {
-    const contentOptions = mapPrContentInputs({
+    const contentOptions = (0,legacy_inputs/* mapPrContentInputs */.Tj)({
         'github-token': core.getInput('github-token'),
         'openai-api-key': core.getInput('openai-api-key'),
         'openai-base-url': core.getInput('openai-base-url'),
@@ -42706,8 +42758,12 @@ function deriveRuleCoverage(context, findings) {
     };
 }
 
+// EXTERNAL MODULE: ./src/security/skills/auto-select.ts
+var auto_select = __nccwpck_require__(4654);
+// EXTERNAL MODULE: ./src/shared/numeric.ts
+var numeric = __nccwpck_require__(317);
 // EXTERNAL MODULE: ./src/skills/registry.ts + 9 modules
-var skills_registry = __nccwpck_require__(5672);
+var registry = __nccwpck_require__(5672);
 ;// CONCATENATED MODULE: ./src/runners/review.ts
 
 
@@ -42775,7 +42831,7 @@ async function runPrReviewAction() {
         core.setFailed('This action only runs on pull requests');
         return;
     }
-    const legacyOptions = mapPrReviewInputs({
+    const legacyOptions = (0,legacy_inputs/* mapPrReviewInputs */.eP)({
         'github-token': core.getInput('github-token'),
         'openai-api-key': core.getInput('openai-api-key'),
         'openai-base-url': core.getInput('openai-base-url'),
@@ -42837,7 +42893,7 @@ async function runPrReviewAction() {
     // old load-everything behavior; an explicit comma list still pins stacks.
     const loadAllProfiles = process.env.AI_REVIEW_PROFILE === 'all';
     const profiles = loadAllProfiles
-        ? (0,skills_registry/* profilesWithSkills */.b)().map((id) => ({
+        ? (0,registry/* profilesWithSkills */.b)().map((id) => ({
             id,
             evidence: ['AI_REVIEW_PROFILE=all'],
         }))
@@ -42890,7 +42946,7 @@ async function runPrReviewAction() {
             }
         }
         // Default `all` keeps every skill; opt-in `auto` filters by classified domain.
-        const skillSelection = selectReviewSecuritySkills(legacyOptions.securitySkills, reviewContext.diff.files, reviewContext.diff.filesTruncated);
+        const skillSelection = (0,auto_select/* selectReviewSecuritySkills */.v)(legacyOptions.securitySkills, reviewContext.diff.files, reviewContext.diff.filesTruncated);
         if (legacyOptions.securitySkills === 'auto') {
             core.info(`[security-skills] auto: ${skillSelection.fellBackToAll ? 'could not classify, using all skills' : `${skillSelection.domains.join(', ') || 'validation gate only'} (saved ${skillSelection.savedChars} chars)`}`);
         }
@@ -43092,17 +43148,17 @@ function normalizeIncludeDir(dir) {
  */
 function readReviewEnvLimits(env) {
     return {
-        maxFiles: parsePositiveInt(env.AI_REVIEW_MAX_FILES, config/* REVIEW_OPTION_DEFAULTS */.Ag.aiReviewMaxFiles, { name: 'AI_REVIEW_MAX_FILES' }),
-        minConfidence: parseBoundedFloat(env.AI_REVIEW_MIN_CONFIDENCE, 0.8, {
+        maxFiles: (0,numeric/* parsePositiveInt */.EJ)(env.AI_REVIEW_MAX_FILES, config/* REVIEW_OPTION_DEFAULTS */.Ag.aiReviewMaxFiles, { name: 'AI_REVIEW_MAX_FILES' }),
+        minConfidence: (0,numeric/* parseBoundedFloat */.vd)(env.AI_REVIEW_MIN_CONFIDENCE, 0.8, {
             name: 'AI_REVIEW_MIN_CONFIDENCE',
             min: 0,
             max: 1,
         }),
-        verifyBudgetUsd: parseBoundedFloat(env.AI_REVIEW_VERIFY_BUDGET_USD, 0.5, {
+        verifyBudgetUsd: (0,numeric/* parseBoundedFloat */.vd)(env.AI_REVIEW_VERIFY_BUDGET_USD, 0.5, {
             name: 'AI_REVIEW_VERIFY_BUDGET_USD',
             min: 0,
         }),
-        verifyMinSeverity: parseEnum(env.AI_REVIEW_VERIFY_MIN_SEVERITY, ['critical', 'high', 'medium', 'low'], 'high', 'AI_REVIEW_VERIFY_MIN_SEVERITY'),
+        verifyMinSeverity: (0,numeric/* parseEnum */.nL)(env.AI_REVIEW_VERIFY_MIN_SEVERITY, ['critical', 'high', 'medium', 'low'], 'high', 'AI_REVIEW_VERIFY_MIN_SEVERITY'),
     };
 }
 /**
@@ -43119,7 +43175,7 @@ function classifyEmptySelection(args) {
     if (effectiveDirs.length > 0)
         return 'warning';
     const sorted = (list) => [...list].sort().join(',');
-    const isDefault = sorted(args.excludePatterns) === sorted(DEFAULT_EXCLUDE_PATTERNS);
+    const isDefault = sorted(args.excludePatterns) === sorted(legacy_inputs/* DEFAULT_EXCLUDE_PATTERNS */.f_);
     return isDefault ? 'notice' : 'warning';
 }
 function applyLegacyFilters(filenames, options) {
@@ -43164,6 +43220,8 @@ function securityFailureMessage(conclusion, failOn) {
     return undefined;
 }
 
+// EXTERNAL MODULE: ./src/security/classifier/risk-classifier.ts
+var risk_classifier = __nccwpck_require__(8000);
 // EXTERNAL MODULE: ./src/security/engines/pi-security-engine.ts
 var pi_security_engine = __nccwpck_require__(7924);
 // EXTERNAL MODULE: external "node:os"
@@ -44674,7 +44732,7 @@ async function runSecurityAssessment(context, options, dependencies, engine) {
     const startTime = Date.now();
     context.scope = options.profile === 'diff' ? 'diff' : 'audit';
     // 1. Pre-LLM Risk Classification
-    const riskClassification = classifyPrRisk(context.changedFiles);
+    const riskClassification = (0,risk_classifier/* classifyPrRisk */.C)(context.changedFiles);
     context.riskClassification = riskClassification;
     // 2. Deterministic Static Scanners
     const scannerResult = await (dependencies.runScanners ?? runSecurityScanners)(context);
@@ -44730,6 +44788,8 @@ async function runSecurityAssessment(context, options, dependencies, engine) {
                         confirmed.id !== original.id ||
                         confirmed.title !== original.title ||
                         confirmed.severity !== original.severity ||
+                        (confirmed.remediation !== undefined &&
+                            typeof confirmed.remediation !== 'string') ||
                         !['confirmed', 'high', 'medium'].includes(confirmed.confidence) ||
                         !['candidate', 'validated'].includes(confirmed.status) ||
                         !['confirmed', 'likely', 'theoretical', 'unknown'].includes(confirmed.exploitability) ||
@@ -44787,7 +44847,9 @@ async function runSecurityAssessment(context, options, dependencies, engine) {
                                     ...confirmed.evidence.filter((ev) => !finding.evidence.some((original) => JSON.stringify(original) === JSON.stringify(ev))),
                                 ],
                                 exploitability: confirmed.exploitability,
-                                remediation: confirmed.remediation,
+                                remediation: confirmed.remediation?.trim()
+                                    ? confirmed.remediation
+                                    : finding.remediation,
                             },
                         ]
                         : [];
@@ -45153,7 +45215,7 @@ async function runSecurityAction() {
         repo: github.context.repo?.repo || '',
     };
     const prNumber = github.context.payload.pull_request?.number;
-    const secOptions = mapSecurityInputs({
+    const secOptions = (0,legacy_inputs/* mapSecurityInputs */.SR)({
         'github-token': githubToken,
         'openai-api-key': core.getInput('openai-api-key') || core.getInput('api_key'),
         'openai-base-url': core.getInput('openai-base-url') || core.getInput('base_url'),

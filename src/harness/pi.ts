@@ -892,13 +892,17 @@ export async function runPi(params: RunPiParams): Promise<PiRunLog> {
 				message?: { role?: string; content?: Array<{ text?: string }> };
 			} = {};
 			try {
-				event = JSON.parse(line);
+				const parsed: unknown = JSON.parse(line);
+				if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+					event = parsed;
 			} catch {
 				/* Plain output remains diagnosable. */
 			}
 			if (event.type === 'message_end' && event.message?.role === 'assistant') {
 				completedAssistantBytes += Buffer.byteLength(
-					(event.message.content ?? []).map((part) => part.text ?? '').join(''),
+					(Array.isArray(event.message.content) ? event.message.content : [])
+						.map((part) => (typeof part?.text === 'string' ? part.text : ''))
+						.join(''),
 					'utf8'
 				);
 			}

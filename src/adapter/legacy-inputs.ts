@@ -80,7 +80,8 @@ const SECURITY_DEFAULTS = {
 /** Default `exclude-patterns`, split; exported so callers can tell it from a user choice. */
 export const DEFAULT_EXCLUDE_PATTERNS = ['*.md', '*.txt'];
 
-const PR_REVIEW_DEFAULTS = {
+/** Frozen Action defaults shared with native fallback selection. */
+export const PR_REVIEW_DEFAULTS = {
 	openaiModel: 'gpt-4',
 	maxFiles: '10',
 	excludePatterns: DEFAULT_EXCLUDE_PATTERNS.join(','),
