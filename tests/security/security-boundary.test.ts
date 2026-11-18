@@ -308,6 +308,7 @@ describe('security protocol failures through the workflow', () => {
 				runScanners,
 			});
 			expect(result.findings).toHaveLength(1);
+			expect(result.reportMarkdown).toContain('SECURITY REVIEW INCOMPLETE');
 			expect(result.conclusion).toMatchObject({
 				engineStatus: 'failed',
 				incomplete: true,
@@ -360,6 +361,13 @@ describe('security protocol failures through the workflow', () => {
 		});
 		expect(result.findings).toEqual([]);
 		expect(result.conclusion.incomplete).toBe(false);
+		expect(result.conclusion.refutations).toMatchObject([
+			{ id: expect.any(String), reason: 'The source is a constant' },
+		]);
+		expect(result.reportMarkdown).toContain('The source is a constant');
+		expect(JSON.stringify(result.conclusion)).toContain(
+			'The source is a constant'
+		);
 		expect(result.rejectedFindings).toMatchObject([
 			{
 				status: 'rejected',

@@ -26,8 +26,8 @@ Keep tests deterministic by default. Real-model quality and deterministic live G
 ## Local verification on 18/11/2026
 
 - Typecheck and Biome passed.
-- Coverage suite: 1,864 passed, five existing live-evaluation cases skipped, and seven existing measurement placeholders. No new skipped cases.
-- Coverage: lines/statements 90.13%, branches 87.36%, and functions 91.03%. Existing thresholds are unchanged.
+- Coverage suite: 1,866 passed, five existing live-evaluation cases skipped, and seven existing measurement placeholders. No new skipped cases.
+- Coverage: lines/statements 90.17%, branches 87.30%, and functions 91.05%. Existing thresholds are unchanged.
 - Actual pinned-runtime suite: five passed against loopback, including Unicode path-normalisation bypass regression, traversal/symlink isolation, usage, and independent limits.
 - Both bundles rebuilt and both unsupported-event startup guards smoke-ran successfully.
 - Confirmation partition regressions failed before correction, then all 165 focused security tests passed.
@@ -47,3 +47,5 @@ Keep tests deterministic by default. Real-model quality and deterministic live G
 - Custom gateways cannot borrow ambient native credentials. A gateway rejection regression and a confirmation diagnostic assertion failed before correction, then passed. Reasoning and confirmation failures are now diagnosable without exposing raw responses.
 
 - Three synthetic-credential regressions failed before correction. Provider errors, stderr, and malformed-output diagnostics now redact complete strings before clipping, preventing long credential tails from leaking into errors.
+
+- The explicit refutation ledger is now serialised in the existing security conclusion output and rendered in audit reports, with pattern-redaction and Markdown escaping. Audit reports carry incomplete state. Workflow and rendering regressions failed before correction, then passed.

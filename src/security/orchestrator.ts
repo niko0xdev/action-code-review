@@ -17,6 +17,7 @@ import type {
 	SecurityEngine,
 	SecurityFinding,
 	SecurityOptions,
+	SecurityRefutation,
 	SecurityResult,
 	SecuritySeverity,
 } from './types.js';
@@ -32,6 +33,26 @@ function logEngineFailure(stage: string, error: unknown): void {
 	core.warning(
 		`Security ${stage} failed: ${redactSecrets(detail).slice(0, 200)}`
 	);
+}
+
+function summariseRefutation(finding: SecurityFinding): SecurityRefutation {
+	const reason =
+		finding.evidence
+			.filter(
+				(evidence) =>
+					evidence?.type === 'reasoning' &&
+					typeof evidence.description === 'string' &&
+					evidence.description.trim()
+			)
+			.at(-1)?.description ?? '';
+	return {
+		id: redactSecrets(finding.id),
+		fingerprint: redactSecrets(finding.fingerprint),
+		title: redactSecrets(finding.title),
+		file: finding.file === undefined ? undefined : redactSecrets(finding.file),
+		startLine: finding.startLine,
+		reason: redactSecrets(reason),
+	};
 }
 
 export interface SecurityWorkflowDependencies {
@@ -119,6 +140,7 @@ async function runSecurityAssessment(
 
 	// 6. Independent Confirmation Pass if enabled and high-risk findings exist
 	let confirmFailed = false;
+	const confirmationRefutations: SecurityFinding[] = [];
 	if (
 		options.confirmFindings &&
 		(riskClassification.level === 'high' ||
@@ -207,7 +229,6 @@ async function runSecurityAssessment(
 				if (confirmedByKey.size + refuted.size !== candidatesByKey.size)
 					throw new Error('Security confirmation omitted a candidate');
 				// Commit the partition only after every verdict is accounted for.
-				rejectedFindings.push(...refuted.values());
 				validatedPool = validatedPool.flatMap((finding) => {
 					if (!needsConfirm(finding)) return [finding];
 					const confirmed = confirmedByKey.get(findingOccurrenceKey(finding));
@@ -234,6 +255,8 @@ async function runSecurityAssessment(
 							]
 						: [];
 				});
+				rejectedFindings.push(...refuted.values());
+				confirmationRefutations.push(...refuted.values());
 			}
 		} catch (error) {
 			logEngineFailure('confirmation', error);
@@ -263,11 +286,13 @@ async function runSecurityAssessment(
 		engineStatus === 'failed' ||
 		confirmFailed ||
 		scannerExecutions.some((s) => s.status === 'failed');
+	const refutations = confirmationRefutations.map(summariseRefutation);
 	const conclusion: SecurityConclusion = {
 		risk: overallRisk,
 		publishedFindings: validatedFindings.length,
 		validatedFindings: validatedPool.length,
 		rejectedFindings: rejectedFindings.length,
+		...(refutations.length ? { refutations } : {}),
 		failThresholdReached,
 		scanners: scannerExecutions,
 		domains: riskClassification.domains,
@@ -294,6 +319,8 @@ async function runSecurityAssessment(
 		profile: options.profile,
 		riskClassification,
 		findings: validatedFindings,
+		refutations: conclusion.refutations,
+		incomplete,
 		scanners: scannerExecutions,
 		durationMs: Date.now() - startTime,
 	});

@@ -84,3 +84,7 @@ The consumer treats non-object JSON event lines and malformed message content as
 A custom gateway must have its own explicit API key. The security fallback rejects the combination of a gateway URL and an ambient native-provider key before spawning, preventing automatic routing of unrelated credentials. Native providers retain their native endpoints. Reasoning, confirmation, and cleanup failures emit bounded, pattern-redacted diagnostics while preserving the existing incomplete-result and retention policies.
 
 Provider errors, stderr, and malformed-output diagnostics are pattern-redacted before exposing or clipping their text. This preserves the recognisable credential prefix during redaction and prevents a long key tail from surviving truncation. Synthetic credential regressions cover all three error paths.
+
+Explicit security refutations are serialised in the existing `security_conclusion` JSON output and rendered in the audit report. The ledger preserves finding identity, location, fingerprint, and the concrete confirmation reason, with every string pattern-redacted. Invalid batches retain candidates without publishing a refutation ledger. Report entries use the existing Markdown escaping rules.
+
+The full audit report carries the same incomplete state as the action conclusion and sticky summary. A failed assessment cannot render an unqualified clean-report message when no validated findings remain. Regression coverage exercises malformed reasoning through the complete workflow and pattern-redaction of the serialised refutation output.

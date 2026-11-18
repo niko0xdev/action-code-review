@@ -43473,6 +43473,11 @@ function evidenceLocation(evidence) {
  * Spec reference: §19.
  */
 function buildFullAuditReport(options) {
+    const incomplete = Boolean(options.incomplete) ||
+        options.scanners.some((scanner) => scanner.status === 'failed');
+    const completionNotice = incomplete
+        ? '> **SECURITY REVIEW INCOMPLETE** – do not treat this report as a clean security pass.\n'
+        : '';
     const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
     for (const f of options.findings) {
         if (f.severity in counts)
@@ -43522,9 +43527,26 @@ ${attackPathBlock}
 ${f.remediation ? proseEscape(f.remediation) : 'Follow secure coding guidelines.'}
 `;
     });
+    const refutationsSection = options.refutations?.length
+        ? `
+## 5. Explicit Confirmation Refutations
+
+| Finding | Location | Fingerprint | Reason |
+|---|---|---|---|
+${options.refutations
+            .map((refutation) => {
+            const location = refutation.file
+                ? `${refutation.file}${refutation.startLine ? `:${refutation.startLine}` : ''}`
+                : 'N/A';
+            return `| ${proseEscape(refutation.title)} (${proseEscape(refutation.id)}) | ${proseEscape(location)} | ${proseEscape(refutation.fingerprint)} | ${proseEscape(refutation.reason)} |`;
+        })
+            .join('\n')}
+`
+        : '';
     const raw = `
 # Security Audit Report — ${options.owner}/${options.repo}
 
+${completionNotice}
 - **Audit Profile:** \`${options.profile}\`
 - **Overall Risk Level:** \`${options.riskClassification.level.toUpperCase()}\`
 - **Total Validated Findings:** ${options.findings.length}
@@ -43560,7 +43582,8 @@ ${options.scanners
 
 ## 4. Validated Security Findings
 
-${findingsSections.join('\n---\n') || '*No security vulnerabilities identified.*'}
+${findingsSections.join('\n---\n') || (incomplete ? '*No validated findings are available; the assessment is incomplete.*' : '*No security vulnerabilities identified.*')}
+${refutationsSection}
 `;
     return (0,redactor/* redactSecrets */.f)(raw.trim());
 }
@@ -44723,6 +44746,21 @@ function logEngineFailure(stage, error) {
     const detail = error instanceof Error ? error.message : String(error);
     core.warning(`Security ${stage} failed: ${(0,redactor/* redactSecrets */.f)(detail).slice(0, 200)}`);
 }
+function summariseRefutation(finding) {
+    const reason = finding.evidence
+        .filter((evidence) => evidence?.type === 'reasoning' &&
+        typeof evidence.description === 'string' &&
+        evidence.description.trim())
+        .at(-1)?.description ?? '';
+    return {
+        id: (0,redactor/* redactSecrets */.f)(finding.id),
+        fingerprint: (0,redactor/* redactSecrets */.f)(finding.fingerprint),
+        title: (0,redactor/* redactSecrets */.f)(finding.title),
+        file: finding.file === undefined ? undefined : (0,redactor/* redactSecrets */.f)(finding.file),
+        startLine: finding.startLine,
+        reason: (0,redactor/* redactSecrets */.f)(reason),
+    };
+}
 async function runSecurityWorkflow(context, options, dependencies = {}) {
     const engine = dependencies.engine ??
         (options.profile === 'diff'
@@ -44779,6 +44817,7 @@ async function runSecurityAssessment(context, options, dependencies, engine) {
     const rejectedFindings = assessed.rejected;
     // 6. Independent Confirmation Pass if enabled and high-risk findings exist
     let confirmFailed = false;
+    const confirmationRefutations = [];
     if (options.confirmFindings &&
         (riskClassification.level === 'high' ||
             riskClassification.level === 'critical_surface')) {
@@ -44845,7 +44884,6 @@ async function runSecurityAssessment(context, options, dependencies, engine) {
                 if (confirmedByKey.size + refuted.size !== candidatesByKey.size)
                     throw new Error('Security confirmation omitted a candidate');
                 // Commit the partition only after every verdict is accounted for.
-                rejectedFindings.push(...refuted.values());
                 validatedPool = validatedPool.flatMap((finding) => {
                     if (!needsConfirm(finding))
                         return [finding];
@@ -44867,6 +44905,8 @@ async function runSecurityAssessment(context, options, dependencies, engine) {
                         ]
                         : [];
                 });
+                rejectedFindings.push(...refuted.values());
+                confirmationRefutations.push(...refuted.values());
             }
         }
         catch (error) {
@@ -44885,11 +44925,13 @@ async function runSecurityAssessment(context, options, dependencies, engine) {
     const incomplete = engineStatus === 'failed' ||
         confirmFailed ||
         scannerExecutions.some((s) => s.status === 'failed');
+    const refutations = confirmationRefutations.map(summariseRefutation);
     const conclusion = {
         risk: overallRisk,
         publishedFindings: validatedFindings.length,
         validatedFindings: validatedPool.length,
         rejectedFindings: rejectedFindings.length,
+        ...(refutations.length ? { refutations } : {}),
         failThresholdReached,
         scanners: scannerExecutions,
         domains: riskClassification.domains,
@@ -44914,6 +44956,8 @@ async function runSecurityAssessment(context, options, dependencies, engine) {
         profile: options.profile,
         riskClassification,
         findings: validatedFindings,
+        refutations: conclusion.refutations,
+        incomplete,
         scanners: scannerExecutions,
         durationMs: Date.now() - startTime,
     });

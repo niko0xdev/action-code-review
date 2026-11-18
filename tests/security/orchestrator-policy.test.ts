@@ -198,6 +198,36 @@ describe('full validated security policy', () => {
 		}
 	);
 
+	it('redacts explicit refutations in the serialised action conclusion', async () => {
+		const syntheticKey = `sk-${'z'.repeat(1000)}`;
+		const candidate = {
+			...finding(syntheticKey, 'high'),
+			fingerprint: syntheticKey,
+			title: syntheticKey,
+		};
+		engine.findings = [candidate];
+		engine.confirmIds = [];
+		engine.refutations = [
+			{
+				...candidate,
+				status: 'rejected',
+				evidence: [
+					{
+						type: 'reasoning',
+						description: `Constant source: ${syntheticKey}`,
+					},
+				],
+			},
+		];
+		const result = await run({});
+		expect(result.conclusion.refutations).toHaveLength(1);
+		expect(JSON.stringify(result.conclusion)).not.toContain(syntheticKey);
+		expect(JSON.stringify(result.conclusion)).not.toContain(
+			syntheticKey.slice(-100)
+		);
+		expect(result.reportMarkdown).not.toContain(syntheticKey);
+	});
+
 	it('fills the publication cap after explicit confirmation refutes the first candidate', async () => {
 		engine.findings = [finding('a', 'critical'), finding('b', 'high')];
 		engine.confirmIds = ['b'];

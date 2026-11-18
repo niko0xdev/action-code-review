@@ -76,11 +76,22 @@ export interface ScannerExecution {
 	durationMs?: number;
 }
 
+export interface SecurityRefutation {
+	id: string;
+	fingerprint: string;
+	title: string;
+	file?: string;
+	startLine?: number;
+	reason: string;
+}
+
 export interface SecurityConclusion {
 	risk: RiskLevel;
 	publishedFindings: number;
 	validatedFindings: number;
 	rejectedFindings: number;
+	/** Pattern-redacted explicit confirmation refutations, when present. */
+	refutations?: SecurityRefutation[];
 	failThresholdReached: boolean;
 	scanners: ScannerExecution[];
 	domains: string[];
