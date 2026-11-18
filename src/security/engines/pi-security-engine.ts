@@ -221,10 +221,15 @@ export class PiSecurityEngine implements SecurityEngine {
 		// CLI fallback shares the regular harness execution boundary.
 		const { runIsolatedPiPrompt } = await import('../../harness/pi.js');
 		const keyed = PI_PROVIDER_KEYS.find(([name]) => process.env[name]);
+		if (keyed && baseUrl) {
+			throw new Error(
+				'A custom gateway requires an explicit API key; native provider credentials are not forwarded.'
+			);
+		}
 		const requestedModel = ctx.options.model || process.env.OPENAI_MODEL;
 		// The Action's OpenAI default must not replace a native provider's model.
 		const fallbackModel =
-			keyed && !baseUrl && requestedModel === PR_REVIEW_DEFAULTS.openaiModel
+			keyed && requestedModel === PR_REVIEW_DEFAULTS.openaiModel
 				? undefined
 				: requestedModel;
 		this.configDirPromise ??= mkdtemp(join(tmpdir(), 'acr-security-pi-'));

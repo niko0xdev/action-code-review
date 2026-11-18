@@ -292,20 +292,29 @@ describe('PiSecurityEngine fallback spawn', () => {
 
 	it.each([
 		{ model: 'native-review-model' },
-		{ model: 'gpt-4', baseUrl: 'https://gateway.invalid/v1' },
-	])(
-		'retains an explicit native model or gateway model: %j',
-		async (options) => {
-			process.env.ANTHROPIC_API_KEY = 'synthetic-provider-key';
-			ctx.options = options as SecurityOptions;
-			mockSpawn.mockImplementationOnce(() =>
-				fakeProc(assistant('{"findings":[]}'))
-			);
-			await engine().diff(ctx);
-			const { args } = lastSpawn();
-			expect(args[args.indexOf('--model') + 1]).toBe(options.model);
-		}
-	);
+		{ model: 'native-review-model-v2' },
+	])('retains explicit native model choices: %j', async (options) => {
+		process.env.ANTHROPIC_API_KEY = 'synthetic-provider-key';
+		ctx.options = options as SecurityOptions;
+		mockSpawn.mockImplementationOnce(() =>
+			fakeProc(assistant('{"findings":[]}'))
+		);
+		await engine().diff(ctx);
+		const { args } = lastSpawn();
+		expect(args[args.indexOf('--model') + 1]).toBe(options.model);
+	});
+
+	it('does not route an ambient native credential to a custom gateway', async () => {
+		process.env.ANTHROPIC_API_KEY = 'synthetic-provider-key';
+		ctx.options = {
+			baseUrl: 'https://gateway.invalid/v1',
+			model: 'gateway-review',
+		} as SecurityOptions;
+		await expect(engine().diff(ctx)).rejects.toThrow(
+			/gateway.*explicit API key/i
+		);
+		expect(mockSpawn).not.toHaveBeenCalled();
+	});
 
 	it('writes the configured gateway and disables compaction in the owned fallback directory', async () => {
 		ctx.options = {

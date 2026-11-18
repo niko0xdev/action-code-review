@@ -65,7 +65,7 @@ The implementation PR must pass the full quality and runtime gates before merge.
 
 The repository's own Linux review workflow explicitly installs `ripgrep` and `fd-find` before starting offline inspection. Repeated large-remediation reviews exhausted the default 60-call ceiling without producing a complete assessment. The workflow therefore allows at most 120 calls and asks the reviewer to plan within 100, while retaining timeout/output limits and incomplete-result handling. The selected patches in this audit PR total approximately 86,000 characters, above the default 30,000-character context cap. The repository workflow therefore supplies a finite 150,000-character context budget so selected patches fit without silently claiming clipped source as reviewed. The distributed Action's defaults remain unchanged. The runtime suite additionally exercises actual offline grep with repository-relative and blocked outside paths.
 
-## Self-review follow-up
+## Fallback configuration and contracts
 
 Live self-review identified a genuine owned-runtime configuration gap: fallback runs created an isolated directory but did not write gateway models or disable compaction there. The shared configuration writer now installs those files atomically while retaining built-in alternative-provider models when no gateway override is supplied, for both caller-owned and newly allocated directories. Regression tests cover both cases.
 
@@ -73,10 +73,12 @@ The exported security engine contract now documents the complete confirmation pa
 
 The independent verifier deliberately has a separate 24,000-character evidence budget. Raising the main review context does not raise this second-pass allowance. A candidate whose complete source patch cannot fit is retained with incomplete verification, preventing approval. This is a documented bounded-verification limit, rather than permission to silently discard an unverified candidate.
 
-## Final review decisions
+## Provider and runtime limits
 
 The native fallback does not forward the Action's default `gpt-4` model to a different provider without an explicit gateway. Explicit native model choices and gateway model overrides remain honoured. Regressions cover all six alternative-provider keys. The actual-runtime boundary fixture also exercises denied `find`/`ls` inputs and an allowed repository listing.
 
 Strict security envelope validation is intentional: a malformed candidate makes reasoning incomplete while static findings remain available. The output-byte guard bounds retained structured stdout, an individual pending line, and stderr independently. Accumulated update snapshots are discarded; their total wire volume is not capped. Tool calls, assistant text, and process time have separate limits, so a stream consisting solely of discarded non-text updates can run until the timeout. These remaining limits are explicit and do not constitute clean completion or approval.
 
-A further adversarial pass reproduced crashes on non-object JSON event lines and malformed message content. The consumer now treats those as inert diagnostics while retaining valid terminal events. Confirmation preserves existing remediation when no non-empty replacement is returned, and a malformed remediation field makes the batch incomplete. The native fallback references the canonical frozen Action model default.
+The consumer treats non-object JSON event lines and malformed message content as inert diagnostics while retaining valid terminal events. Confirmation preserves existing remediation when no non-empty replacement is returned, and a malformed remediation field makes the batch incomplete. The native fallback references the canonical frozen Action model default.
+
+A custom gateway must have its own explicit API key. The security fallback rejects the combination of a gateway URL and an ambient native-provider key before spawning, preventing automatic routing of unrelated credentials. Native providers retain their native endpoints. Reasoning, confirmation, and cleanup failures emit bounded, pattern-redacted diagnostics while preserving the existing incomplete-result and retention policies.

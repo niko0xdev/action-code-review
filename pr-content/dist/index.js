@@ -35257,9 +35257,12 @@ class PiSecurityEngine {
         // CLI fallback shares the regular harness execution boundary.
         const { runIsolatedPiPrompt } = await Promise.resolve(/* import() */).then(__nccwpck_require__.bind(__nccwpck_require__, 9357));
         const keyed = PI_PROVIDER_KEYS.find(([name]) => process.env[name]);
+        if (keyed && baseUrl) {
+            throw new Error('A custom gateway requires an explicit API key; native provider credentials are not forwarded.');
+        }
         const requestedModel = ctx.options.model || process.env.OPENAI_MODEL;
         // The Action's OpenAI default must not replace a native provider's model.
-        const fallbackModel = keyed && !baseUrl && requestedModel === _adapter_legacy_inputs_js__WEBPACK_IMPORTED_MODULE_3__/* .PR_REVIEW_DEFAULTS */ .nU.openaiModel
+        const fallbackModel = keyed && requestedModel === _adapter_legacy_inputs_js__WEBPACK_IMPORTED_MODULE_3__/* .PR_REVIEW_DEFAULTS */ .nU.openaiModel
             ? undefined
             : requestedModel;
         this.configDirPromise ??= (0,node_fs_promises__WEBPACK_IMPORTED_MODULE_0__.mkdtemp)((0,node_path__WEBPACK_IMPORTED_MODULE_2__.join)((0,node_os__WEBPACK_IMPORTED_MODULE_1__.tmpdir)(), 'acr-security-pi-'));
@@ -44710,6 +44713,14 @@ function applyQualityGate(candidates, context, minSeverity = 'medium', minConfid
 
 
 
+/**
+ * Main security workflow orchestrator.
+ * Spec reference: §5.2, §8, §9, §11, §18, §19, §26.
+ */
+function logEngineFailure(stage, error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    core.warning(`Security ${stage} failed: ${(0,redactor/* redactSecrets */.f)(detail).slice(0, 200)}`);
+}
 async function runSecurityWorkflow(context, options, dependencies = {}) {
     const engine = dependencies.engine ??
         (options.profile === 'diff'
@@ -44723,8 +44734,7 @@ async function runSecurityWorkflow(context, options, dependencies = {}) {
             await engine.dispose?.();
         }
         catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
-            core.warning(`Security runtime cleanup failed; preserving the assessment: ${(0,redactor/* redactSecrets */.f)(detail).slice(0, 200)}`);
+            logEngineFailure('runtime cleanup', error);
         }
     }
 }
@@ -44753,7 +44763,8 @@ async function runSecurityAssessment(context, options, dependencies, engine) {
                     : 'balanced');
         }
     }
-    catch {
+    catch (error) {
+        logEngineFailure('reasoning', error);
         // Static findings remain useful, but a failed reasoning engine is never
         // equivalent to a clean audit and must be visible to policy/reporters.
         engineCandidates = [];
@@ -44856,7 +44867,8 @@ async function runSecurityAssessment(context, options, dependencies, engine) {
                 });
             }
         }
-        catch {
+        catch (error) {
+            logEngineFailure('confirmation', error);
             // Unconfirmed high findings stay published, but the run is incomplete.
             confirmFailed = true;
         }

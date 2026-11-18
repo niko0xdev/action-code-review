@@ -27,6 +27,13 @@ import { applyQualityGate } from './validators/quality-gate.js';
  * Main security workflow orchestrator.
  * Spec reference: §5.2, §8, §9, §11, §18, §19, §26.
  */
+function logEngineFailure(stage: string, error: unknown): void {
+	const detail = error instanceof Error ? error.message : String(error);
+	core.warning(
+		`Security ${stage} failed: ${redactSecrets(detail).slice(0, 200)}`
+	);
+}
+
 export interface SecurityWorkflowDependencies {
 	engine?: SecurityEngine;
 	runScanners?: typeof runSecurityScanners;
@@ -48,10 +55,7 @@ export async function runSecurityWorkflow(
 		try {
 			await engine.dispose?.();
 		} catch (error) {
-			const detail = error instanceof Error ? error.message : String(error);
-			core.warning(
-				`Security runtime cleanup failed; preserving the assessment: ${redactSecrets(detail).slice(0, 200)}`
-			);
+			logEngineFailure('runtime cleanup', error);
 		}
 	}
 }
@@ -92,7 +96,8 @@ async function runSecurityAssessment(
 						: 'balanced'
 			);
 		}
-	} catch {
+	} catch (error) {
+		logEngineFailure('reasoning', error);
 		// Static findings remain useful, but a failed reasoning engine is never
 		// equivalent to a clean audit and must be visible to policy/reporters.
 		engineCandidates = [];
@@ -230,7 +235,8 @@ async function runSecurityAssessment(
 						: [];
 				});
 			}
-		} catch {
+		} catch (error) {
+			logEngineFailure('confirmation', error);
 			// Unconfirmed high findings stay published, but the run is incomplete.
 			confirmFailed = true;
 		}

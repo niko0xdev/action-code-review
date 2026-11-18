@@ -1,6 +1,7 @@
 import { chmod, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import * as core from '@actions/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
 	SecurityContext,
@@ -101,6 +102,7 @@ function run(overrides: Partial<SecurityOptions>, outputDir?: string) {
 }
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	engine.findings = [];
 	engine.confirmFails = false;
 	engine.disposeFails = false;
@@ -112,11 +114,15 @@ afterEach(() => {
 
 describe('security orchestrator policy', () => {
 	it('marks the review incomplete when the confirm pass fails', async () => {
+		const warning = vi.spyOn(core, 'warning').mockImplementation(() => {});
 		engine.findings = [finding('a', 'high')];
 		engine.confirmFails = true;
 		const result = await run({});
 		expect(result.conclusion.incomplete).toBe(true);
 		expect(result.summaryMarkdown).toMatch(/incomplete/i);
+		expect(warning).toHaveBeenCalledWith(
+			expect.stringContaining('confirm exploded')
+		);
 	});
 
 	it('preserves the completed assessment when runtime cleanup fails', async () => {
