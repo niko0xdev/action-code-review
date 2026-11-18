@@ -40,16 +40,18 @@ jobs:
           openai-base-url: ${{ secrets.OPENAI_API_URL }}
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
           exclude-patterns: "*.md,*.txt"
+          include-dir: 'src/data,tests/canary'
           track-progress: 'true'
           auto-approve-when-resolved: 'true'
           min-severity: 'high'
           max-context-chars: '150000'
           review-prompt: >-
-            Focus on actionable correctness, security, and regression issues in the
-            supplied patches. Use targeted source reads and searches rather than
-            repeatedly listing the repository. Plan for at most 100 inspection
-            calls within the 120-call hard ceiling. Report incomplete analysis
-            honestly if the available evidence or budget is insufficient.
+            Review the selected tenant lookup adapter and its regression tests for
+            actionable correctness, security, and regression issues. The injected
+            query interface returns a caller-defined result. Inspect its declared
+            contract and the supplied patches using targeted reads and searches.
+            Report incomplete analysis honestly if the available evidence or budget
+            is insufficient.
         env:
           # Large audit remediations need a bounded allowance above the default 60.
           AI_REVIEW_PI_MAX_TOOL_CALLS: '120'
