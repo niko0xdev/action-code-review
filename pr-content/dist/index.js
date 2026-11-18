@@ -43668,10 +43668,10 @@ ${domainLines}
 ;// CONCATENATED MODULE: ./src/security/sarif/sarif-generator.ts
 
 /**
- * Generate valid SARIF v2.1.0 JSON representation from normalized security findings.
+ * Generate valid SARIF v2.1.0 JSON representation from normalised security findings.
  * Spec reference: §18.
  */
-function generateSarif(findings, toolName = 'action-code-review', toolVersion = '2.0.0') {
+function generateSarif(findings, toolName = 'action-code-review', toolVersion = '3.0.0') {
     const rulesMap = new Map();
     const results = [];
     for (const finding of findings) {
