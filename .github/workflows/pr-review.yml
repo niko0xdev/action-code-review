@@ -41,6 +41,8 @@ jobs:
           openai-model: ${{ secrets.OPENAI_API_MODEL }}
           exclude-patterns: "*.md,*.txt"
           track-progress: 'true'
+          auto-approve-when-resolved: 'true'
+          min-severity: 'high'
           max-context-chars: '150000'
           review-prompt: >-
             Focus on actionable correctness, security, and regression issues in the
@@ -56,3 +58,22 @@ jobs:
           AI_REVIEW_VERIFY_BUDGET_USD: '0.50'
           AI_REVIEW_VERIFY_PASS: 'true'
           AI_REVIEW_MIN_CONFIDENCE: '0.8'
+
+      - name: Verify live PR content generation
+        uses: ./pr-content
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-base-url: ${{ secrets.OPENAI_API_URL }}
+          openai-model: ${{ secrets.OPENAI_API_MODEL }}
+          max-tokens: '4096'
+          custom-instructions: |
+            Write in British English. The title must start with 'test:'.
+            This PR is held for end-to-end verification and must not be merged.
+            Include 'Do not merge – E2E verification only.' in the description.
+            Include the exact marker ACR_E2E_CONTENT_20261118 in the description.
+            Include this exact plain-text line without escaping dollar signs:
+            Literal substitution probe: $& $$ $` $'
+            Put that literal probe inside a fenced text block.
+            Do not include a '## Description' heading in the JSON description.
+            Do not mention providers or model names. Do not claim tests passed.
