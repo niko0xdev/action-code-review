@@ -1,0 +1,22 @@
+{
+  "version": "3.0.0",
+  "commit": "204c8d3ecef1386a61fd3267b3393470f617d696",
+  "exact_tag": "v3.0.0",
+  "aliases": [
+    "v3.0",
+    "v3"
+  ],
+  "quality_ci": 44334365122,
+  "bundles": {
+    "pr-review/dist/index.js": {
+      "blob": "d27fa8c76de718717fc1f0efdf3f891c870fba48",
+      "sha256": "2f687778d2b81e1df4c4d87e90e0eb0744b5f166c6ce399ba0bab9d14330bf71",
+      "bytes": 1964232
+    },
+    "pr-content/dist/index.js": {
+      "blob": "0ae3646a81d09aebc25f795f1f1d3f68fdaa1e72",
+      "sha256": "7d9d77cab551db91e1a315b3db4862960ea84b9321231e19d316082bbd34cc41",
+      "bytes": 1964189
+    }
+  }
+}
