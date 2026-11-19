@@ -107,6 +107,8 @@ const result = spawnSync(
 		'--no-skills',
 		'--no-prompt-templates',
 		'--no-context-files',
+		'--no-approve',
+		'--no-mcp',
 		'--no-tools',
 		'--provider',
 		'openai',

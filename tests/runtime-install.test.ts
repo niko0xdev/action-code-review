@@ -225,7 +225,7 @@ describe('pr-review install step', () => {
 		const regex = new RegExp(pattern);
 		expect(regex.test(PI_PACKAGE_PIN)).toBe(true);
 		expect(regex.test(`${PI_PACKAGE_PIN}0`)).toBe(false);
-		expect(regex.test(PI_PACKAGE_PIN.replace('.73.', '.7x3.'))).toBe(false);
+		expect(regex.test(PI_PACKAGE_PIN.replace('.', 'x'))).toBe(false);
 		expect(pattern.replaceAll('\\', '')).toContain(`^${PI_PACKAGE_PIN}`);
 	});
 
