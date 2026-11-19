@@ -20,6 +20,35 @@ function requiredNumber(args: Record<string, unknown>, key: string): number {
 	return value;
 }
 
+const CHECK_CONCLUSIONS = ['success', 'failure', 'neutral'];
+const ANNOTATION_LEVELS = ['failure', 'warning', 'notice'];
+
+/** Checks API `output`, with at most 50 annotations per request. */
+function checkOutput(args: Record<string, unknown>) {
+	const output = recordArgs(args.output);
+	const annotations = output.annotations;
+	if (!Array.isArray(annotations) || annotations.length > 50)
+		throw new Error('annotations must be an array of at most 50');
+	return {
+		title: requiredString(output, 'title'),
+		summary: requiredString(output, 'summary'),
+		annotations: annotations.map((item) => {
+			const annotation = recordArgs(item);
+			const level = requiredString(annotation, 'annotation_level');
+			if (!ANNOTATION_LEVELS.includes(level))
+				throw new Error('Invalid annotation_level');
+			return {
+				path: requiredString(annotation, 'path'),
+				start_line: requiredNumber(annotation, 'start_line'),
+				end_line: requiredNumber(annotation, 'end_line'),
+				annotation_level: level as 'failure' | 'warning' | 'notice',
+				title: requiredString(annotation, 'title'),
+				message: requiredString(annotation, 'message'),
+			};
+		}),
+	};
+}
+
 function repositoryArgs(args: Record<string, unknown>) {
 	return {
 		owner: requiredString(args, 'owner'),
@@ -182,6 +211,30 @@ export function toPublisherOctokit(
 			},
 			users: {
 				getAuthenticated: () => client.rest.users.getAuthenticated(),
+			},
+			checks: {
+				create: (args: Record<string, unknown>) => {
+					const conclusion = requiredString(args, 'conclusion');
+					if (!CHECK_CONCLUSIONS.includes(conclusion))
+						throw new Error('Invalid conclusion');
+					if (args.status !== 'completed') throw new Error('Invalid status');
+					return client.rest.checks.create({
+						owner: requiredString(args, 'owner'),
+						repo: requiredString(args, 'repo'),
+						name: requiredString(args, 'name'),
+						head_sha: requiredString(args, 'head_sha'),
+						status: 'completed',
+						conclusion: conclusion as 'success' | 'failure' | 'neutral',
+						output: checkOutput(args),
+					});
+				},
+				update: (args: Record<string, unknown>) =>
+					client.rest.checks.update({
+						owner: requiredString(args, 'owner'),
+						repo: requiredString(args, 'repo'),
+						check_run_id: requiredNumber(args, 'check_run_id'),
+						output: checkOutput(args),
+					}),
 			},
 		},
 		users: { getAuthenticated: () => client.rest.users.getAuthenticated() },

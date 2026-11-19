@@ -15,6 +15,7 @@ import {
 	buildSummaryBody,
 	describeApproval,
 	describeReviewExecution,
+	mdSafe,
 	stickySummaryMarker,
 } from './comments.js';
 import { hasWritePermission } from './permissions.js';
@@ -103,6 +104,10 @@ export interface PublisherOctokit extends OctokitLike {
 			}>;
 			updateComment?(args: Record<string, unknown>): Promise<{ data: unknown }>;
 		};
+		checks?: {
+			create(args: Record<string, unknown>): Promise<{ data: { id: number } }>;
+			update?(args: Record<string, unknown>): Promise<{ data: unknown }>;
+		};
 	};
 	users?: { getAuthenticated: () => Promise<{ data: { login: string } }> };
 }
@@ -151,6 +156,8 @@ export interface PublishParams {
 	autoApproveWhenResolved?: boolean;
 	/** Re-read PR head before publishing when the Octokit adapter supports it. */
 	recheckHead?: boolean;
+	/** Opt-in `check-run`: mirror the decision in an annotated check run. */
+	checkRun?: boolean;
 }
 
 export function buildReviewPayload(
@@ -404,6 +411,134 @@ export async function publishReview(
 			issue_number: prNumber,
 			body: summaryBody,
 		});
+	}
+	if (params.checkRun) {
+		await publishCheckRun(octokit, params, validFindings, {
+			blocking: params.blockOnIssues !== false && hasBlockingFinding,
+		});
+	}
+}
+
+const CHECK_RUN_NAME = 'AI Code Review';
+/** GitHub accepts at most 50 annotations per create or update request. */
+const ANNOTATIONS_PER_REQUEST = 50;
+const CHECK_SUMMARY_MAX_CHARS = 20_000;
+const CHECK_SUMMARY_MAX_FINDINGS = 50;
+const ANNOTATION_LEVEL: Record<string, 'failure' | 'warning' | 'notice'> = {
+	critical: 'failure',
+	high: 'failure',
+	medium: 'warning',
+	low: 'notice',
+};
+
+function cap(text: string, max: number): string {
+	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/**
+ * Opt-in check run on the reviewed head. Its conclusion mirrors the review
+ * decision so branch protection can require it. Best effort: a Checks API
+ * error (usually a missing `checks: write`) only logs a warning and never
+ * changes the review outcome.
+ */
+async function publishCheckRun(
+	octokit: PublisherOctokit,
+	params: PublishParams,
+	findings: Finding[],
+	state: { blocking: boolean }
+): Promise<void> {
+	const { owner, repo, headSha, result } = params;
+	const failed = reviewFailed(result);
+	const conclusion =
+		failed || state.blocking
+			? 'failure'
+			: findings.length > 0
+				? 'neutral'
+				: 'success';
+	const title = failed
+		? 'Review incomplete'
+		: findings.length === 0
+			? 'No findings'
+			: `${findings.length} finding(s), ${state.blocking ? 'changes requested' : 'non-blocking'}`;
+	const count = (severity: string) =>
+		findings.filter((finding) => finding.severity === severity).length;
+	const lines = findings
+		.slice(0, CHECK_SUMMARY_MAX_FINDINGS)
+		.map(
+			(finding) =>
+				`- **${finding.severity.toUpperCase()}** \`${mdSafe(finding.path)}:${finding.line}\` ${mdSafe(finding.title)}`
+		);
+	const summary = cap(
+		redactSecrets(
+			[
+				`**Review status:** ${result.reviewStatus ?? 'complete'}${failed ? ' (incomplete or failed)' : ''}`,
+				`**Risk:** ${result.risk}`,
+				'',
+				'| Critical | High | Medium | Low |',
+				'|---|---|---|---|',
+				`| ${count('critical')} | ${count('high')} | ${count('medium')} | ${count('low')} |`,
+				...(lines.length > 0 ? ['', ...lines] : []),
+				...(findings.length > lines.length
+					? [
+							'',
+							`${findings.length - lines.length} more finding(s) in the annotations.`,
+						]
+					: []),
+			].join('\n')
+		),
+		CHECK_SUMMARY_MAX_CHARS
+	);
+	const annotations = findings.map((finding) => ({
+		path: finding.path,
+		start_line: finding.line,
+		end_line: finding.line,
+		annotation_level: ANNOTATION_LEVEL[finding.severity] ?? 'notice',
+		title: cap(
+			redactSecrets(`[${finding.severity.toUpperCase()}] ${finding.title}`),
+			255
+		),
+		message: cap(redactSecrets(finding.description || finding.title), 2000),
+	}));
+	try {
+		const checks = octokit.rest.checks;
+		if (!checks) throw new Error('Checks API is not available');
+		const created = await checks.create({
+			owner,
+			repo,
+			name: CHECK_RUN_NAME,
+			head_sha: headSha,
+			status: 'completed',
+			conclusion,
+			output: {
+				title,
+				summary,
+				annotations: annotations.slice(0, ANNOTATIONS_PER_REQUEST),
+			},
+		});
+		for (
+			let start = ANNOTATIONS_PER_REQUEST;
+			start < annotations.length;
+			start += ANNOTATIONS_PER_REQUEST
+		) {
+			if (!checks.update) throw new Error('checks.update is not available');
+			await checks.update({
+				owner,
+				repo,
+				check_run_id: created.data.id,
+				output: {
+					title,
+					summary,
+					annotations: annotations.slice(
+						start,
+						start + ANNOTATIONS_PER_REQUEST
+					),
+				},
+			});
+		}
+	} catch (error) {
+		core.warning(
+			`[check-run] Could not publish the "${CHECK_RUN_NAME}" check run; grant \`checks: write\` in the workflow permissions. The review itself is unaffected: ${redactDetail(error)}`
+		);
 	}
 }
 

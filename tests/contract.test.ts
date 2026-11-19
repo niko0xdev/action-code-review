@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
+import { mapPrReviewInputs } from '../src/adapter/legacy-inputs.js';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -277,5 +278,29 @@ describe('V1 contract: environment variable names', () => {
 		]) {
 			expect(doc).toContain(env);
 		}
+	});
+});
+
+describe('additive check-run input', () => {
+	const action = loadAction('pr-review/action.yml');
+
+	it('is optional, off by default, and forwarded to the step env', () => {
+		expect(action.inputs?.['check-run']).toMatchObject({
+			required: false,
+			default: 'false',
+		});
+		const steps = (
+			action.runs as { steps?: Array<{ env?: Record<string, string> }> }
+		).steps;
+		expect(
+			steps?.some(
+				(step) => step.env?.['INPUT_CHECK-RUN'] === '${{ inputs.check-run }}'
+			)
+		).toBe(true);
+	});
+
+	it('maps the input with default false', () => {
+		expect(mapPrReviewInputs({}).checkRun).toBe(false);
+		expect(mapPrReviewInputs({ 'check-run': 'true' }).checkRun).toBe(true);
 	});
 });

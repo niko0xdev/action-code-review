@@ -114,6 +114,7 @@ export async function runPrReviewAction(): Promise<void> {
 		'max-context-chars': core.getInput('max-context-chars'),
 		'scorecard-context': core.getInput('scorecard-context'),
 		'repository-instructions': core.getInput('repository-instructions'),
+		'check-run': core.getInput('check-run'),
 		'security-skills': core.getInput('security-skills'),
 	});
 	const llmConfig = resolveEngineConfig(legacyOptions);
@@ -426,6 +427,7 @@ export async function runPrReviewAction(): Promise<void> {
 						core.getInput('buffer-inline-comments') !== 'false' &&
 						core.getInput('classify-inline-comments') !== 'false',
 					autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
+					checkRun: legacyOptions.checkRun,
 					actor:
 						process.env.GITHUB_ACTOR ??
 						(
