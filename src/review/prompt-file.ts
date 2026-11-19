@@ -50,13 +50,13 @@ function warn(file: string, why: string): undefined {
  * - `absent`: the path does not exist at base.
  * - `unavailable`: the base object cannot be read locally.
  */
-type BaseResult =
+export type BaseResult =
 	| { kind: 'content'; text: string }
 	| { kind: 'ignore'; why: string }
 	| { kind: 'absent' }
 	| { kind: 'unavailable' };
 
-async function readFromGit(
+export async function readFromGit(
 	repoPath: string,
 	baseSha: string,
 	rel: string
@@ -92,7 +92,7 @@ async function readFromGit(
 	}
 }
 
-async function readFromApi(
+export async function readFromApi(
 	fetchBase: NonNullable<PromptFileOptions['fetchBase']>,
 	baseSha: string,
 	rel: string

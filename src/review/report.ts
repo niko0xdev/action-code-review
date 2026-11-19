@@ -248,6 +248,10 @@ export function buildReviewReport(input: BuildReviewReportInput): ReviewReport {
 			);
 		if (result.diagnostics.prelintRan)
 			report.diagnostics.prelintRan = [...result.diagnostics.prelintRan];
+		if (result.diagnostics.repositoryInstructions)
+			report.diagnostics.repositoryInstructions = [
+				...result.diagnostics.repositoryInstructions,
+			];
 		if (result.diagnostics.prelintSkipped)
 			report.diagnostics.prelintSkipped = [
 				...result.diagnostics.prelintSkipped,
