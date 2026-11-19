@@ -221,11 +221,8 @@ runs:
         INPUT_SCORECARD-CONTEXT: ${{ inputs.scorecard-context }}
         INPUT_CHECK-RUN: ${{ inputs.check-run }}
         INPUT_SECURITY-SKILLS: ${{ inputs.security-skills }}
-<<<<<<< HEAD
         INPUT_REPOSITORY-INSTRUCTIONS: ${{ inputs.repository-instructions }}
-=======
         INPUT_SECRET-SCAN: ${{ inputs.secret-scan }}
->>>>>>> 969b22c (feat(review): add an opt-in deterministic secret scan to normal reviews)
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_SECURITY-PROFILE: ${{ inputs.security-profile }}
         INPUT_SECURITY-MIN-SEVERITY: ${{ inputs.security-min-severity }}

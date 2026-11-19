@@ -151,8 +151,9 @@ on fork pull requests.
 independent of `exclude-patterns`, after the main review and any verify pass.
 Each match becomes a `security` finding (critical or high, confidence 1, rule id
 `secret-scan/<rule>`) that names the credential type but never quotes the value;
-a line the model already flagged as a security issue is not duplicated, at most
-ten matches are added per run, and counts and risk are recomputed. The number
+a deterministic match always wins on its line, so a model finding cannot hide a
+credential, at most ten matches are added per run, and counts and risk are
+recomputed. The number
 added is reported as `diagnostics.secretScanFindings`.
 
 `security-skills` is a new optional input (additive; the default `'all'` leaves

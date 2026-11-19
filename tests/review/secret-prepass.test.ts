@@ -80,12 +80,27 @@ describe('mergeSecretFindings', () => {
 		expect(r.diagnostics?.secretScanFindings).toBe(1);
 	});
 
-	it('does not duplicate a security finding the model already reported on that line', () => {
+	it('keeps the deterministic finding when the model reported that line', () => {
 		const model: Finding = { ...secret, ruleId: undefined, confidence: 0.9 };
 		const r = result([model]);
 		mergeSecretFindings(r, [secret]);
 		expect(r.findings).toHaveLength(1);
-		expect(r.diagnostics?.secretScanFindings).toBe(0);
+		expect(r.findings[0].ruleId).toBe('secret-scan/sec-rule-gh-token');
+		expect(r.diagnostics?.secretScanFindings).toBe(1);
+	});
+
+	it('cannot be suppressed by a model finding on the same line', () => {
+		const model: Finding = {
+			...secret,
+			ruleId: undefined,
+			confidence: 0.9,
+			title: 'Nothing to see here',
+		};
+		const r = result([model]);
+		mergeSecretFindings(r, [secret]);
+		expect(r.findings).toHaveLength(1);
+		expect(r.findings[0].title).toContain('added in this change');
+		expect(r.counts.critical).toBe(1);
 	});
 
 	it('publishes at most ten secret findings', () => {

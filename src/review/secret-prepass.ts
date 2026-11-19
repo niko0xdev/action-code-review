@@ -48,15 +48,21 @@ export function mergeSecretFindings(
 	result: ReviewResult,
 	secrets: readonly Finding[]
 ): void {
-	const taken = new Set(
-		result.findings
-			.filter((finding) => finding.category === 'security')
-			.map((finding) => `${finding.path}:${finding.line}`)
+	// The deterministic match wins on its own line: a model finding there is
+	// dropped rather than allowed to hide the credential, so model output can
+	// never suppress a scan result.
+	const matched = new Set(
+		secrets.map((secret) => `${secret.path}:${secret.line}`)
 	);
-	const added = secrets
-		.filter((secret) => !taken.has(`${secret.path}:${secret.line}`))
-		.slice(0, MAX_SECRET_FINDINGS);
-	result.findings = [...added, ...result.findings];
+	const kept = result.findings.filter(
+		(finding) =>
+			!(
+				finding.category === 'security' &&
+				matched.has(`${finding.path}:${finding.line}`)
+			)
+	);
+	const added = secrets.slice(0, MAX_SECRET_FINDINGS);
+	result.findings = [...added, ...kept];
 	result.counts = computeCounts(result.findings);
 	result.risk = riskFromFindings(result.findings);
 	result.diagnostics = {
