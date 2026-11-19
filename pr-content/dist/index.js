@@ -32734,6 +32734,75 @@ async function preparePiRuntimeConfig(config, options) {
 
 /***/ }),
 
+/***/ 6591:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+/* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
+/* harmony export */   R0: () => (/* binding */ isChangedLine),
+/* harmony export */   ZV: () => (/* binding */ parseUnifiedHunkHeader)
+/* harmony export */ });
+/* unused harmony export mapPatchLines */
+/**
+ * Unified-diff helpers. Findings must anchor to new-side line numbers so
+ * GitHub can place inline comments; these utilities do that mapping.
+ */
+const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
+function parseUnifiedHunkHeader(line) {
+    const match = line.match(HUNK_RE);
+    if (!match) {
+        return null;
+    }
+    return {
+        oldStart: Number(match[1]),
+        oldLines: match[2] ? Number(match[2]) : 1,
+        newStart: Number(match[3]),
+        newLines: match[4] ? Number(match[4]) : 1,
+    };
+}
+/** Map every patch line to its new-side position across all hunks. */
+function mapPatchLines(patch) {
+    const mapped = [];
+    let currentNewLine = null;
+    for (const raw of patch.split('\n')) {
+        const header = parseUnifiedHunkHeader(raw);
+        if (header) {
+            currentNewLine = header.newStart;
+            continue;
+        }
+        if (raw.startsWith('diff ') || raw.startsWith('index ')) {
+            continue;
+        }
+        if (currentNewLine === null) {
+            continue;
+        }
+        if (raw.startsWith('+')) {
+            mapped.push({ type: 'addition', newLine: currentNewLine, content: raw });
+            currentNewLine += 1;
+        }
+        else if (raw.startsWith('-')) {
+            mapped.push({ type: 'deletion', content: raw });
+        }
+        else if (raw.startsWith('\\')) {
+            // "\ No newline at end of file" — no line consumed
+        }
+        else {
+            mapped.push({ type: 'context', newLine: currentNewLine, content: raw });
+            currentNewLine += 1;
+        }
+    }
+    return mapped;
+}
+/**
+ * True when `line` points at a line the PR touched on the new side
+ * (an addition or a context line inside a hunk — both are commentable).
+ */
+function isChangedLine(patch, line) {
+    return mapPatchLines(patch).some((mapped) => mapped.newLine === line && mapped.type !== 'deletion');
+}
+
+
+/***/ }),
+
 /***/ 7154:
 /***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
 
@@ -35104,6 +35173,7 @@ function classifyPrRisk(changedFiles) {
 /* harmony export */ __nccwpck_require__.d(__webpack_exports__, {
 /* harmony export */   PiSecurityEngine: () => (/* binding */ PiSecurityEngine)
 /* harmony export */ });
+/* unused harmony export confirmationSnippet */
 /* harmony import */ var node_fs_promises__WEBPACK_IMPORTED_MODULE_0__ = __nccwpck_require__(1455);
 /* harmony import */ var node_fs_promises__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__nccwpck_require__.n(node_fs_promises__WEBPACK_IMPORTED_MODULE_0__);
 /* harmony import */ var node_os__WEBPACK_IMPORTED_MODULE_1__ = __nccwpck_require__(8161);
@@ -35111,11 +35181,13 @@ function classifyPrRisk(changedFiles) {
 /* harmony import */ var node_path__WEBPACK_IMPORTED_MODULE_2__ = __nccwpck_require__(6760);
 /* harmony import */ var node_path__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__nccwpck_require__.n(node_path__WEBPACK_IMPORTED_MODULE_2__);
 /* harmony import */ var _adapter_legacy_inputs_js__WEBPACK_IMPORTED_MODULE_3__ = __nccwpck_require__(9953);
+/* harmony import */ var _context_diff_js__WEBPACK_IMPORTED_MODULE_9__ = __nccwpck_require__(6591);
 /* harmony import */ var _llm_openai_compatible_js__WEBPACK_IMPORTED_MODULE_4__ = __nccwpck_require__(8251);
 /* harmony import */ var _shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_5__ = __nccwpck_require__(1877);
 /* harmony import */ var _findings_normalizer_js__WEBPACK_IMPORTED_MODULE_6__ = __nccwpck_require__(2533);
 /* harmony import */ var _redaction_redactor_js__WEBPACK_IMPORTED_MODULE_7__ = __nccwpck_require__(8759);
 /* harmony import */ var _skills_selector_js__WEBPACK_IMPORTED_MODULE_8__ = __nccwpck_require__(9347);
+
 
 
 
@@ -35151,6 +35223,65 @@ const PI_PROVIDER_KEYS = [
  * Pi-powered security engine for diff security reviews and finding confirmations.
  * Spec reference: §5.2, §15, §22.
  */
+const CONFIRMATION_SNIPPET_CHARS = 5000;
+/**
+ * The part of a patch a confirmer needs: the hunks that cover the claimed
+ * lines, within `maxChars`. A covering hunk larger than the budget is cut to a
+ * window around the claimed line, so the sink is always shown. When no hunk
+ * covers the line, the head of the patch is supplied as before.
+ */
+function confirmationSnippet(patch, startLine, endLine, maxChars) {
+    if (!patch)
+        return '';
+    const head = patch.slice(0, maxChars);
+    if (typeof startLine !== 'number')
+        return head;
+    const last = typeof endLine === 'number' ? Math.max(endLine, startLine) : startLine;
+    const covering = patch.split(/\n(?=@@ )/).filter((hunk) => {
+        const header = (0,_context_diff_js__WEBPACK_IMPORTED_MODULE_9__/* .parseUnifiedHunkHeader */ .ZV)(hunk.split('\n', 1)[0]);
+        if (!header)
+            return false;
+        const hunkEnd = header.newStart + Math.max(header.newLines, 1) - 1;
+        return header.newStart <= last && startLine <= hunkEnd;
+    });
+    if (covering.length === 0)
+        return head;
+    const joined = covering.join('\n');
+    if (joined.length <= maxChars)
+        return joined;
+    const [header, ...body] = covering[0].split('\n');
+    if (body.length === 0)
+        return head;
+    const parsed = (0,_context_diff_js__WEBPACK_IMPORTED_MODULE_9__/* .parseUnifiedHunkHeader */ .ZV)(header);
+    let newLine = parsed?.newStart ?? 1;
+    let target = 0;
+    for (let i = 0; i < body.length; i++) {
+        if (newLine >= startLine && !body[i].startsWith('-')) {
+            target = i;
+            break;
+        }
+        if (!body[i].startsWith('-') && !body[i].startsWith('\\'))
+            newLine += 1;
+    }
+    const title = `${header} (excerpt around new line ${startLine})`;
+    let from = target;
+    let to = target;
+    let used = title.length + 1 + body[target].length;
+    for (let grew = true; grew;) {
+        grew = false;
+        if (to + 1 < body.length && used + body[to + 1].length + 1 <= maxChars) {
+            to += 1;
+            used += body[to].length + 1;
+            grew = true;
+        }
+        if (from > 0 && used + body[from - 1].length + 1 <= maxChars) {
+            from -= 1;
+            used += body[from].length + 1;
+            grew = true;
+        }
+    }
+    return [title, ...body.slice(from, to + 1)].join('\n').slice(0, maxChars);
+}
 class PiSecurityEngine {
     name = 'pi-security';
     /** One isolated Pi config directory per engine run, not per Pi call. */
@@ -35256,7 +35387,7 @@ class PiSecurityEngine {
     }
     buildConfirmationPrompt(ctx, finding) {
         const targetFile = ctx.changedFiles.find((f) => f.filename === finding.file);
-        const patchSnippet = targetFile?.patch || '';
+        const patchSnippet = confirmationSnippet(targetFile?.patch || '', finding.startLine, finding.endLine ?? finding.startLine, CONFIRMATION_SNIPPET_CHARS);
         return [
             PI_SECURITY_SYSTEM_PROMPT,
             '',
@@ -35268,7 +35399,7 @@ class PiSecurityEngine {
             `Claimed Evidence: ${(0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_5__/* .escapeControlChars */ ._s)(finding.evidence.map((e) => e.description).join('; '))}`,
             '',
             'Diff Context (UNTRUSTED DATA):',
-            (0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_5__/* .fenced */ .OF)((0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_5__/* .redactForPrompt */ .zv)(patchSnippet.slice(0, 5000)), 'diff'),
+            (0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_5__/* .fenced */ .OF)((0,_shared_prompt_safety_js__WEBPACK_IMPORTED_MODULE_5__/* .redactForPrompt */ .zv)(patchSnippet), 'diff'),
             '',
             'Analyse whether this is a genuine security issue or a false positive.',
             'Respond ONLY with JSON:',
@@ -42563,65 +42694,8 @@ function isTestFile(filename) {
     return false;
 }
 
-;// CONCATENATED MODULE: ./src/context/diff.ts
-/**
- * Unified-diff helpers. Findings must anchor to new-side line numbers so
- * GitHub can place inline comments; these utilities do that mapping.
- */
-const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
-function parseUnifiedHunkHeader(line) {
-    const match = line.match(HUNK_RE);
-    if (!match) {
-        return null;
-    }
-    return {
-        oldStart: Number(match[1]),
-        oldLines: match[2] ? Number(match[2]) : 1,
-        newStart: Number(match[3]),
-        newLines: match[4] ? Number(match[4]) : 1,
-    };
-}
-/** Map every patch line to its new-side position across all hunks. */
-function mapPatchLines(patch) {
-    const mapped = [];
-    let currentNewLine = null;
-    for (const raw of patch.split('\n')) {
-        const header = parseUnifiedHunkHeader(raw);
-        if (header) {
-            currentNewLine = header.newStart;
-            continue;
-        }
-        if (raw.startsWith('diff ') || raw.startsWith('index ')) {
-            continue;
-        }
-        if (currentNewLine === null) {
-            continue;
-        }
-        if (raw.startsWith('+')) {
-            mapped.push({ type: 'addition', newLine: currentNewLine, content: raw });
-            currentNewLine += 1;
-        }
-        else if (raw.startsWith('-')) {
-            mapped.push({ type: 'deletion', content: raw });
-        }
-        else if (raw.startsWith('\\')) {
-            // "\ No newline at end of file" — no line consumed
-        }
-        else {
-            mapped.push({ type: 'context', newLine: currentNewLine, content: raw });
-            currentNewLine += 1;
-        }
-    }
-    return mapped;
-}
-/**
- * True when `line` points at a line the PR touched on the new side
- * (an addition or a context line inside a hunk — both are commentable).
- */
-function isChangedLine(patch, line) {
-    return mapPatchLines(patch).some((mapped) => mapped.newLine === line && mapped.type !== 'deletion');
-}
-
+// EXTERNAL MODULE: ./src/context/diff.ts
+var diff = __nccwpck_require__(6591);
 ;// CONCATENATED MODULE: ./src/review/validator.ts
 
 function validateFinding(finding, changedFiles, minConfidence) {
@@ -42639,7 +42713,7 @@ function validateFinding(finding, changedFiles, minConfidence) {
     if (!file.patch) {
         return false;
     }
-    return isChangedLine(file.patch, finding.line);
+    return (0,diff/* isChangedLine */.R0)(file.patch, finding.line);
 }
 function validateFindings(findings, changedFiles, minConfidence = 0.8) {
     return findings.filter((finding) => validateFinding(finding, changedFiles, minConfidence));
@@ -43650,6 +43724,7 @@ ${refutationsSection}
 
 ;// CONCATENATED MODULE: ./src/security/reporters/sticky-summary.ts
 
+
 /**
  * Render sticky security summary comment for GitHub PR.
  * Spec reference: §16.
@@ -43669,21 +43744,21 @@ function buildStickySecuritySummary(options) {
     }
     const scannerLines = options.scanners.map((s) => {
         if (s.status === 'success') {
-            return `✓ **${s.name}**: ${s.findings} candidate(s) (${s.durationMs ?? 0}ms)`;
+            return `✓ **${proseEscape(s.name)}**: ${s.findings} candidate(s) (${s.durationMs ?? 0}ms)`;
         }
         if (s.status === 'skipped') {
-            return `– **${s.name}**: skipped${s.reason ? ` (${s.reason})` : ''}`;
+            return `– **${proseEscape(s.name)}**: skipped${s.reason ? ` (${proseEscape(s.reason)})` : ''}`;
         }
-        return `✗ **${s.name}**: failed${s.reason ? ` (${s.reason})` : ''}`;
+        return `✗ **${proseEscape(s.name)}**: failed${s.reason ? ` (${proseEscape(s.reason)})` : ''}`;
     });
     const domainLines = options.domains.length
-        ? options.domains.map((d) => `• ${d}`).join('\n')
+        ? options.domains.map((d) => `• ${proseEscape(d)}`).join('\n')
         : '• general';
     const findingTableRows = options.findings.slice(0, 10).map((f) => {
         const loc = f.file
             ? `${f.file}${f.startLine ? `:${f.startLine}` : ''}`
             : 'Repository';
-        return `| **${f.severity.toUpperCase()}** | ${f.cwe || 'N/A'} | ${f.title} | \`${loc}\` | ${f.confidence} |`;
+        return `| **${f.severity.toUpperCase()}** | ${proseEscape(f.cwe || 'N/A')} | ${proseEscape(f.title)} | ${codeSpan(loc).replace(/\|/g, '\\|')} | ${f.confidence} |`;
     });
     const tableSection = findingTableRows.length > 0
         ? `\n### Validated Findings\n| Severity | CWE | Title | Location | Confidence |\n|---|---|---|---|---|\n${findingTableRows.join('\n')}\n`
@@ -44718,7 +44793,7 @@ function applyQualityGate(candidates, context, minSeverity = 'medium', minConfid
         if (context.scope !== 'audit' &&
             context.changedFiles.some((f) => f.filename === fileName)) {
             const changed = context.changedFiles.find((f) => f.filename === fileName);
-            if (changed?.patch && !isChangedLine(changed.patch, startLine)) {
+            if (changed?.patch && !(0,diff/* isChangedLine */.R0)(changed.patch, startLine)) {
                 finding.status = 'rejected';
                 rejected.push(finding);
                 continue;
@@ -44882,9 +44957,17 @@ async function runSecurityAssessment(context, options, dependencies, engine) {
         (riskClassification.level === 'high' ||
             riskClassification.level === 'critical_surface')) {
         try {
-            // Scanner findings with confirmed confidence don't need re-confirmation
+            // Only deterministic scanner findings may skip re-confirmation. The
+            // reasoning model can label its own output "confirmed", so the label
+            // alone is never trusted: an occurrence is exempt only when a scanner
+            // produced it and no reasoning finding shares its key.
+            const engineKeys = new Set(engineCandidates.map(findingOccurrenceKey));
+            const scannerKeys = new Set(scannerCandidates
+                .map(findingOccurrenceKey)
+                .filter((key) => !engineKeys.has(key)));
             const needsConfirm = (f) => (f.severity === 'critical' || f.severity === 'high') &&
-                f.confidence !== 'confirmed';
+                !(f.confidence === 'confirmed' &&
+                    scannerKeys.has(findingOccurrenceKey(f)));
             const llmHighCandidates = validatedPool.filter(needsConfirm);
             if (llmHighCandidates.length > 0) {
                 const confirmedHigh = await engine.confirm(context, structuredClone(llmHighCandidates));
@@ -45081,15 +45164,22 @@ function isFailThresholdReached(findings, failOn) {
 
 ;// CONCATENATED MODULE: ./src/security/reporters/inline-reporter.ts
 
+
+/** The marker alphabet the publisher matches; nothing can close the comment early. */
+function markerId(fingerprint) {
+    return fingerprint.replace(/[^A-Za-z0-9_-]/g, '');
+}
 /**
  * Format developer-actionable inline PR comment for a security finding.
  * Spec reference: §17.
  */
 function formatInlineSecurityComment(finding) {
-    const cwePart = finding.cwe ? ` · ${finding.cwe}` : '';
-    const owaspPart = finding.owasp ? ` (${finding.owasp})` : '';
-    const header = `**${finding.severity.toUpperCase()}**${cwePart} · **${finding.title}**${owaspPart}`;
-    const evidenceItems = finding.evidence.map((e) => `- ${e.description}`);
+    // Every model-supplied value is escaped so it renders as inert prose: no
+    // heading, link, table, mention, raw HTML, or early comment close.
+    const cwePart = finding.cwe ? ` · ${proseEscape(finding.cwe)}` : '';
+    const owaspPart = finding.owasp ? ` (${proseEscape(finding.owasp)})` : '';
+    const header = `**${finding.severity.toUpperCase()}**${cwePart} · **${proseEscape(finding.title)}**${owaspPart}`;
+    const evidenceItems = finding.evidence.map((e) => `- ${proseEscape(e.description)}`);
     const evidenceBlock = evidenceItems.length > 0
         ? `**Evidence:**\n${evidenceItems.join('\n')}`
         : '';
@@ -45097,11 +45187,11 @@ function formatInlineSecurityComment(finding) {
         ? `**Impact / Exploitability:** ${finding.exploitability.toUpperCase()}`
         : '';
     const fixBlock = finding.remediation
-        ? `**Recommended fix:**\n${finding.remediation}`
+        ? `**Recommended fix:**\n${proseEscape(finding.remediation)}`
         : '';
     const confidenceBlock = `**Confidence:** ${finding.confidence.toUpperCase()}`;
     const body = [
-        `<!-- ai-review-id: ${finding.fingerprint} -->`,
+        `<!-- ai-review-id: ${markerId(finding.fingerprint)} -->`,
         header,
         '',
         evidenceBlock,

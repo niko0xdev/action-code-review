@@ -147,10 +147,22 @@ async function runSecurityAssessment(
 			riskClassification.level === 'critical_surface')
 	) {
 		try {
-			// Scanner findings with confirmed confidence don't need re-confirmation
+			// Only deterministic scanner findings may skip re-confirmation. The
+			// reasoning model can label its own output "confirmed", so the label
+			// alone is never trusted: an occurrence is exempt only when a scanner
+			// produced it and no reasoning finding shares its key.
+			const engineKeys = new Set(engineCandidates.map(findingOccurrenceKey));
+			const scannerKeys = new Set(
+				scannerCandidates
+					.map(findingOccurrenceKey)
+					.filter((key) => !engineKeys.has(key))
+			);
 			const needsConfirm = (f: SecurityFinding) =>
 				(f.severity === 'critical' || f.severity === 'high') &&
-				f.confidence !== 'confirmed';
+				!(
+					f.confidence === 'confirmed' &&
+					scannerKeys.has(findingOccurrenceKey(f))
+				);
 			const llmHighCandidates = validatedPool.filter(needsConfirm);
 			if (llmHighCandidates.length > 0) {
 				const confirmedHigh = await engine.confirm(

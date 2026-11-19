@@ -44,7 +44,9 @@ describe('SecurityBoundaryProtections', () => {
 
 		const comment = formatInlineSecurityComment(finding);
 		expect(comment).not.toContain('ghp_1234567890abcdef1234567890abcdef');
-		expect(comment).toContain('[REDACTED_GITHUB_TOKEN]');
+		// Escaping adds invisible backslashes; the label still renders as is.
+		expect(comment.replace(/\\/g, '')).toContain('[REDACTED_GITHUB_TOKEN]');
+		expect(comment).not.toContain('<script>');
 		expect(comment).toContain('<!-- ai-review-id: fp-inj-1 -->');
 	});
 
