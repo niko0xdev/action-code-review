@@ -9,6 +9,9 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 - Drop `.git` entries from the reviewer's `grep` and `find` results and redact authorisation headers and GitHub tokens in every inspection result. With the default `actions/checkout` settings the job token in `.git/config` could otherwise reach the model provider. The documented workflows now set `persist-credentials: false`.
 - Resolve the security engine's gateway and model from the frozen `OPENAI_API_URL` and `OPENAI_API_MODEL` variables (legacy `OPENAI_BASE_URL` and `OPENAI_MODEL` remain fallbacks), so a gateway key is never sent to the default OpenAI endpoint.
 - Redact PR titles, PR bodies, patches, and confirmation snippets with the full detector set (private keys, AWS secrets, passwords) before they reach a prompt.
+- The security confirmation pass no longer trusts a `confirmed` label written by the reasoning model; only deterministic scanner findings may skip it.
+- The confirmation prompt carries the diff hunk that covers the claimed line instead of the first 5,000 characters of the patch, so a sink late in a large patch is no longer refuted unseen.
+- Model text in security inline comments and the sticky summary is escaped, so it cannot render headings, links, mentions, table rows, or raw HTML in the bot's comments.
 
 ### Fixed
 

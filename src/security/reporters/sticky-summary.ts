@@ -1,5 +1,6 @@
 import { redactSecrets } from '../redaction/redactor.js';
 import type { ScannerExecution, SecurityFinding } from '../types.js';
+import { codeSpan, proseEscape } from './audit-reporter.js';
 
 export interface StickySummaryOptions {
 	risk: string;
@@ -36,23 +37,23 @@ export function buildStickySecuritySummary(
 
 	const scannerLines = options.scanners.map((s) => {
 		if (s.status === 'success') {
-			return `✓ **${s.name}**: ${s.findings} candidate(s) (${s.durationMs ?? 0}ms)`;
+			return `✓ **${proseEscape(s.name)}**: ${s.findings} candidate(s) (${s.durationMs ?? 0}ms)`;
 		}
 		if (s.status === 'skipped') {
-			return `– **${s.name}**: skipped${s.reason ? ` (${s.reason})` : ''}`;
+			return `– **${proseEscape(s.name)}**: skipped${s.reason ? ` (${proseEscape(s.reason)})` : ''}`;
 		}
-		return `✗ **${s.name}**: failed${s.reason ? ` (${s.reason})` : ''}`;
+		return `✗ **${proseEscape(s.name)}**: failed${s.reason ? ` (${proseEscape(s.reason)})` : ''}`;
 	});
 
 	const domainLines = options.domains.length
-		? options.domains.map((d) => `• ${d}`).join('\n')
+		? options.domains.map((d) => `• ${proseEscape(d)}`).join('\n')
 		: '• general';
 
 	const findingTableRows = options.findings.slice(0, 10).map((f) => {
 		const loc = f.file
 			? `${f.file}${f.startLine ? `:${f.startLine}` : ''}`
 			: 'Repository';
-		return `| **${f.severity.toUpperCase()}** | ${f.cwe || 'N/A'} | ${f.title} | \`${loc}\` | ${f.confidence} |`;
+		return `| **${f.severity.toUpperCase()}** | ${proseEscape(f.cwe || 'N/A')} | ${proseEscape(f.title)} | ${codeSpan(loc).replace(/\|/g, '\\|')} | ${f.confidence} |`;
 	});
 
 	const tableSection =
