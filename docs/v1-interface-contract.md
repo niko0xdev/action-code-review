@@ -123,12 +123,28 @@ it in branch protection. Its conclusion mirrors the review decision: `failure`
 when a blocking finding exists and `block-on-issues` is `'true'`, or when the
 review is incomplete or failed; `neutral` when only non-blocking findings exist;
 `success` when there are no findings. Each finding becomes an annotation
+`check-run` is opt-in. When `'true'`, after the review is published the action
+creates one completed check run named `AI Code Review` on the reviewed head
+commit, so teams can require it in branch protection. Its conclusion mirrors
+the review decision exactly: `failure` when the review submitted
+`REQUEST_CHANGES` (a blocking finding, `block-on-issues` `'true'`, and write
+permission), `neutral` when only non-blocking findings exist, `success` when
+there are no findings, and `neutral` for an incomplete review when
+`AI_REVIEW_FAIL_ON_INCOMPLETE=false` (the step only warns in that case, so the
+check must not fail the branch). A run that reviews nothing still reports a
+completed, neutral check, so a required check is never left unreported: a draft,
+an empty file selection, and a head that moved during the review each produce
+one with a `Skipped:` title, the last on the head that is current. Each finding becomes an annotation
 (`failure` for critical and high, `warning` for medium, `notice` for low) with a
 redacted, length-capped title and message; the first 50 go with the create
 request and the rest follow in `checks.update` batches of 50. The output summary
-is compact, redacted Markdown capped at 20,000 characters. The workflow needs
-`checks: write`; any Checks API error (403, 404, 422, or other) only logs a
-warning and never fails, blocks, or changes the review.
+is compact Markdown capped at 20,000 characters, and every model-supplied value
+in it is redacted before it is escaped, so a quoted credential cannot survive
+as an HTML entity. The workflow needs `checks: write`; any Checks API error
+(403, 404, 422, or other) only logs a warning, worded by what the status means,
+and never fails, blocks, or changes the review. A pull request from a fork has a
+read-only token and cannot create a check, so the check is reported as missing
+on fork pull requests.
 
 `security-skills` is a new optional input (additive; the default `'all'` leaves
 the review prompt byte-identical). `'auto'` keeps only the curated security skills

@@ -32486,6 +32486,7 @@ const PR_REVIEW_DEFAULTS = {
     includeFullContent: 'false',
     maxContextChars: '30000',
     scorecardContext: 'false',
+    checkRun: 'false',
     securitySkills: 'all',
     repositoryInstructions: 'false',
 };
@@ -32590,6 +32591,7 @@ function mapPrReview(inputs) {
         includeFullContent: bool(get(inputs, 'include-full-content'), PR_REVIEW_DEFAULTS.includeFullContent),
         maxContextChars: int(get(inputs, 'max-context-chars'), PR_REVIEW_DEFAULTS.maxContextChars, 'max-context-chars'),
         scorecardContext: bool(get(inputs, 'scorecard-context'), PR_REVIEW_DEFAULTS.scorecardContext),
+        checkRun: bool(get(inputs, 'check-run'), PR_REVIEW_DEFAULTS.checkRun),
         securitySkills: (0,_shared_numeric_js__WEBPACK_IMPORTED_MODULE_2__/* .parseEnum */ .nL)(get(inputs, 'security-skills'), _security_skills_auto_select_js__WEBPACK_IMPORTED_MODULE_1__/* .SECURITY_SKILLS_MODES */ .j, PR_REVIEW_DEFAULTS.securitySkills, 'security-skills'),
         repositoryInstructions: bool(get(inputs, 'repository-instructions'), PR_REVIEW_DEFAULTS.repositoryInstructions),
     };
@@ -40636,6 +40638,15 @@ async function publishReview(octokit, params) {
             if (current.data.head.sha !== headSha) {
                 result.reviewStatus = 'stale';
                 core.warning(`[review] PR head changed during review (${headSha} -> ${current.data.head.sha}); skipped publishing stale findings.`);
+                // A required check must never hang: report the skip on the head
+                // that is now current instead of leaving it unreported.
+                if (params.checkRun)
+                    await publishSkipCheckRun(octokit, {
+                        owner,
+                        repo,
+                        headSha: current.data.head.sha,
+                        reason: 'the pull request head changed during the review',
+                    });
                 return;
             }
         }
@@ -40808,6 +40819,162 @@ async function publishReview(octokit, params) {
             issue_number: prNumber,
             body: summaryBody,
         });
+    }
+    if (params.checkRun) {
+        await publishCheckRun(octokit, params, validFindings, {
+            blocking: shouldBlock,
+        });
+    }
+}
+const CHECK_RUN_NAME = 'AI Code Review';
+/** GitHub accepts at most 50 annotations per create or update request. */
+const ANNOTATIONS_PER_REQUEST = 50;
+const CHECK_SUMMARY_MAX_CHARS = 20_000;
+const CHECK_SUMMARY_MAX_FINDINGS = 50;
+const ANNOTATION_LEVEL = {
+    critical: 'failure',
+    high: 'failure',
+    medium: 'warning',
+    low: 'notice',
+};
+function cap(text, max) {
+    return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+/**
+ * Opt-in check run on the reviewed head. Its conclusion mirrors the review
+ * decision so branch protection can require it. Best effort: a Checks API
+ * error (usually a missing `checks: write`) only logs a warning and never
+ * changes the review outcome.
+ */
+async function publishCheckRun(octokit, params, findings, state) {
+    const { owner, repo, headSha, result } = params;
+    // The step's own judgement of incompleteness wins, so the check and the
+    // step never disagree; without it the publisher's notion is used.
+    const incomplete = params.incomplete ?? reviewFailed(result);
+    const failOnIncomplete = params.failOnIncomplete !== false;
+    const conclusion = incomplete
+        ? failOnIncomplete
+            ? 'failure'
+            : 'neutral'
+        : state.blocking
+            ? 'failure'
+            : findings.length > 0
+                ? 'neutral'
+                : 'success';
+    const title = conclusion === 'failure'
+        ? incomplete
+            ? 'Review incomplete'
+            : `${findings.length} finding(s), changes requested`
+        : conclusion === 'neutral'
+            ? incomplete
+                ? 'Review incomplete (the step only warns)'
+                : findings.length === 0
+                    ? 'No findings'
+                    : `${findings.length} finding(s), non-blocking`
+            : 'No findings';
+    const count = (severity) => findings.filter((finding) => finding.severity === severity).length;
+    const lines = findings.slice(0, CHECK_SUMMARY_MAX_FINDINGS).map((finding) => 
+    // Redact before escaping: escaping first turns quotes into
+    // entities, which stops the quote-based secret detectors.
+    `- **${finding.severity.toUpperCase()}** \`${mdSafe((0,redactor/* redactSecrets */.f)(finding.path))}:${finding.line}\` ${mdSafe((0,redactor/* redactSecrets */.f)(finding.title))}`);
+    const summary = cap((0,redactor/* redactSecrets */.f)([
+        `**Review status:** ${result.reviewStatus ?? 'complete'}${incomplete ? ' (incomplete or failed)' : ''}`,
+        `**Risk:** ${result.risk}`,
+        '',
+        '| Critical | High | Medium | Low |',
+        '|---|---|---|---|',
+        `| ${count('critical')} | ${count('high')} | ${count('medium')} | ${count('low')} |`,
+        ...(lines.length > 0 ? ['', ...lines] : []),
+        ...(findings.length > lines.length
+            ? [
+                '',
+                `${findings.length - lines.length} more finding(s) in the annotations.`,
+            ]
+            : []),
+    ].join('\n')), CHECK_SUMMARY_MAX_CHARS);
+    const annotations = findings.map((finding) => ({
+        path: finding.path,
+        start_line: finding.line,
+        end_line: finding.line,
+        annotation_level: ANNOTATION_LEVEL[finding.severity] ?? 'notice',
+        title: cap((0,redactor/* redactSecrets */.f)(`[${finding.severity.toUpperCase()}] ${finding.title}`), 255),
+        message: cap((0,redactor/* redactSecrets */.f)(finding.description || finding.title), 2000),
+    }));
+    try {
+        const checks = octokit.rest.checks;
+        if (!checks)
+            throw new Error('Checks API is not available');
+        const created = await checks.create({
+            owner,
+            repo,
+            name: CHECK_RUN_NAME,
+            head_sha: headSha,
+            status: 'completed',
+            conclusion,
+            output: {
+                title,
+                summary,
+                annotations: annotations.slice(0, ANNOTATIONS_PER_REQUEST),
+            },
+        });
+        for (let start = ANNOTATIONS_PER_REQUEST; start < annotations.length; start += ANNOTATIONS_PER_REQUEST) {
+            if (!checks.update) {
+                core.warning('[check-run] The check run was created but the remaining annotations could not be published: checks.update is not available.');
+                return;
+            }
+            await checks.update({
+                owner,
+                repo,
+                check_run_id: created.data.id,
+                output: {
+                    title,
+                    summary,
+                    annotations: annotations.slice(start, start + ANNOTATIONS_PER_REQUEST),
+                },
+            });
+        }
+    }
+    catch (error) {
+        core.warning(checkRunWarning(error, 'publish'));
+    }
+}
+/** A Checks API failure, worded by what the status actually means. */
+function checkRunWarning(error, phase) {
+    const status = error?.status;
+    const detail = redactDetail(error);
+    if (status === 403 || status === 404)
+        return `[check-run] Could not ${phase} the "${CHECK_RUN_NAME}" check run: ${detail}. Grant \`checks: write\` in the workflow permissions; a pull request from a fork has a read-only token and cannot create checks. The review itself is unaffected.`;
+    if (status === 422)
+        return `[check-run] Could not ${phase} the "${CHECK_RUN_NAME}" check run: ${detail}. GitHub rejected the request (an annotation path or line may be outside the commit). The review itself is unaffected.`;
+    return `[check-run] Could not ${phase} the "${CHECK_RUN_NAME}" check run: ${detail}. The review itself is unaffected.`;
+}
+/**
+ * Report a completed, neutral check for a run that did not review anything
+ * (a draft, an empty file selection, a head that moved). A required check
+ * must never be left unreported, or branch protection waits forever.
+ */
+async function publishSkipCheckRun(octokit, params) {
+    const { owner, repo, headSha, reason } = params;
+    const checks = octokit.rest.checks;
+    if (!checks)
+        return;
+    try {
+        await checks.create({
+            owner,
+            repo,
+            name: CHECK_RUN_NAME,
+            head_sha: headSha,
+            status: 'completed',
+            conclusion: 'neutral',
+            output: {
+                title: `Skipped: ${reason}`,
+                summary: `The review did not run: ${reason}. No findings were produced, and no approval was submitted.`,
+                annotations: [],
+            },
+        });
+    }
+    catch (error) {
+        core.warning(checkRunWarning(error, 'publish'));
     }
 }
 /**
@@ -41414,6 +41581,33 @@ function requiredNumber(args, key) {
         throw new Error(`Missing ${key}`);
     return value;
 }
+const CHECK_CONCLUSIONS = ['success', 'failure', 'neutral'];
+const ANNOTATION_LEVELS = ['failure', 'warning', 'notice'];
+/** Checks API `output`, with at most 50 annotations per request. */
+function checkOutput(args) {
+    const output = recordArgs(args.output);
+    const annotations = output.annotations;
+    if (!Array.isArray(annotations) || annotations.length > 50)
+        throw new Error('annotations must be an array of at most 50');
+    return {
+        title: requiredString(output, 'title'),
+        summary: requiredString(output, 'summary'),
+        annotations: annotations.map((item) => {
+            const annotation = recordArgs(item);
+            const level = requiredString(annotation, 'annotation_level');
+            if (!ANNOTATION_LEVELS.includes(level))
+                throw new Error('Invalid annotation_level');
+            return {
+                path: requiredString(annotation, 'path'),
+                start_line: requiredNumber(annotation, 'start_line'),
+                end_line: requiredNumber(annotation, 'end_line'),
+                annotation_level: level,
+                title: requiredString(annotation, 'title'),
+                message: requiredString(annotation, 'message'),
+            };
+        }),
+    };
+}
 function repositoryArgs(args) {
     return {
         owner: requiredString(args, 'owner'),
@@ -41549,6 +41743,30 @@ function toPublisherOctokit(client) {
             },
             users: {
                 getAuthenticated: () => client.rest.users.getAuthenticated(),
+            },
+            checks: {
+                create: (args) => {
+                    const conclusion = requiredString(args, 'conclusion');
+                    if (!CHECK_CONCLUSIONS.includes(conclusion))
+                        throw new Error('Invalid conclusion');
+                    if (args.status !== 'completed')
+                        throw new Error('Invalid status');
+                    return client.rest.checks.create({
+                        owner: requiredString(args, 'owner'),
+                        repo: requiredString(args, 'repo'),
+                        name: requiredString(args, 'name'),
+                        head_sha: requiredString(args, 'head_sha'),
+                        status: 'completed',
+                        conclusion: conclusion,
+                        output: checkOutput(args),
+                    });
+                },
+                update: (args) => client.rest.checks.update({
+                    owner: requiredString(args, 'owner'),
+                    repo: requiredString(args, 'repo'),
+                    check_run_id: requiredNumber(args, 'check_run_id'),
+                    output: checkOutput(args),
+                }),
             },
         },
         users: { getAuthenticated: () => client.rest.users.getAuthenticated() },
@@ -43540,6 +43758,21 @@ var registry = __nccwpck_require__(5672);
 
 
 
+/**
+ * Report a completed, neutral check for a run that reviewed nothing, so a
+ * required check is never left unreported. Best effort: a Checks API error
+ * only logs a warning.
+ */
+async function reportSkippedCheck(enabled, octokit, repo, headSha, reason) {
+    if (!enabled)
+        return;
+    await publishSkipCheckRun(octokit, {
+        owner: repo.owner,
+        repo: repo.repo,
+        headSha,
+        reason,
+    });
+}
 function positiveTimeout(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -43595,6 +43828,7 @@ async function runPrReviewAction() {
         'max-context-chars': core.getInput('max-context-chars'),
         'scorecard-context': core.getInput('scorecard-context'),
         'repository-instructions': core.getInput('repository-instructions'),
+        'check-run': core.getInput('check-run'),
         'security-skills': core.getInput('security-skills'),
     });
     const llmConfig = resolveEngineConfig(legacyOptions);
@@ -43608,6 +43842,7 @@ async function runPrReviewAction() {
     if (shouldSkipDraft(reviewContext.pullRequest.draft)) {
         core.info(`[review] PR #${prNumber} is a draft and AI_REVIEW_SKIP_DRAFTS=true — skipping review`);
         core.setOutput('review-summary', 'skipped: draft pull request');
+        await reportSkippedCheck(legacyOptions.checkRun, octokit, repoInfo, reviewContext.pullRequest.headSha, 'the pull request is a draft');
         return;
     }
     reviewContext.repositoryPath = process.env.GITHUB_WORKSPACE || process.cwd();
@@ -43633,6 +43868,7 @@ async function runPrReviewAction() {
         else
             core.notice(emptyMessage);
         core.setOutput('review-summary', 'skipped: no files to review');
+        await reportSkippedCheck(legacyOptions.checkRun, octokit, repoInfo, reviewContext.pullRequest.headSha, 'no files were selected for review');
         return;
     }
     const detected = resolveProfiles(reviewContext.repositoryPath, process.env.AI_REVIEW_PROFILE);
@@ -43764,6 +44000,7 @@ async function runPrReviewAction() {
                 ...result.diagnostics,
                 repositoryInstructions: instructions.files,
             };
+        const failOnIncomplete = process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false';
         // Opt-in second LLM pass (env-only; V1 contract frozen, no new
         // input): challenges high/critical findings, drops hallucinations.
         if (process.env.AI_REVIEW_VERIFY_PASS === 'true') {
@@ -43815,6 +44052,13 @@ async function runPrReviewAction() {
         // serialized copy; the engine result is not mutated. Emission is
         // best effort: if building or writing the report also fails, the
         // publish error stays primary. See docs/v1-interface-contract.md.
+        // The step's own judgement of incompleteness, computed after the verify
+        // pass has run, so an opt-in check run reports the same outcome as the
+        // step.
+        const incompleteFailure = incompleteReviewFailure({
+            result,
+            filesSelected,
+        });
         await withReviewReportOutput(async () => {
             await publishReview(octokit, {
                 owner: repoInfo.owner,
@@ -43837,6 +44081,9 @@ async function runPrReviewAction() {
                 bufferInlineComments: core.getInput('buffer-inline-comments') !== 'false' &&
                     core.getInput('classify-inline-comments') !== 'false',
                 autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
+                incomplete: Boolean(incompleteFailure),
+                failOnIncomplete,
+                checkRun: legacyOptions.checkRun,
                 actor: process.env.GITHUB_ACTOR ??
                     github.context.payload.pull_request?.user?.login ??
                     github.context.actor,
@@ -43875,7 +44122,7 @@ async function runPrReviewAction() {
             if (section)
                 await core.summary.addRaw(section).write();
         }
-        const failure = incompleteReviewFailure({ result, filesSelected });
+        const failure = incompleteFailure;
         core.setOutput('review-summary', reviewSummaryText({ result, filesSelected }, failure));
         // A crashed group or an unanalyzed file used to leave the step green
         // while the summary looked like a clean review. Fail the step so the

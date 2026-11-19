@@ -74,7 +74,11 @@ function fakeClient(
 				createComment: vi.fn(async () => ({ data: {} })),
 				updateComment: vi.fn(),
 			},
-			repos: { getCollaboratorPermissionLevel: vi.fn() },
+			repos: {
+				getCollaboratorPermissionLevel: vi.fn(async () => ({
+					data: { permission: 'write' },
+				})),
+			},
 			users: {
 				getAuthenticated: vi.fn(async () => {
 					throw Object.assign(new Error('Resource not accessible'), {
@@ -362,7 +366,7 @@ describe('opt-in check run', () => {
 		expect(warn).toHaveBeenCalledWith(expect.stringContaining('checks: write'));
 	});
 
-	it('creates no check when publishing is skipped as stale', async () => {
+	it('reports the stale skip instead of leaving the head unreported', async () => {
 		const { client, createCheck } = fakeClient([]);
 		client.rest.pulls.get = vi.fn(async () => ({
 			data: { head: { sha: 'newer-head' } },
@@ -371,7 +375,81 @@ describe('opt-in check run', () => {
 			toPublisherOctokit(client as never),
 			checkParams([finding])
 		);
-		expect(createCheck).not.toHaveBeenCalled();
+		expect(createCheck).toHaveBeenCalledTimes(1);
+		expect(createCheck.mock.calls[0][0]).toMatchObject({
+			head_sha: 'newer-head',
+			conclusion: 'neutral',
+		});
+	});
+
+	it('redacts a quoted secret assignment in a finding title', async () => {
+		const { client, createCheck } = fakeClient([]);
+		await publishReview(
+			toPublisherOctokit(client as never),
+			checkParams([
+				{
+					...finding,
+					title: 'Hard-coded password = "S3cr3tP4ssw0rd!x"',
+					description: "secret='q8Lm2Xv4Rt7Yw1Bn5Cd9Fg3Hj6Kp0Sa8Ue'",
+				},
+			])
+		);
+		const sent = JSON.stringify(createCheck.mock.calls[0][0]);
+		expect(sent).not.toContain('S3cr3tP4ssw0rd');
+		expect(sent).not.toContain('q8Lm2Xv4Rt7Yw1Bn5Cd9Fg3Hj6Kp0Sa8Ue');
+	});
+
+	it('does not fail the check when the actor lacks write permission', async () => {
+		const { client, createCheck } = fakeClient([]);
+		(
+			client.rest.repos.getCollaboratorPermissionLevel as ReturnType<
+				typeof vi.fn
+			>
+		).mockResolvedValue({ data: { permission: 'read' } });
+		await publishReview(toPublisherOctokit(client as never), {
+			...checkParams([finding]),
+			requireWritePermissions: true,
+			actor: 'outsider',
+		});
+		expect(createCheck.mock.calls[0][0]).toMatchObject({
+			conclusion: 'neutral',
+		});
+		expect(output(createCheck.mock.calls[0]).title).not.toContain(
+			'changes requested'
+		);
+	});
+
+	it('is neutral, not failed, when incompleteness does not fail the step', async () => {
+		const { client, createCheck } = fakeClient([]);
+		const run = checkParams([]);
+		run.result.reviewStatus = 'incomplete';
+		await publishReview(toPublisherOctokit(client as never), {
+			...run,
+			incomplete: true,
+			failOnIncomplete: false,
+		});
+		expect(createCheck.mock.calls[0][0]).toMatchObject({
+			conclusion: 'neutral',
+		});
+		expect(output(createCheck.mock.calls[0]).title).toContain('incomplete');
+	});
+
+	it('reports a neutral check on the current head when the head changed', async () => {
+		const { client, createCheck } = fakeClient([]);
+		client.rest.pulls.get = vi.fn(async () => ({
+			data: { head: { sha: 'newer-head' } },
+		}));
+		await publishReview(
+			toPublisherOctokit(client as never),
+			checkParams([finding])
+		);
+		expect(createCheck).toHaveBeenCalledTimes(1);
+		expect(createCheck.mock.calls[0][0]).toMatchObject({
+			head_sha: 'newer-head',
+			conclusion: 'neutral',
+			status: 'completed',
+		});
+		expect(output(createCheck.mock.calls[0]).title).toContain('Skipped');
 	});
 
 	it('makes no Checks API call when the input is off', async () => {

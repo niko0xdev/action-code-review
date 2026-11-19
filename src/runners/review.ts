@@ -13,7 +13,11 @@ import { fetchPrContext } from '../context/pr.js';
 import { runPrelint } from '../context/prelint.js';
 import { loadScorecardContext } from '../context/scorecard.js';
 import { trackPhase } from '../github/progress.js';
-import { buildJobSummary, publishReview } from '../github/review.js';
+import {
+	buildJobSummary,
+	publishReview,
+	publishSkipCheckRun,
+} from '../github/review.js';
 import {
 	DEFAULT_MAX_ASSISTANT_BYTES,
 	DEFAULT_MAX_OUTPUT_BYTES,
@@ -52,6 +56,27 @@ import {
 import { profilesWithSkills } from '../skills/registry.js';
 import type { Severity } from '../types/finding.js';
 import { toPublisherOctokit } from './octokit.js';
+
+/**
+ * Report a completed, neutral check for a run that reviewed nothing, so a
+ * required check is never left unreported. Best effort: a Checks API error
+ * only logs a warning.
+ */
+async function reportSkippedCheck(
+	enabled: boolean,
+	octokit: Parameters<typeof publishSkipCheckRun>[0],
+	repo: { owner: string; repo: string },
+	headSha: string,
+	reason: string
+): Promise<void> {
+	if (!enabled) return;
+	await publishSkipCheckRun(octokit, {
+		owner: repo.owner,
+		repo: repo.repo,
+		headSha,
+		reason,
+	});
+}
 
 function positiveTimeout(value: string | undefined, fallback: number): number {
 	const parsed = Number(value);
@@ -132,6 +157,13 @@ export async function runPrReviewAction(): Promise<void> {
 			`[review] PR #${prNumber} is a draft and AI_REVIEW_SKIP_DRAFTS=true — skipping review`
 		);
 		core.setOutput('review-summary', 'skipped: draft pull request');
+		await reportSkippedCheck(
+			legacyOptions.checkRun,
+			octokit,
+			repoInfo,
+			reviewContext.pullRequest.headSha,
+			'the pull request is a draft'
+		);
 		return;
 	}
 	reviewContext.repositoryPath = process.env.GITHUB_WORKSPACE || process.cwd();
@@ -168,6 +200,13 @@ export async function runPrReviewAction(): Promise<void> {
 			core.warning(emptyMessage);
 		else core.notice(emptyMessage);
 		core.setOutput('review-summary', 'skipped: no files to review');
+		await reportSkippedCheck(
+			legacyOptions.checkRun,
+			octokit,
+			repoInfo,
+			reviewContext.pullRequest.headSha,
+			'no files were selected for review'
+		);
 		return;
 	}
 
@@ -334,6 +373,8 @@ export async function runPrReviewAction(): Promise<void> {
 				...result.diagnostics,
 				repositoryInstructions: instructions.files,
 			};
+		const failOnIncomplete =
+			process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false';
 		// Opt-in second LLM pass (env-only; V1 contract frozen, no new
 		// input): challenges high/critical findings, drops hallucinations.
 		if (process.env.AI_REVIEW_VERIFY_PASS === 'true') {
@@ -402,6 +443,13 @@ export async function runPrReviewAction(): Promise<void> {
 		// serialized copy; the engine result is not mutated. Emission is
 		// best effort: if building or writing the report also fails, the
 		// publish error stays primary. See docs/v1-interface-contract.md.
+		// The step's own judgement of incompleteness, computed after the verify
+		// pass has run, so an opt-in check run reports the same outcome as the
+		// step.
+		const incompleteFailure = incompleteReviewFailure({
+			result,
+			filesSelected,
+		});
 		await withReviewReportOutput(
 			async () => {
 				await publishReview(octokit, {
@@ -427,6 +475,8 @@ export async function runPrReviewAction(): Promise<void> {
 						core.getInput('buffer-inline-comments') !== 'false' &&
 						core.getInput('classify-inline-comments') !== 'false',
 					autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
+					incomplete: Boolean(incompleteFailure),
+					failOnIncomplete,
 					checkRun: legacyOptions.checkRun,
 					actor:
 						process.env.GITHUB_ACTOR ??
@@ -480,7 +530,7 @@ export async function runPrReviewAction(): Promise<void> {
 			const section = buildRawHarnessSection(harness.runs, dumpBudget);
 			if (section) await core.summary.addRaw(section).write();
 		}
-		const failure = incompleteReviewFailure({ result, filesSelected });
+		const failure = incompleteFailure;
 		core.setOutput(
 			'review-summary',
 			reviewSummaryText({ result, filesSelected }, failure)
