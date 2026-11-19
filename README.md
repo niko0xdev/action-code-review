@@ -37,6 +37,7 @@ jobs:
           # exclude-patterns: '*.md,*.json,*.lock'
           # scorecard-context: 'true'  # opt-in, default 'false'; see below
           # security-skills: auto      # opt-in, default 'all'; see below
+          # repository-instructions: 'true'  # opt-in: AGENTS.md and .github/instructions from the base branch
 ```
 
 Use `@v3.1.0` for an exact release, `@v3.1` for updates within the minor line, or

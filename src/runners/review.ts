@@ -33,6 +33,7 @@ import {
 	rawHarnessDumpEnabled,
 	reviewSummaryText,
 } from '../review/execution.js';
+import { loadRepositoryInstructions } from '../review/instructions.js';
 import type { BaseFileData } from '../review/prompt-file.js';
 import { loadReviewPromptFile } from '../review/prompt-file.js';
 import {
@@ -112,6 +113,7 @@ export async function runPrReviewAction(): Promise<void> {
 		'include-full-content': core.getInput('include-full-content'),
 		'max-context-chars': core.getInput('max-context-chars'),
 		'scorecard-context': core.getInput('scorecard-context'),
+		'repository-instructions': core.getInput('repository-instructions'),
 		'security-skills': core.getInput('security-skills'),
 	});
 	const llmConfig = resolveEngineConfig(legacyOptions);
@@ -249,30 +251,40 @@ export async function runPrReviewAction(): Promise<void> {
 			);
 		}
 		const allSecurityPrompt = skillSelection.prompt;
+		const fetchBaseContent = async (path: string, ref: string) => {
+			try {
+				const res = await github
+					.getOctokit(legacyOptions.githubToken)
+					.rest.repos.getContent({ ...repoInfo, path, ref });
+				return res.data as BaseFileData | BaseFileData[];
+			} catch (error) {
+				if ((error as { status?: number }).status === 404) return undefined;
+				throw error;
+			}
+		};
 		const promptFile = await loadReviewPromptFile({
 			repoPath: reviewContext.repositoryPath,
 			file: core.getInput('review-prompt-file'),
 			baseSha: reviewContext.pullRequest.baseSha,
 			filesTruncated: reviewContext.diff.filesTruncated,
-			fetchBase: async (path, ref) => {
-				try {
-					const res = await github
-						.getOctokit(legacyOptions.githubToken)
-						.rest.repos.getContent({ ...repoInfo, path, ref });
-					return res.data as BaseFileData | BaseFileData[];
-				} catch (error) {
-					if ((error as { status?: number }).status === 404) return undefined;
-					throw error;
-				}
-			},
+			fetchBase: fetchBaseContent,
 			changedPaths: new Set(
 				allPrFiles.flatMap((f) =>
 					f.previousFilename ? [f.filename, f.previousFilename] : [f.filename]
 				)
 			),
 		});
+		const instructions = legacyOptions.repositoryInstructions
+			? await loadRepositoryInstructions({
+					repoPath: reviewContext.repositoryPath,
+					baseSha: reviewContext.pullRequest.baseSha,
+					changedPaths: allPrFiles.map((f) => f.filename),
+					fetchBase: fetchBaseContent,
+				})
+			: { text: '', files: [] };
 		const reviewRules = [
 			promptFile,
+			instructions.text,
 			allSecurityPrompt,
 			legacyOptions.reviewPrompt,
 			rulesForProfiles(profiles),
@@ -316,6 +328,11 @@ export async function runPrReviewAction(): Promise<void> {
 			extraRules: reviewRules,
 			minSeverity: legacyOptions.minSeverity,
 		});
+		if (instructions.files.length > 0)
+			result.diagnostics = {
+				...result.diagnostics,
+				repositoryInstructions: instructions.files,
+			};
 		// Opt-in second LLM pass (env-only; V1 contract frozen, no new
 		// input): challenges high/critical findings, drops hallucinations.
 		if (process.env.AI_REVIEW_VERIFY_PASS === 'true') {

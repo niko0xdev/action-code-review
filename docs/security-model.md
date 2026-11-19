@@ -44,6 +44,14 @@ Known gaps, by design: characters that are not stripped from the matching copy, 
 
 ### 2.5 PR-Controlled Rules File (`review-prompt-file`)
 
+The opt-in `repository-instructions` files (`AGENTS.md`,
+`.github/copilot-instructions.md`, `.github/instructions/*.instructions.md`) feed
+the same trusted slot and follow a stricter rule: they are read only from the
+base commit, with no fallback to the checkout, so a pull request can neither add
+nor edit the instructions it is reviewed against. Only regular blobs of at most
+50 KiB are used, `applyTo` globs are compiled to linear expressions, and each file
+is fenced.
+
 The file named by `review-prompt-file` is injected into the trusted rules slot,
 so whoever controls it controls the reviewer. Trust model:
 
