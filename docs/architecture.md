@@ -119,12 +119,17 @@ Properties:
   exists on runners where no Node runtime is preinstalled.
 - **Reproducible install** — `pr-review/pi-runtime/` holds a `package.json`
   and committed `package-lock.json`; `npm ci --ignore-scripts` installs the
-  full transitive tree with integrity hashes, so nothing floats. The version
-  `0.73.1` is mirrored in `src/adapter/pi-install.ts` (`PI_PACKAGE_PIN`) and
+  full transitive tree with integrity hashes, so nothing floats. The package
+  is `@earendil-works/pi-coding-agent` (the maintained successor of the
+  deprecated `@mariozechner/pi-coding-agent`), and the version `1.5.2` is
+  mirrored in `src/adapter/pi-install.ts` (`PI_PACKAGE_PIN`) and
   asserted against the manifest and lockfile by
   `tests/runtime-install.test.ts`. To bump, edit `package.json`, run
   `npm install --package-lock-only --ignore-scripts` in that directory, and
-  update `PI_PACKAGE_PIN`.
+  update `PI_PACKAGE_PIN` and the version check in `pr-review/action.yml`.
+  Run `pnpm test:runtime` after every bump: it drives the real binary
+  against a loopback provider and fails if a flag the engine passes was
+  removed or a boundary stopped holding.
 - **Clean logs** — `--no-audit --no-fund --silent`.
 - **Zero public-interface change** — every input/output in both
   action.yml files stays byte-identical; the composite step forwards all

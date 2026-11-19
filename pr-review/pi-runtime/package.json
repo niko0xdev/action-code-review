@@ -3,6 +3,6 @@
 	"private": true,
 	"description": "Lock-pinned install of the Pi coding agent used by pr-review",
 	"dependencies": {
-		"@mariozechner/pi-coding-agent": "0.73.1"
+		"@earendil-works/pi-coding-agent": "1.5.2"
 	}
 }
