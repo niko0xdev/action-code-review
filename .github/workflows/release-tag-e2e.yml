@@ -1,0 +1,253 @@
+name: Release tag E2E
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: release-tag-e2e-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: startsWith(github.head_ref, 'test/release-v3-')
+    name: Released tag E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CANARY_PHASE: negative
+    steps:
+      - name: Checkout held canary
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install offline search tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ripgrep fd-find
+      - name: Review negative fixture with live provider through exact release
+        if: env.CANARY_PHASE == 'negative'
+        id: live
+        continue-on-error: true
+        uses: niko0xdev/action-code-review/pr-review@v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-base-url: ${{ secrets.OPENAI_API_URL }}
+          openai-model: ${{ secrets.OPENAI_API_MODEL }}
+          include-dir: 'src/data'
+          min-severity: 'low'
+          require-write-permissions: 'true'
+          auto-approve-when-resolved: 'true'
+          max-context-chars: '150000'
+          review-prompt: >-
+            Evaluate the selected isolated tenant lookup fixture against its
+            declared contract. Focus on actionable query construction and tenant
+            scoping defects, using targeted source reads. The fixture is
+            deliberately unreferenced so this negative test does not change the
+            Action runtime. Report incomplete work honestly.
+        env:
+          AI_REVIEW_VERIFY_PASS: 'true'
+          AI_REVIEW_MIN_CONFIDENCE: '0.8'
+      - name: Assert actual negative review and no approval
+        if: env.CANARY_PHASE == 'negative'
+        run: node .canary/verify.mjs review
+        env:
+          REVIEW_REPORT: ${{ steps.live.outputs.review-report }}
+      - name: Start controlled blocking transport
+        if: env.CANARY_PHASE == 'negative'
+        run: |
+          CANARY_MODE=blocking node .canary/provider.mjs > "$RUNNER_TEMP/release-canary-provider.log" 2>&1 &
+          echo "ACR_CANARY_PROVIDER_PID=$!" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8317/health; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Snapshot reviews before controlled blocking runs
+        if: env.CANARY_PHASE == 'negative'
+        run: node .canary/verify.mjs snapshot
+        env:
+          SNAPSHOT_LABEL: r0
+      - name: Controlled blocking run 1 through exact release
+        if: env.CANARY_PHASE == 'negative'
+        id: block1
+        uses: niko0xdev/action-code-review/pr-review@v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: 'synthetic-canary-only'
+          openai-base-url: 'http://127.0.0.1:8317/v1'
+          openai-model: 'fixture'
+          include-dir: 'src/data'
+          min-severity: 'low'
+          require-write-permissions: 'true'
+          auto-approve-when-resolved: 'true'
+          max-context-chars: '150000'
+        env:
+          AI_REVIEW_PI_TIMEOUT_MS: '60000'
+      - name: Snapshot reviews after blocking run 1
+        if: env.CANARY_PHASE == 'negative'
+        run: node .canary/verify.mjs snapshot
+        env:
+          SNAPSHOT_LABEL: r1
+      - name: Controlled blocking run 2 on the same head
+        if: env.CANARY_PHASE == 'negative'
+        id: block2
+        uses: niko0xdev/action-code-review/pr-review@v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: 'synthetic-canary-only'
+          openai-base-url: 'http://127.0.0.1:8317/v1'
+          openai-model: 'fixture'
+          include-dir: 'src/data'
+          min-severity: 'low'
+          require-write-permissions: 'true'
+          auto-approve-when-resolved: 'true'
+          max-context-chars: '150000'
+        env:
+          AI_REVIEW_PI_TIMEOUT_MS: '60000'
+      - name: Assert run 2 keeps the block with at most one event-only entry
+        if: env.CANARY_PHASE == 'negative'
+        run: node .canary/verify.mjs repeat
+        env:
+          SNAPSHOT_LABEL: r1
+          MAX_NEW_REVIEWS: '1'
+          REVIEW_REPORT: ${{ steps.block2.outputs.review-report }}
+      - name: Snapshot reviews after blocking run 2
+        if: env.CANARY_PHASE == 'negative'
+        run: node .canary/verify.mjs snapshot
+        env:
+          SNAPSHOT_LABEL: r2
+      - name: Controlled blocking run 3 on the same head
+        if: env.CANARY_PHASE == 'negative'
+        id: block3
+        uses: niko0xdev/action-code-review/pr-review@v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: 'synthetic-canary-only'
+          openai-base-url: 'http://127.0.0.1:8317/v1'
+          openai-model: 'fixture'
+          include-dir: 'src/data'
+          min-severity: 'low'
+          require-write-permissions: 'true'
+          auto-approve-when-resolved: 'true'
+          max-context-chars: '150000'
+        env:
+          AI_REVIEW_PI_TIMEOUT_MS: '60000'
+      - name: Assert run 3 adds no review entry
+        if: env.CANARY_PHASE == 'negative'
+        run: node .canary/verify.mjs repeat
+        env:
+          SNAPSHOT_LABEL: r2
+          MAX_NEW_REVIEWS: '0'
+          REVIEW_REPORT: ${{ steps.block3.outputs.review-report }}
+      - name: Start controlled clean transport
+        if: env.CANARY_PHASE == 'corrected'
+        run: |
+          CANARY_MODE=clean node .canary/provider.mjs > "$RUNNER_TEMP/release-canary-provider.log" 2>&1 &
+          echo "ACR_CANARY_PROVIDER_PID=$!" >> "$GITHUB_ENV"
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8317/health; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Controlled clean publication through v3.1.0
+        if: env.CANARY_PHASE == 'corrected'
+        id: exact
+        uses: niko0xdev/action-code-review/pr-review@v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: 'synthetic-canary-only'
+          openai-base-url: 'http://127.0.0.1:8317/v1'
+          openai-model: 'fixture'
+          include-dir: 'src/data,tests/canary'
+          min-severity: 'low'
+          require-write-permissions: 'true'
+          auto-approve-when-resolved: 'true'
+          max-context-chars: '150000'
+        env:
+          AI_REVIEW_PI_TIMEOUT_MS: '60000'
+      - name: Assert dismissal and approval state through v3.1.0
+        if: env.CANARY_PHASE == 'corrected'
+        run: node .canary/verify.mjs review
+        env:
+          REVIEW_REPORT: ${{ steps.exact.outputs.review-report }}
+          TESTED_REF: v3.1.0
+      - name: Controlled clean publication through v3.1
+        if: env.CANARY_PHASE == 'corrected'
+        id: minor
+        uses: niko0xdev/action-code-review/pr-review@v3.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: 'synthetic-canary-only'
+          openai-base-url: 'http://127.0.0.1:8317/v1'
+          openai-model: 'fixture'
+          include-dir: 'src/data,tests/canary'
+          min-severity: 'low'
+          require-write-permissions: 'true'
+          auto-approve-when-resolved: 'true'
+          max-context-chars: '150000'
+        env:
+          AI_REVIEW_PI_TIMEOUT_MS: '60000'
+      - name: Assert dismissal and approval state through v3.1
+        if: env.CANARY_PHASE == 'corrected'
+        run: node .canary/verify.mjs review
+        env:
+          REVIEW_REPORT: ${{ steps.minor.outputs.review-report }}
+          TESTED_REF: v3.1
+      - name: Controlled clean publication through v3
+        if: env.CANARY_PHASE == 'corrected'
+        id: major
+        uses: niko0xdev/action-code-review/pr-review@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: 'synthetic-canary-only'
+          openai-base-url: 'http://127.0.0.1:8317/v1'
+          openai-model: 'fixture'
+          include-dir: 'src/data,tests/canary'
+          min-severity: 'low'
+          require-write-permissions: 'true'
+          auto-approve-when-resolved: 'true'
+          max-context-chars: '150000'
+        env:
+          AI_REVIEW_PI_TIMEOUT_MS: '60000'
+      - name: Assert dismissal and approval state through v3
+        if: env.CANARY_PHASE == 'corrected'
+        run: node .canary/verify.mjs review
+        env:
+          REVIEW_REPORT: ${{ steps.major.outputs.review-report }}
+          TESTED_REF: v3
+      - name: Stop controlled transport
+        if: always()
+        run: |
+          if [ -n "${ACR_CANARY_PROVIDER_PID:-}" ]; then kill "$ACR_CANARY_PROVIDER_PID" || true; fi
+          cat "$RUNNER_TEMP/release-canary-provider.log" 2>/dev/null || true
+      - name: Generate actual content through exact release
+        uses: niko0xdev/action-code-review/pr-content@v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-base-url: ${{ secrets.OPENAI_API_URL }}
+          openai-model: ${{ secrets.OPENAI_API_MODEL }}
+          max-tokens: '4096'
+          custom-instructions: |
+            Write in British English. The title must start with 'test:'.
+            This is a held release-tag canary, never merge it.
+            Include 'Do not merge – release E2E verification only.' in the description.
+            Include the exact marker ACR_RELEASE_V3_1_E2E_20261120.
+            Include this exact plain-text line in a fenced text block, without escaping dollar signs:
+            Literal substitution probe: $& $$ $` $'
+            Explain that the negative source assessment uses a live provider, while repeat-run blocking, dismissal, and approval use a controlled response fixture and do not measure model quality.
+            Do not include a '## Description' heading in the JSON description.
+            Do not mention provider names or model names. Do not claim tests or E2E passed.
+      - name: Assert actual content and literal replacement sequences
+        run: node .canary/verify.mjs content
+      - name: Verify downloaded release and alias bundle identity
+        run: node .canary/verify.mjs distribution
+        env:
+          RELEASE_REFS: ${{ env.CANARY_PHASE == 'negative' && 'v3.1.0' || 'v3.1.0,v3.1,v3' }}

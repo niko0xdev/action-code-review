@@ -1,0 +1,22 @@
+{
+  "version": "3.1.0",
+  "commit": "36e456a46ee044db791ff5b0f70b0a8ec2860718",
+  "exact_tag": "v3.1.0",
+  "aliases": [
+    "v3.1",
+    "v3"
+  ],
+  "quality_gate": "local: lint, typecheck, coverage tests, pinned-runtime suite, fresh bundle builds, startup smoke",
+  "bundles": {
+    "pr-review/dist/index.js": {
+      "blob": "459c5205f15923b303f3e32b9377b28c97aad3ba",
+      "sha256": "20cc5216866587bc2d64008929bfc604d7854e20361599b1c26289caa82543c8",
+      "bytes": 1977770
+    },
+    "pr-content/dist/index.js": {
+      "blob": "18fee09711766c128fb004cefa63d3ae5f48ad2d",
+      "sha256": "614152b94b80a9297d2b5578245df156c9c04492447b83bb6a18fd7743681a5f",
+      "bytes": 1977727
+    }
+  }
+}

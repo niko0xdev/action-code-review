@@ -10,6 +10,7 @@ concurrency:
 
 jobs:
   review:
+    if: ${{ !startsWith(github.head_ref, 'test/release-v3-') }}
     runs-on: ubuntu-latest
     name: AI Code Review
     timeout-minutes: 30
