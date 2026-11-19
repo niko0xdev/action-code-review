@@ -129,6 +129,32 @@ jobs:
           custom-instructions: "Focus on security implications and performance improvements"
 ```
 
+### Adding a Sequence Diagram (opt-in)
+
+Set `AI_PR_CONTENT_DIAGRAM: 'true'` in the job or step `env:` (it is an
+environment variable, not an input). The same model call also returns a short
+Mermaid `sequenceDiagram` of the main changed flow, which is appended to the
+description under `### Change flow (generated)`.
+
+```yaml
+      - name: Update PR Content
+        uses: niko0xdev/action-code-review/pr-content@main
+        env:
+          AI_PR_CONTENT_DIAGRAM: 'true'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+```
+
+The diagram is untrusted model output. It is published only when it passes a
+strict line grammar (participant or actor declarations, `A->>B: text` and
+`A-->>B: text` messages, `Note over|left of|right of`, `alt`/`else`/`opt`/`loop`/`end`
+blocks, and `autonumber`), with at most 30 lines and 2,000 characters, and no
+HTML, entities, comments, `click`, `link`, or `%%{init}` directives, backticks,
+semicolons, or URLs. Anything else is dropped with a log line and the run
+continues. Secrets are redacted as in the rest of the description. The diagram
+adds output tokens, so consider raising `max-tokens` when it is enabled.
+
 ## How It Works
 
 1. The action fetches the pull request details and file changes

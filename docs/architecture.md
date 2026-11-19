@@ -235,6 +235,7 @@ Numeric variables are validated by `src/shared/numeric.ts`: an invalid value log
 | `AI_REVIEW_VERIFY_MIN_SEVERITY` | `high` | lowest severity the verify pass challenges (`critical`, `high`, `medium`, `low`); lower floors cost more |
 | `AI_REVIEW_DEBUG_HARNESS` | unset | `true`/`1` or a byte budget: append redacted, truncated raw harness output to the step summary |
 | `AI_REVIEW_FAIL_ON_INCOMPLETE` | `true` | fail the step when the review is incomplete (crashed group, unanalyzed files, truncated changed-file list); `false` downgrades to a warning |
+| `AI_PR_CONTENT_DIAGRAM` | `false` | `pr-content` only: ask the same model call for a Mermaid `sequenceDiagram` and append it to the description under `### Change flow (generated)` after validation (`src/github/sequence-diagram.ts`) and redaction (`'true'` to enable); an invalid diagram is omitted, never fatal |
 
 All optional; consumers providing none still work unchanged.
 

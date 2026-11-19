@@ -103,6 +103,73 @@ describe('updatePrContent', () => {
 	});
 });
 
+describe('generated sequence diagram', () => {
+	const diagram = 'sequenceDiagram\nUser->>API: review\nAPI-->>User: findings';
+	const section =
+		'\n\n### Change flow (generated)\n\n```mermaid\nsequenceDiagram\n    User->>API: review\n    API-->>User: findings\n```';
+	const body = async (response: object, diagramEnabled?: boolean) => {
+		const client = octokit();
+		await updatePrContent(client, 'acme', 'repo', 1, {
+			expectedSnapshot: snapshot,
+			response: JSON.stringify(response),
+			diagram: diagramEnabled,
+		});
+		return (client.rest.pulls.update.mock.calls[0][0] as { body: string }).body;
+	};
+
+	it('appends a valid diagram section when enabled', async () => {
+		expect(
+			await body({ title: 'New', description: 'Body', diagram }, true)
+		).toBe(`Body${section}`);
+	});
+
+	it('ignores a returned diagram when disabled', async () => {
+		expect(await body({ title: 'New', description: 'Body', diagram })).toBe(
+			'Body'
+		);
+	});
+
+	it.each([
+		['an injected click directive', `${diagram}\nclick User "https://evil"`],
+		['an init directive', `%%{init: {"securityLevel":"loose"}}%%\n${diagram}`],
+		['HTML', 'sequenceDiagram\nA->>B: <img src=x>'],
+		['an oversized diagram', `sequenceDiagram\n${'A->>B: x\n'.repeat(40)}`],
+		['a non-string value', ['sequenceDiagram']],
+		['no value', undefined],
+	])('omits the section for %s', async (_name, value) => {
+		expect(
+			await body({ title: 'New', description: 'Body', diagram: value }, true)
+		).toBe('Body');
+	});
+
+	it('replaces a section the model copied from the current description', async () => {
+		expect(
+			await body(
+				{
+					title: 'New',
+					description: `Body${section.replace('User->>API', 'Old->>Gone')}`,
+					diagram,
+				},
+				true
+			)
+		).toBe(`Body${section}`);
+	});
+
+	it('redacts secrets inside the diagram', async () => {
+		const secret = ['gh', 'p_', 'Zq8Lm2Xv4Rt7Yw1Bn5Cd9Fg3Hj6Kp0Sa8Ue'].join('');
+		const result = await body(
+			{
+				title: 'New',
+				description: 'Body',
+				diagram: `sequenceDiagram\nA->>B: token ${secret}`,
+			},
+			true
+		);
+		expect(result).not.toContain(secret);
+		expect(result).toContain('A->>B: token [REDACTED_GITHUB_TOKEN]');
+	});
+});
+
 describe('optimistic PR content updates', () => {
 	it.each([
 		{
