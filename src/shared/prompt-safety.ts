@@ -3,6 +3,9 @@
  * excerpts) contained when it is placed in a model prompt.
  */
 
+import { scrubSecrets } from '../llm/openai-compatible.js';
+import { redactSecrets } from '../security/redaction/redactor.js';
+
 /** Characters a reviewer cannot see or that can break a line (CR and LF aside). */
 function isHidden(code: number): boolean {
 	return (
@@ -59,4 +62,13 @@ export function fenceFor(text: string): string {
 export function fenced(text: string, lang = ''): string {
 	const fence = fenceFor(text);
 	return `${fence}${lang}\n${text}\n${fence}`;
+}
+
+/**
+ * Redaction for untrusted text placed in a model prompt: the precise detectors
+ * of `redactSecrets` (private keys, AWS secrets, passwords) followed by the
+ * broader token scrubber. Both keep line structure, so diff line numbers hold.
+ */
+export function redactForPrompt(text: string): string {
+	return scrubSecrets(redactSecrets(text));
 }

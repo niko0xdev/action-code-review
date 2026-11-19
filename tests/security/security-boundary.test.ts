@@ -197,6 +197,38 @@ describe('security reasoning protocol', () => {
 		);
 	});
 
+	it('sends an environment key only to the frozen OPENAI_API_URL gateway and model', async () => {
+		vi.stubEnv('OPENAI_API_KEY', 'gateway-key');
+		vi.stubEnv('OPENAI_API_URL', 'https://gateway.example.com/v1');
+		vi.stubEnv('OPENAI_API_MODEL', 'gateway-model');
+		vi.stubEnv('OPENAI_BASE_URL', '');
+		vi.stubEnv('OPENAI_MODEL', '');
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						choices: [{ message: { content: '{"findings":[]}' } }],
+					}),
+					{ status: 200, headers: { 'Content-Type': 'application/json' } }
+				)
+		);
+		vi.stubGlobal('fetch', fetchMock);
+		const engine = createEngine();
+		try {
+			await expect(engine.diff(context)).resolves.toEqual([]);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		const [url, init] = fetchMock.mock.calls[0] as unknown as [
+			string,
+			RequestInit,
+		];
+		expect(url).toBe('https://gateway.example.com/v1/chat/completions');
+		expect(JSON.parse(init.body as string).model).toBe('gateway-model');
+		expect(isolatedPrompt).not.toHaveBeenCalled();
+	});
+
 	it('propagates unsuccessful CLI execution even when stdout contains findings', async () => {
 		vi.stubEnv('OPENAI_API_KEY', '');
 		isolatedPrompt.mockRejectedValue(

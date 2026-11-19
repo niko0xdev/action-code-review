@@ -173,6 +173,34 @@ describe('buildReviewPrompt', () => {
 		expect(prompt).toContain('[REDACTED-TOKEN]');
 	});
 
+	it('redacts the title and private keys without shifting patch lines', () => {
+		const patch = [
+			'@@ -1,1 +1,5 @@',
+			'+const header = "Bearer"',
+			'+-----BEGIN PRIVATE KEY-----',
+			'+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSj',
+			'+-----END PRIVATE KEY-----',
+			"+import { x } from './task-runner-service-impl';",
+		].join('\n');
+		const context = makeContext({
+			pullRequest: {
+				...makeContext().pullRequest,
+				title: 'Rotate ghp_1234567890abcdef1234567890abcdef',
+			},
+			diff: {
+				...makeContext().diff,
+				files: [{ ...makeContext().diff.files[0], patch }],
+			},
+		});
+		const prompt = buildReviewPrompt(context);
+		expect(prompt).not.toContain('ghp_1234567890abcdef');
+		expect(prompt).not.toContain('MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSj');
+		expect(prompt).toContain(
+			"+import { x } from './task-runner-service-impl';"
+		);
+		expect(prompt).toContain('+const header = "Bearer"\n');
+	});
+
 	it('states repository content is untrusted (prompt-injection defense, spec §24)', () => {
 		const prompt = buildReviewPrompt(makeContext());
 		expect(prompt.toLowerCase()).toContain('untrusted');

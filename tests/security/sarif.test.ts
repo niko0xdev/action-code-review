@@ -111,3 +111,24 @@ it('redacts structured SARIF fields as well as messages', () => {
 			.artifactLocation.uri
 	).toContain('[REDACTED_GITHUB_TOKEN]');
 });
+
+it('keeps ordinary file paths intact while redacting secrets', () => {
+	const finding: SecurityFinding = {
+		id: 'path',
+		fingerprint: 'fp-path',
+		title: 'Issue',
+		severity: 'high',
+		confidence: 'high',
+		status: 'validated',
+		file: 'src/task-runner-service-impl.ts',
+		startLine: 3,
+		evidence: [{ type: 'code', description: 'evidence' }],
+		exploitability: 'likely',
+		remediation: 'fix',
+	};
+	const output = generateSarif([finding]);
+	expect(
+		JSON.parse(output).runs[0].results[0].locations[0].physicalLocation
+			.artifactLocation.uri
+	).toBe('src/task-runner-service-impl.ts');
+});

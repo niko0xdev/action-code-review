@@ -4,7 +4,17 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 
 ## [Unreleased]
 
-No changes yet.
+### Security
+
+- Drop `.git` entries from the reviewer's `grep` and `find` results and redact authorisation headers and GitHub tokens in every inspection result. With the default `actions/checkout` settings the job token in `.git/config` could otherwise reach the model provider. The documented workflows now set `persist-credentials: false`.
+- Resolve the security engine's gateway and model from the frozen `OPENAI_API_URL` and `OPENAI_API_MODEL` variables (legacy `OPENAI_BASE_URL` and `OPENAI_MODEL` remain fallbacks), so a gateway key is never sent to the default OpenAI endpoint.
+- Redact PR titles, PR bodies, patches, and confirmation snippets with the full detector set (private keys, AWS secrets, passwords) before they reach a prompt.
+
+### Fixed
+
+- Token detectors no longer match identifiers that contain `sk-` (for example `disk-cache-…`), which raised critical false positives and corrupted SARIF file paths.
+- A bare `Bearer` at the end of a line no longer swallows the next diff line during redaction.
+- Google API keys (`AIza…`) are redacted in published output.
 
 ## [3.0.0] – 18/11/2026
 

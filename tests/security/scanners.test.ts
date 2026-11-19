@@ -5,6 +5,20 @@ import { scanSecretsInDiff } from '../../src/security/scanners/secret-scanner.js
 import type { SecurityContext } from '../../src/security/types.js';
 
 describe('SecurityScanners', () => {
+	it('does not report identifiers that merely contain "sk-" as OpenAI keys', () => {
+		const findings = scanSecretsInDiff([
+			{
+				filename: 'src/app.ts',
+				patch: `@@ -1,1 +1,3 @@
+ const a = 1;
++import { run } from './disk-cache-manager-service-impl';
++const queue = 'task-runner-scheduler-queue-name';
+`,
+			},
+		]);
+		expect(findings).toEqual([]);
+	});
+
 	it('detects exposed tokens and credentials in diff patches', () => {
 		const files = [
 			{

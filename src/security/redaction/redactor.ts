@@ -153,8 +153,10 @@ const DETECTORS: Detector[] = [
 	// OpenAI API Key
 	regexDetector(
 		'openai_key',
-		/sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,}/dg
+		/(?<![A-Za-z0-9_-])sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,}/dg
 	),
+	// Google API Key
+	regexDetector('google_api_key', /AIza[0-9A-Za-z_-]{35}/dg),
 	// AWS Access Key ID
 	regexDetector(
 		'aws_access_key',
@@ -175,7 +177,8 @@ const DETECTORS: Detector[] = [
 	// JWT Tokens
 	jwtDetector,
 	// Generic API keys and Bearer tokens
-	regexDetector('bearer_token', /Bearer\s+([a-zA-Z0-9\-._~+/]+=*)/dgi),
+	// Horizontal whitespace only, so a bare "Bearer" never swallows the next line.
+	regexDetector('bearer_token', /Bearer[ \t]+([a-zA-Z0-9\-._~+/]+=*)/dgi),
 	// Generic passwords in URLs or assignments, with raw or JSON-escaped quotes.
 	// Raw: escape pairs belong to the value. Escaped (`\"`, as in serialised
 	// JSON): the value stops at the first escaped quote that is followed by a

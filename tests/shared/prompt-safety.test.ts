@@ -3,6 +3,7 @@ import {
 	escapeControlChars,
 	fenceFor,
 	fenced,
+	redactForPrompt,
 } from '../../src/shared/prompt-safety.js';
 
 describe('escapeControlChars', () => {
@@ -61,5 +62,36 @@ describe('fenceFor and fenced', () => {
 		expect(out[0]).toBe(`${'`'.repeat(11)}diff`);
 		expect(out.at(-1)).toBe('`'.repeat(11));
 		expect(out.slice(1, -1).join('\n')).toBe(text);
+	});
+});
+
+describe('redactForPrompt', () => {
+	it('keeps identifiers that merely contain a token prefix', () => {
+		const text =
+			"import { run } from './disk-cache-manager-service-impl';\nconst task-runner = 'risk-assessment-pipeline-v2';";
+		expect(redactForPrompt(text)).toBe(text);
+	});
+
+	it('never merges a Bearer line with the next diff line', () => {
+		const patch =
+			'+const header = "Bearer"\n+const next = compute();\n context';
+		const out = redactForPrompt(patch);
+		expect(out.split('\n')).toHaveLength(3);
+		expect(out).toContain('+const next = compute();');
+	});
+
+	it('covers private keys, AWS secrets, and the short token forms', () => {
+		const out = redactForPrompt(
+			[
+				'+-----BEGIN RSA PRIVATE KEY-----',
+				'+MIIEowIBAAKCAQEAPRIVATEKEYBODY',
+				'+-----END RSA PRIVATE KEY-----',
+				'+aws_secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"',
+				'+sk-short gho_body Bearer abc.def',
+			].join('\n')
+		);
+		expect(out).not.toMatch(
+			/PRIVATEKEYBODY|wJalrXUtnFEMI|sk-short|gho_body|abc\.def/
+		);
 	});
 });
