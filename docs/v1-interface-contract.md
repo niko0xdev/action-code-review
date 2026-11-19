@@ -61,6 +61,17 @@ None declared.
 - Template handling: if the AI description contains `## Description` it is used
   verbatim; otherwise template placeholders are filled.
 
+### Environment variables (additive, not inputs)
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `AI_PR_CONTENT_DIAGRAM` | unset (off) | `'true'` asks the same model call for a Mermaid `sequenceDiagram` and appends it under `### Change flow (generated)` once it passes the safe line grammar (at most 30 lines and 2,000 characters; no HTML, directives, backticks, or URLs) and secret redaction; an invalid diagram is omitted with a log line, never failing the run |
+
+This is deliberately **not** an action input: the input list above is frozen.
+Set it in the job or step `env:` block. When it is unset or any value other
+than `'true'`, the prompt and the published description are byte-identical to
+the behaviour without it.
+
 ---
 
 ## `pr-review/action.yml`

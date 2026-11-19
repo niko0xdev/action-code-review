@@ -39114,7 +39114,84 @@ async function fetchFilePage(octokit, repository, prNumber, pageSize, page) {
 var openai_compatible = __nccwpck_require__(8251);
 // EXTERNAL MODULE: ./src/security/redaction/redactor.ts
 var redactor = __nccwpck_require__(8759);
+;// CONCATENATED MODULE: ./src/github/sequence-diagram.ts
+/**
+ * Opt-in Mermaid sequence diagram for the generated PR description
+ * (`AI_PR_CONTENT_DIAGRAM=true`). The diagram is model output, so it is
+ * untrusted: only a small line grammar is accepted and anything else is
+ * dropped, never published.
+ */
+const MAX_LINES = 30;
+const MAX_CHARS = 2000;
+const HEADING = '### Change flow (generated)';
+const ID = '[A-Za-z_][A-Za-z0-9_]*';
+// Free text: no HTML, entities, directives, statement separators, or fences.
+const TEXT = '[^<>&#%;{}`\\\\]+';
+const LINE_GRAMMAR = [
+    /^autonumber$/,
+    new RegExp(`^(?:participant|actor) ${ID}(?: as ${TEXT})?$`),
+    new RegExp(`^${ID}\\s*--?>>\\s*${ID}\\s*:${TEXT}$`),
+    new RegExp(`^Note (?:over|left of|right of) ${ID}(?:\\s*,\\s*${ID})?\\s*:${TEXT}$`),
+];
+const BLOCK_OPEN = new RegExp(`^(alt|opt|loop)(?: ${TEXT})?$`);
+const BLOCK_ELSE = new RegExp(`^else(?: ${TEXT})?$`);
+const FORBIDDEN = /:\/\/|www\.|javascript:|\bdata:[\w.+-]+\/|[\p{Cc}\p{Cf}]/iu;
+/**
+ * Returns a normalised diagram, or undefined when the text is not a short
+ * `sequenceDiagram` made only of the accepted statements.
+ */
+function validateSequenceDiagram(raw) {
+    const text = raw
+        .trim()
+        .replace(/^```(?:mermaid)?\n([\s\S]*)\n```$/, '$1')
+        .trim();
+    if (text.length > MAX_CHARS)
+        return undefined;
+    const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    if (lines.length > MAX_LINES || lines[0] !== 'sequenceDiagram')
+        return undefined;
+    const blocks = [];
+    const out = ['sequenceDiagram'];
+    for (const line of lines.slice(1)) {
+        if (FORBIDDEN.test(line))
+            return undefined;
+        const open = BLOCK_OPEN.exec(line);
+        if (line === 'end') {
+            if (!blocks.pop())
+                return undefined;
+            out.push(`${'    '.repeat(blocks.length + 1)}${line}`);
+        }
+        else if (BLOCK_ELSE.test(line)) {
+            if (blocks.at(-1) !== 'alt')
+                return undefined;
+            out.push(`${'    '.repeat(blocks.length)}${line}`);
+        }
+        else if (open) {
+            out.push(`${'    '.repeat(blocks.length + 1)}${line}`);
+            blocks.push(open[1]);
+        }
+        else if (LINE_GRAMMAR.some((rule) => rule.test(line))) {
+            out.push(`${'    '.repeat(blocks.length + 1)}${line}`);
+        }
+        else
+            return undefined;
+    }
+    return blocks.length === 0 ? out.join('\n') : undefined;
+}
+/** The labelled description section that carries a validated diagram. */
+function diagramSection(diagram) {
+    return `\n\n${HEADING}\n\n\`\`\`mermaid\n${diagram}\n\`\`\``;
+}
+/** Removes a generated section the model copied from the current body. */
+function stripDiagramSection(description) {
+    return description.replace(/\n*### Change flow \(generated\)\n+```mermaid\n[\s\S]*?\n```/g, '');
+}
+
 ;// CONCATENATED MODULE: ./src/github/pr-content.ts
+
 
 
 
@@ -39131,7 +39208,11 @@ function parseUpdate(response) {
         typeof parsed.description !== 'string') {
         throw new Error('AI response must contain title and description JSON fields');
     }
-    return { title: parsed.title, description: parsed.description };
+    return {
+        title: parsed.title,
+        description: parsed.description,
+        diagram: parsed.diagram,
+    };
 }
 const DESCRIPTION_ANCHOR = /<!-- AI will fill this section with a description of what changed -->/;
 function applyTemplate(description, templateContent) {
@@ -39153,8 +39234,19 @@ function applyTemplate(description, templateContent) {
 async function updatePrContent(octokit, owner, repo, prNumber, options) {
     const parsed = parseUpdate(options.response);
     // The description is written to the PR: a secret echoed from the diff must not be.
-    const update = { ...parsed, title: (0,redactor/* redactSecrets */.f)(parsed.title) };
-    const description = (0,redactor/* redactSecrets */.f)(applyTemplate(parsed.description, options.templateContent));
+    const update = { title: (0,redactor/* redactSecrets */.f)(parsed.title) };
+    let description = applyTemplate(parsed.description, options.templateContent);
+    if (options.diagram) {
+        const diagram = typeof parsed.diagram === 'string'
+            ? validateSequenceDiagram(parsed.diagram)
+            : undefined;
+        description = stripDiagramSection(description);
+        if (diagram)
+            description += diagramSection(diagram);
+        else
+            core.info('Sequence diagram missing or rejected; section omitted');
+    }
+    description = (0,redactor/* redactSecrets */.f)(description);
     const current = await octokit.rest.pulls.get({
         owner,
         repo,
@@ -40951,7 +41043,7 @@ function renderToolFindingsSection(toolFindings, diagnostics) {
 
 ;// CONCATENATED MODULE: ./src/llm/prompts/pr-content.ts
 
-function createSystemPrompt(customInstructions, templateContent) {
+function createSystemPrompt(customInstructions, templateContent, diagram = false) {
     const prompt = [
         'You are an expert software engineer and technical writer.',
         'Your task is to improve pull request titles and descriptions to be clear, concise, and informative.',
@@ -40961,6 +41053,9 @@ function createSystemPrompt(customInstructions, templateContent) {
         'Always respond with valid JSON containing "title" and "description" fields.',
         'Do not include markdown code fences in your response.',
     ];
+    if (diagram) {
+        prompt.push('Also return a "diagram" field: a short Mermaid sequenceDiagram (plain text starting with "sequenceDiagram", at most 30 lines, no code fences) showing the main runtime interaction this change adds or modifies.', 'Use only participant or actor declarations, "A->>B: text" and "A-->>B: text" messages, "Note over A: text", alt/else/opt/loop/end blocks, and autonumber; no HTML, links, click or init directives, comments, backticks, semicolons, or URLs.', 'Return an empty string when the change has no meaningful interaction flow, and never repeat the diagram in the description.');
+    }
     if (templateContent) {
         prompt.push('Use the following pull request template as the base for the description.', 'Fill in the template sections with appropriate content based on the code changes.', 'Preserve the template structure and formatting, only fill in the content sections.', `Template:\n${templateContent}`);
     }
@@ -41287,6 +41382,8 @@ async function runPrContent(options) {
     catch {
         // Missing template is valid and matches V1 behaviour.
     }
+    // Env switch, not an input: pr-content inputs are frozen (v1 contract).
+    const diagram = process.env.AI_PR_CONTENT_DIAGRAM === 'true';
     const config = resolveEngineConfig(options);
     const provider = new openai_compatible.OpenAiCompatibleProvider(config);
     const diffs = prContext.diff.files
@@ -41299,7 +41396,7 @@ async function runPrContent(options) {
     const messages = [
         {
             role: 'system',
-            content: createSystemPrompt(options.customInstructions, templateContent),
+            content: createSystemPrompt(options.customInstructions, templateContent, diagram),
         },
         {
             role: 'user',
@@ -41320,6 +41417,7 @@ async function runPrContent(options) {
             response: completion.content,
             templateContent,
             expectedSnapshot,
+            diagram,
         });
     }
     catch (error) {
@@ -41332,6 +41430,7 @@ async function runPrContent(options) {
             response: completion.content,
             templateContent,
             expectedSnapshot,
+            diagram,
         });
     }
     const durationMs = external_node_perf_hooks_.performance.now() - started;

@@ -4,7 +4,9 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+
+- `pr-content` can append a short Mermaid sequence diagram of the main changed flow to the PR description under `### Change flow (generated)`. It is opt-in through the `AI_PR_CONTENT_DIAGRAM=true` environment variable (no new input), uses the existing single model call, and is published only after a strict grammar check and secret redaction; an invalid diagram is omitted without failing the run.
 
 ## [3.1.0] – 20/11/2026
 

@@ -15,6 +15,25 @@ describe('pr-content prompts', () => {
 		expect(prompt).toContain('title');
 	});
 
+	it('keeps the default system prompt byte-identical when the diagram is off', () => {
+		const expected =
+			'You are an expert software engineer and technical writer. Your task is to improve pull request titles and descriptions to be clear, concise, and informative. The title should follow conventional commit format when appropriate and clearly indicate the change. The description should include: what changed, why it changed, and any relevant context for reviewers. Focus on clarity and completeness while being concise. Always respond with valid JSON containing "title" and "description" fields. Do not include markdown code fences in your response.';
+		expect(createSystemPrompt()).toBe(expected);
+		expect(createSystemPrompt(undefined, undefined, false)).toBe(expected);
+		expect(createSystemPrompt('Keep concise', 'T', false)).toBe(
+			createSystemPrompt('Keep concise', 'T')
+		);
+	});
+
+	it('asks for a constrained diagram field only when enabled', () => {
+		const prompt = createSystemPrompt('Keep concise', 'Template', true);
+		expect(prompt).toContain('"diagram"');
+		expect(prompt).toContain('sequenceDiagram');
+		expect(prompt).toContain('Keep concise');
+		expect(prompt.startsWith(createSystemPrompt().slice(0, 200))).toBe(true);
+		expect(createSystemPrompt()).not.toContain('diagram');
+	});
+
 	it('includes PR title, body, diffs, and optional file list', () => {
 		const prompt = buildUserPrompt(
 			'Old title',
