@@ -49,6 +49,9 @@ export interface PublisherOctokit extends OctokitLike {
 		pulls: OctokitLike['rest']['pulls'] & {
 			update(args: Record<string, unknown>): Promise<{ data: unknown }>;
 			createReview(args: Record<string, unknown>): Promise<{ data: unknown }>;
+			dismissReview?: (
+				args: Record<string, unknown>
+			) => Promise<{ data: unknown }>;
 			createReviewComment(
 				args: Record<string, unknown>
 			): Promise<{ data: unknown }>;
@@ -130,6 +133,12 @@ export interface PublishParams {
 	filesExcluded?: number;
 	/** Files the review accepted for analysis (post-filter scope). */
 	filesSelected?: number;
+	/**
+	 * Changed files the configured filters kept but the review never saw
+	 * (`max-files` cap, no patch from GitHub, or a default-ignored path such as
+	 * `dist/`). Any such file blocks auto-approval.
+	 */
+	filesUnreviewed?: number;
 	requireWritePermissions?: boolean;
 	actor?: string;
 	bufferInlineComments?: boolean;
@@ -252,7 +261,9 @@ export async function publishReview(
 			(f) => !probeIds.has(normalizeCommentId(f))
 		);
 	}
-	const hasBlockingFinding = validFindings.some(
+	// Blocking is decided on every valid finding: the probe filter above only
+	// decides what is posted, never whether the review blocks.
+	const hasBlockingFinding = result.findings.some(
 		(finding) => finding.severity !== 'low'
 	);
 	// Honor the frozen block-on-issues contract: when the caller turns
@@ -325,6 +336,12 @@ export async function publishReview(
 				}
 			}
 		}
+	}
+	// A complete run with nothing blocking must also lift the bot's own earlier
+	// REQUEST_CHANGES: a later COMMENT does not clear it, and the PR would stay
+	// blocked until a human dismissed it.
+	if (!hasBlockingFinding && !reviewFailed(result)) {
+		await dismissOwnBlockingReviews(octokit, owner, repo, prNumber);
 	}
 	// Resolve the approval before rendering anything: the summary must report
 	// the outcome that actually happened, not "not requested" because the
@@ -427,6 +444,19 @@ async function resolveApproval(
 		return {
 			state: 'not-requested',
 			detail: 'findings below min-severity were dropped',
+		};
+	// A file nobody reviewed is a bigger blind spot than a dropped finding.
+	if ((params.filesUnreviewed ?? 0) > 0)
+		return {
+			state: 'not-requested',
+			detail: `${params.filesUnreviewed} changed file(s) were not reviewed`,
+		};
+	// A finding with an unknown category was lowered to `low`; its real
+	// severity is unknown, so it must not lead to an approval.
+	if ((params.result.diagnostics?.bucketedUnknownCategories ?? 0) > 0)
+		return {
+			state: 'not-requested',
+			detail: 'a finding had an unknown category and was lowered to low',
 		};
 	const threads = await areAiThreadsResolved(
 		octokit,
@@ -654,6 +684,62 @@ async function hasCurrentBlockingReview(
 		);
 	} catch {
 		return false;
+	}
+}
+
+const DISMISS_MESSAGE =
+	'No blocking findings remain on the latest complete AI review.';
+
+/**
+ * Dismiss every CHANGES_REQUESTED review this action submitted. Authorship is
+ * exact when the token's login resolves; otherwise only `github-actions[bot]`
+ * reviews that carry this action's event-only body or an inline finding
+ * marker count, so another workflow's review is never touched. Failures are
+ * logged and never fail the publish.
+ */
+async function dismissOwnBlockingReviews(
+	octokit: PublisherOctokit,
+	owner: string,
+	repo: string,
+	prNumber: number
+): Promise<void> {
+	const { listReviews, listCommentsForReview, dismissReview } =
+		octokit.rest.pulls;
+	if (!listReviews || !dismissReview) return;
+	try {
+		const reviews = await listAll(listReviews, {
+			owner,
+			repo,
+			pull_number: prNumber,
+		});
+		const selfLogin = await resolveSelfLogin(octokit);
+		for (const review of reviews) {
+			if (review.state !== 'CHANGES_REQUESTED') continue;
+			if (!isTrustedAuthor(review.user?.login, selfLogin)) continue;
+			if (!selfLogin && !(review.body ?? '').startsWith(EVENT_ONLY_BODY)) {
+				if (!listCommentsForReview) continue;
+				const comments = await listAll(listCommentsForReview, {
+					owner,
+					repo,
+					pull_number: prNumber,
+					review_id: review.id,
+				});
+				if (!comments.some((comment) => isOwnCommentBody(comment.body)))
+					continue;
+			}
+			await dismissReview({
+				owner,
+				repo,
+				pull_number: prNumber,
+				review_id: review.id,
+				message: DISMISS_MESSAGE,
+			});
+			core.info(`[review] Dismissed earlier blocking review ${review.id}.`);
+		}
+	} catch (error) {
+		core.warning(
+			`[review] Could not dismiss an earlier blocking review: ${redactDetail(error)}`
+		);
 	}
 }
 

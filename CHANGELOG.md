@@ -20,6 +20,12 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 
 ### Fixed
 
+- The Octokit adapter now keeps review `state`, `commit_id`, and `body`, and forwards `body` on `createReview`. Re-runs on the same head no longer add a bodiless `REQUEST_CHANGES` every time, and the event-only and approval texts reach GitHub.
+- A complete run with no blocking finding dismisses the action's own earlier `CHANGES_REQUESTED` review, so fixing every issue no longer leaves the PR blocked by the bot.
+- Finding categories are matched case-insensitively and through common synonyms (`Security`, `auth`, `injection`), so a mislabelled critical finding is no longer lowered to `low`. A finding that still needs bucketing blocks auto-approval.
+- Auto-approval is refused while any changed file kept by the filters went unreviewed (cut by `max-files`, without a patch, or under a default-ignored path such as `dist/` or a lockfile).
+- The inline buffer's test-probe title filter only applies to `low` findings and no longer affects the blocking decision; the buffer file moves to the per-job runner temp directory.
+
 - Token detectors no longer match identifiers that contain `sk-` (for example `disk-cache-…`), which raised critical false positives and corrupted SARIF file paths.
 - A bare `Bearer` at the end of a line no longer swallows the next diff line during redaction.
 - Google API keys (`AIza…`) are redacted in published output.

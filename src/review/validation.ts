@@ -60,11 +60,38 @@ export interface NormalizeCategoriesResult {
 }
 
 /**
- * Re-route findings whose category is not in the allowed vocabulary
- * to `severity: 'low'` + `category: 'maintainability'`. Preserves
- * `confidence`, `path`, `line`, `title`, `description`, `impact`,
- * `suggestion`, `replacement` so the original intent is recoverable
- * from the comment body even when the category is wrong.
+ * Labels models commonly use for an allowed category. Matching a synonym keeps
+ * the finding's severity, so a critical finding labelled `auth` still blocks.
+ */
+const CATEGORY_SYNONYMS: Readonly<Record<string, FindingCategory>> = {
+	auth: 'security',
+	authentication: 'security',
+	authorization: 'security',
+	authorisation: 'security',
+	injection: 'security',
+	vulnerability: 'security',
+	xss: 'security',
+	ssrf: 'security',
+	secrets: 'security',
+	bug: 'correctness',
+	logic: 'correctness',
+	'race-condition': 'concurrency',
+	perf: 'performance',
+	tests: 'testing',
+	test: 'testing',
+	'test-coverage': 'testing',
+	'error handling': 'error-handling',
+	errors: 'error-handling',
+};
+
+/**
+ * Map each finding's category onto the allowed vocabulary. Case, surrounding
+ * whitespace, underscores, and common synonyms are accepted (`"Security"`,
+ * `"auth"`, `"error_handling"`), and the finding keeps its severity. A
+ * category that is still unknown is re-routed to `severity: 'low'` +
+ * `FALLBACK_CATEGORY` so unexpected harness output stays visible without
+ * blocking; the publisher refuses auto-approval when any finding was
+ * bucketed. Every other field is preserved.
  */
 export function normalizeCategories(
 	findings: Finding[]
@@ -72,16 +99,21 @@ export function normalizeCategories(
 	const result: Finding[] = [];
 	let bucketedCount = 0;
 	for (const finding of findings) {
-		if (ALLOWED_CATEGORIES.includes(finding.category)) {
-			result.push(finding);
+		const label =
+			typeof finding.category === 'string'
+				? finding.category.trim().toLowerCase().replaceAll('_', '-')
+				: '';
+		const known =
+			ALLOWED_CATEGORIES.find((category) => category === label) ??
+			CATEGORY_SYNONYMS[label];
+		if (known) {
+			result.push(
+				known === finding.category ? finding : { ...finding, category: known }
+			);
 			continue;
 		}
 		bucketedCount += 1;
-		result.push({
-			...finding,
-			severity: 'low',
-			category: FALLBACK_CATEGORY,
-		});
+		result.push({ ...finding, severity: 'low', category: FALLBACK_CATEGORY });
 	}
 	return { findings: result, bucketedCount };
 }

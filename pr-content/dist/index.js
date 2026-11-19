@@ -39813,10 +39813,23 @@ function topLevelObjects(raw) {
 
 // EXTERNAL MODULE: external "node:fs"
 var external_node_fs_ = __nccwpck_require__(3024);
+// EXTERNAL MODULE: external "node:os"
+var external_node_os_ = __nccwpck_require__(8161);
 ;// CONCATENATED MODULE: ./src/github/buffer.ts
 
 
-const BUFFER_PATH = process.env.AI_INLINE_BUFFER_PATH ?? '/tmp/ai-inline-buffer.jsonl';
+
+
+/**
+ * The buffer holds finding text, so it lives in the runner's per-job temp
+ * directory (emptied after every job) rather than a shared `/tmp` file that
+ * accumulates across jobs and repositories on self-hosted runners.
+ */
+function defaultBufferPath(env = process.env) {
+    return (env.AI_INLINE_BUFFER_PATH ??
+        (0,external_node_path_.join)(env.RUNNER_TEMP || (0,external_node_os_.tmpdir)(), 'ai-inline-buffer.jsonl'));
+}
+const BUFFER_PATH = defaultBufferPath();
 const TEST_PROBE_RE = /^(test comment|testing if|can i|does this work|checking if)/i;
 function isTestProbe(body) {
     const trimmed = body.trim();
@@ -39842,7 +39855,10 @@ function classifyFindings(findings) {
     const probe = [...neverPost];
     for (const f of candidates) {
         const body = `${f.title} ${f.description}`.trim();
-        if (isTestProbe(body) || isTestProbe(f.title)) {
+        // The title heuristic is only a noise filter: a real issue can start
+        // with "Checking if…", so anything at medium severity or above is
+        // always posted and always counts towards blocking.
+        if (f.severity === 'low' && (isTestProbe(body) || isTestProbe(f.title))) {
             probe.push(f);
         }
         else {
@@ -40338,7 +40354,9 @@ async function publishReview(octokit, params) {
         const probeIds = new Set(probe.map((f) => dedupe_normalizeCommentId(f)));
         validFindings = result.findings.filter((f) => !probeIds.has(dedupe_normalizeCommentId(f)));
     }
-    const hasBlockingFinding = validFindings.some((finding) => finding.severity !== 'low');
+    // Blocking is decided on every valid finding: the probe filter above only
+    // decides what is posted, never whether the review blocks.
+    const hasBlockingFinding = result.findings.some((finding) => finding.severity !== 'low');
     // Honor the frozen block-on-issues contract: when the caller turns
     // blocking off, findings are posted as plain COMMENTs instead of
     // REQUEST_CHANGES (docs/v1-interface-contract.md).
@@ -40408,6 +40426,12 @@ async function publishReview(octokit, params) {
                 }
             }
         }
+    }
+    // A complete run with nothing blocking must also lift the bot's own earlier
+    // REQUEST_CHANGES: a later COMMENT does not clear it, and the PR would stay
+    // blocked until a human dismissed it.
+    if (!hasBlockingFinding && !reviewFailed(result)) {
+        await dismissOwnBlockingReviews(octokit, owner, repo, prNumber);
     }
     // Resolve the approval before rendering anything: the summary must report
     // the outcome that actually happened, not "not requested" because the
@@ -40496,6 +40520,19 @@ async function resolveApproval(octokit, params, state) {
         return {
             state: 'not-requested',
             detail: 'findings below min-severity were dropped',
+        };
+    // A file nobody reviewed is a bigger blind spot than a dropped finding.
+    if ((params.filesUnreviewed ?? 0) > 0)
+        return {
+            state: 'not-requested',
+            detail: `${params.filesUnreviewed} changed file(s) were not reviewed`,
+        };
+    // A finding with an unknown category was lowered to `low`; its real
+    // severity is unknown, so it must not lead to an approval.
+    if ((params.result.diagnostics?.bucketedUnknownCategories ?? 0) > 0)
+        return {
+            state: 'not-requested',
+            detail: 'a finding had an unknown category and was lowered to low',
         };
     const threads = await areAiThreadsResolved(octokit, params.owner, params.repo, params.prNumber);
     if (threads === 'none')
@@ -40670,6 +40707,56 @@ async function hasCurrentBlockingReview(octokit, owner, repo, prNumber, headSha)
     }
     catch {
         return false;
+    }
+}
+const DISMISS_MESSAGE = 'No blocking findings remain on the latest complete AI review.';
+/**
+ * Dismiss every CHANGES_REQUESTED review this action submitted. Authorship is
+ * exact when the token's login resolves; otherwise only `github-actions[bot]`
+ * reviews that carry this action's event-only body or an inline finding
+ * marker count, so another workflow's review is never touched. Failures are
+ * logged and never fail the publish.
+ */
+async function dismissOwnBlockingReviews(octokit, owner, repo, prNumber) {
+    const { listReviews, listCommentsForReview, dismissReview } = octokit.rest.pulls;
+    if (!listReviews || !dismissReview)
+        return;
+    try {
+        const reviews = await listAll(listReviews, {
+            owner,
+            repo,
+            pull_number: prNumber,
+        });
+        const selfLogin = await resolveSelfLogin(octokit);
+        for (const review of reviews) {
+            if (review.state !== 'CHANGES_REQUESTED')
+                continue;
+            if (!isTrustedAuthor(review.user?.login, selfLogin))
+                continue;
+            if (!selfLogin && !(review.body ?? '').startsWith(EVENT_ONLY_BODY)) {
+                if (!listCommentsForReview)
+                    continue;
+                const comments = await listAll(listCommentsForReview, {
+                    owner,
+                    repo,
+                    pull_number: prNumber,
+                    review_id: review.id,
+                });
+                if (!comments.some((comment) => isOwnCommentBody(comment.body)))
+                    continue;
+            }
+            await dismissReview({
+                owner,
+                repo,
+                pull_number: prNumber,
+                review_id: review.id,
+                message: DISMISS_MESSAGE,
+            });
+            core.info(`[review] Dismissed earlier blocking review ${review.id}.`);
+        }
+    }
+    catch (error) {
+        core.warning(`[review] Could not dismiss an earlier blocking review: ${redactDetail(error)}`);
     }
 }
 async function listAll(method, args) {
@@ -41036,8 +41123,16 @@ function toPublisherOctokit(client) {
                 commit_id: requiredString(args, 'commit_id'),
                 event: event,
                 comments: args.comments,
+                // GitHub requires a body on a REQUEST_CHANGES review without
+                // comments, and the approval text travels here too.
+                ...(typeof args.body === 'string' ? { body: args.body } : {}),
             });
         },
+        dismissReview: (args) => client.rest.pulls.dismissReview({
+            ...repositoryArgs(args),
+            review_id: requiredNumber(args, 'review_id'),
+            message: requiredString(args, 'message'),
+        }),
         createReviewComment: (args) => client.rest.pulls.createReviewComment({
             ...repositoryArgs(args),
             body: requiredString(args, 'body'),
@@ -41063,8 +41158,13 @@ function toPublisherOctokit(client) {
                 per_page: requiredNumber(args, 'per_page'),
             });
             return {
+                // The publisher reads state, commit and body to recognise its own
+                // blocking review on the current head; keep them.
                 data: response.data.map((review) => ({
                     id: review.id,
+                    state: review.state ?? null,
+                    commit_id: review.commit_id ?? null,
+                    body: review.body ?? null,
                     user: review.user ? { login: review.user.login ?? undefined } : null,
                 })),
             };
@@ -42508,26 +42608,53 @@ const ALLOWED_CATEGORIES = [
  */
 const FALLBACK_CATEGORY = 'maintainability';
 /**
- * Re-route findings whose category is not in the allowed vocabulary
- * to `severity: 'low'` + `category: 'maintainability'`. Preserves
- * `confidence`, `path`, `line`, `title`, `description`, `impact`,
- * `suggestion`, `replacement` so the original intent is recoverable
- * from the comment body even when the category is wrong.
+ * Labels models commonly use for an allowed category. Matching a synonym keeps
+ * the finding's severity, so a critical finding labelled `auth` still blocks.
+ */
+const CATEGORY_SYNONYMS = {
+    auth: 'security',
+    authentication: 'security',
+    authorization: 'security',
+    authorisation: 'security',
+    injection: 'security',
+    vulnerability: 'security',
+    xss: 'security',
+    ssrf: 'security',
+    secrets: 'security',
+    bug: 'correctness',
+    logic: 'correctness',
+    'race-condition': 'concurrency',
+    perf: 'performance',
+    tests: 'testing',
+    test: 'testing',
+    'test-coverage': 'testing',
+    'error handling': 'error-handling',
+    errors: 'error-handling',
+};
+/**
+ * Map each finding's category onto the allowed vocabulary. Case, surrounding
+ * whitespace, underscores, and common synonyms are accepted (`"Security"`,
+ * `"auth"`, `"error_handling"`), and the finding keeps its severity. A
+ * category that is still unknown is re-routed to `severity: 'low'` +
+ * `FALLBACK_CATEGORY` so unexpected harness output stays visible without
+ * blocking; the publisher refuses auto-approval when any finding was
+ * bucketed. Every other field is preserved.
  */
 function normalizeCategories(findings) {
     const result = [];
     let bucketedCount = 0;
     for (const finding of findings) {
-        if (ALLOWED_CATEGORIES.includes(finding.category)) {
-            result.push(finding);
+        const label = typeof finding.category === 'string'
+            ? finding.category.trim().toLowerCase().replaceAll('_', '-')
+            : '';
+        const known = ALLOWED_CATEGORIES.find((category) => category === label) ??
+            CATEGORY_SYNONYMS[label];
+        if (known) {
+            result.push(known === finding.category ? finding : { ...finding, category: known });
             continue;
         }
         bucketedCount += 1;
-        result.push({
-            ...finding,
-            severity: 'low',
-            category: FALLBACK_CATEGORY,
-        });
+        result.push({ ...finding, severity: 'low', category: FALLBACK_CATEGORY });
     }
     return { findings: result, bucketedCount };
 }
@@ -43205,6 +43332,10 @@ async function runPrReviewAction() {
                 filesTotal,
                 filesExcluded,
                 filesSelected,
+                // Kept by the configured filters but never reviewed: max-files
+                // cap, no patch, or a default-ignored path. Blocks auto-approval;
+                // list such paths in exclude-patterns to accept them explicitly.
+                filesUnreviewed: Math.max(filtered.length - filesSelected, 0),
                 blockOnIssues: legacyOptions.blockOnIssues,
                 minSeverity: legacyOptions.minSeverity,
                 requireWritePermissions: core.getInput('require-write-permissions') === 'true',
@@ -43367,8 +43498,6 @@ function securityFailureMessage(conclusion, failOn) {
 var risk_classifier = __nccwpck_require__(8000);
 // EXTERNAL MODULE: ./src/security/engines/pi-security-engine.ts
 var pi_security_engine = __nccwpck_require__(7924);
-// EXTERNAL MODULE: external "node:os"
-var external_node_os_ = __nccwpck_require__(8161);
 // EXTERNAL MODULE: ./src/security/findings/normalizer.ts
 var normalizer = __nccwpck_require__(2533);
 ;// CONCATENATED MODULE: ./src/security/engines/piolium-engine.ts

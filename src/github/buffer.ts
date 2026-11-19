@@ -1,10 +1,25 @@
 import { appendFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import * as core from '@actions/core';
 
 import type { Finding } from '../types/finding.js';
 
-export const BUFFER_PATH =
-	process.env.AI_INLINE_BUFFER_PATH ?? '/tmp/ai-inline-buffer.jsonl';
+/**
+ * The buffer holds finding text, so it lives in the runner's per-job temp
+ * directory (emptied after every job) rather than a shared `/tmp` file that
+ * accumulates across jobs and repositories on self-hosted runners.
+ */
+export function defaultBufferPath(
+	env: NodeJS.ProcessEnv = process.env
+): string {
+	return (
+		env.AI_INLINE_BUFFER_PATH ??
+		join(env.RUNNER_TEMP || tmpdir(), 'ai-inline-buffer.jsonl')
+	);
+}
+
+export const BUFFER_PATH = defaultBufferPath();
 
 export type BufferedFinding = Finding & {
 	ts: string;
@@ -46,7 +61,10 @@ export function classifyFindings(findings: BufferedFinding[]): {
 
 	for (const f of candidates) {
 		const body = `${f.title} ${f.description}`.trim();
-		if (isTestProbe(body) || isTestProbe(f.title)) {
+		// The title heuristic is only a noise filter: a real issue can start
+		// with "Checking if…", so anything at medium severity or above is
+		// always posted and always counts towards blocking.
+		if (f.severity === 'low' && (isTestProbe(body) || isTestProbe(f.title))) {
 			probe.push(f);
 		} else {
 			real.push(f);
