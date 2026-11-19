@@ -2,7 +2,8 @@ import { escapeControlChars, fenced } from '../../shared/prompt-safety.js';
 
 export function createSystemPrompt(
 	customInstructions?: string,
-	templateContent?: string
+	templateContent?: string,
+	diagram = false
 ): string {
 	const prompt = [
 		'You are an expert software engineer and technical writer.',
@@ -13,6 +14,13 @@ export function createSystemPrompt(
 		'Always respond with valid JSON containing "title" and "description" fields.',
 		'Do not include markdown code fences in your response.',
 	];
+	if (diagram) {
+		prompt.push(
+			'Also return a "diagram" field: a short Mermaid sequenceDiagram (plain text starting with "sequenceDiagram", at most 30 lines, no code fences) showing the main runtime interaction this change adds or modifies.',
+			'Use only participant or actor declarations, "A->>B: text" and "A-->>B: text" messages, "Note over A: text", alt/else/opt/loop/end blocks, and autonumber; no HTML, links, click or init directives, comments, backticks, semicolons, or URLs.',
+			'Return an empty string when the change has no meaningful interaction flow, and never repeat the diagram in the description.'
+		);
+	}
 	if (templateContent) {
 		prompt.push(
 			'Use the following pull request template as the base for the description.',

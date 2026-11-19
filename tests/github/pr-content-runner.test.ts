@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createSystemPrompt } from '../../src/llm/prompts/pr-content.js';
 import { runPrContentAction } from '../../src/runners/pr-content.js';
 
 const state = vi.hoisted(() => ({
@@ -68,6 +69,9 @@ beforeEach(() => {
 	state.update.mockReset().mockResolvedValue({ data: {} });
 	state.output.mockReset();
 });
+afterEach(() => {
+	vi.unstubAllEnvs();
+});
 describe('PR content runner snapshot', () => {
 	it.each(['title', 'body', 'head'] as const)(
 		'does not overwrite %s changed during generation or retry the conflict',
@@ -102,6 +106,44 @@ describe('PR content runner snapshot', () => {
 		);
 		expect(state.complete).toHaveBeenCalledTimes(2);
 		expect(state.update).not.toHaveBeenCalled();
+	});
+	it('sends the unchanged prompt and no diagram when the switch is off', async () => {
+		vi.stubEnv('AI_PR_CONTENT_DIAGRAM', '');
+		state.complete.mockResolvedValue({
+			content: JSON.stringify({
+				title: 'Generated title',
+				description: 'Generated body',
+				diagram: 'sequenceDiagram\nA->>B: hi',
+			}),
+		});
+		await runPrContentAction();
+		const [messages] = state.complete.mock.calls[0] as [
+			Array<{ content: string }>,
+		];
+		expect(messages[0].content).toBe(createSystemPrompt('', ''));
+		expect(state.update).toHaveBeenCalledWith(
+			expect.objectContaining({ body: 'Generated body' })
+		);
+	});
+	it('requests and publishes the diagram when AI_PR_CONTENT_DIAGRAM=true', async () => {
+		vi.stubEnv('AI_PR_CONTENT_DIAGRAM', 'true');
+		state.complete.mockResolvedValue({
+			content: JSON.stringify({
+				title: 'Generated title',
+				description: 'Generated body',
+				diagram: 'sequenceDiagram\nA->>B: hi',
+			}),
+		});
+		await runPrContentAction();
+		const [messages] = state.complete.mock.calls[0] as [
+			Array<{ content: string }>,
+		];
+		expect(messages[0].content).toBe(createSystemPrompt('', '', true));
+		expect(state.update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				body: 'Generated body\n\n### Change flow (generated)\n\n```mermaid\nsequenceDiagram\n    A->>B: hi\n```',
+			})
+		);
 	});
 	it('updates an unchanged snapshot through the real Octokit adapter', async () => {
 		await runPrContentAction();

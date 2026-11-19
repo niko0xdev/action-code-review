@@ -1,6 +1,11 @@
 import * as core from '@actions/core';
 import { extractJsonBlock } from '../llm/openai-compatible.js';
 import { redactSecrets } from '../security/redaction/redactor.js';
+import {
+	describeSequenceDiagram,
+	diagramSection,
+	stripDiagramSection,
+} from './sequence-diagram.js';
 
 export interface PrContentOctokit {
 	rest: {
@@ -22,6 +27,8 @@ export interface PrContentUpdateOptions {
 	response: string;
 	templateContent?: string;
 	expectedSnapshot: PrContentSnapshot;
+	/** Publish a validated sequence diagram (`AI_PR_CONTENT_DIAGRAM=true`). */
+	diagram?: boolean;
 }
 
 export interface PrContentSnapshot {
@@ -37,7 +44,11 @@ export class PrContentConflictError extends Error {
 	}
 }
 
-function parseUpdate(response: string): { title: string; description: string } {
+function parseUpdate(response: string): {
+	title: string;
+	description: string;
+	diagram?: unknown;
+} {
 	const parsed = extractJsonBlock(response);
 	if (
 		!parsed ||
@@ -48,7 +59,11 @@ function parseUpdate(response: string): { title: string; description: string } {
 			'AI response must contain title and description JSON fields'
 		);
 	}
-	return { title: parsed.title, description: parsed.description };
+	return {
+		title: parsed.title,
+		description: parsed.description,
+		diagram: parsed.diagram,
+	};
 }
 
 const DESCRIPTION_ANCHOR =
@@ -85,15 +100,26 @@ export async function updatePrContent(
 	prNumber: number,
 	options: Pick<
 		PrContentUpdateOptions,
-		'response' | 'templateContent' | 'expectedSnapshot'
+		'response' | 'templateContent' | 'expectedSnapshot' | 'diagram'
 	>
 ): Promise<void> {
 	const parsed = parseUpdate(options.response);
 	// The description is written to the PR: a secret echoed from the diff must not be.
-	const update = { ...parsed, title: redactSecrets(parsed.title) };
-	const description = redactSecrets(
-		applyTemplate(parsed.description, options.templateContent)
-	);
+	const update = { title: redactSecrets(parsed.title) };
+	let description = applyTemplate(parsed.description, options.templateContent);
+	if (options.diagram) {
+		const check =
+			typeof parsed.diagram === 'string'
+				? describeSequenceDiagram(parsed.diagram)
+				: { error: 'the model returned no diagram' };
+		description = stripDiagramSection(description);
+		if (check.diagram) description += diagramSection(check.diagram);
+		else
+			core.info(
+				`Sequence diagram rejected (${check.error ?? 'unknown reason'}); section omitted`
+			);
+	}
+	description = redactSecrets(description);
 	const current = await octokit.rest.pulls.get({
 		owner,
 		repo,

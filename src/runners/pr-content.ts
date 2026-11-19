@@ -67,6 +67,8 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 	} catch {
 		// Missing template is valid and matches V1 behaviour.
 	}
+	// Env switch, not an input: pr-content inputs are frozen (v1 contract).
+	const diagram = process.env.AI_PR_CONTENT_DIAGRAM === 'true';
 	const config = resolveEngineConfig(options);
 	const provider = new OpenAiCompatibleProvider(config);
 	const diffs = prContext.diff.files
@@ -79,7 +81,11 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 	const messages: ChatMessage[] = [
 		{
 			role: 'system',
-			content: createSystemPrompt(options.customInstructions, templateContent),
+			content: createSystemPrompt(
+				options.customInstructions,
+				templateContent,
+				diagram
+			),
 		},
 		{
 			role: 'user',
@@ -108,6 +114,7 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 			response: completion.content,
 			templateContent,
 			expectedSnapshot,
+			diagram,
 		});
 	} catch (error) {
 		if (error instanceof PrContentConflictError) throw error;
@@ -120,6 +127,7 @@ async function runPrContent(options: PrContentEngineOptions): Promise<void> {
 			response: completion.content,
 			templateContent,
 			expectedSnapshot,
+			diagram,
 		});
 	}
 	const durationMs = performance.now() - started;
