@@ -70,6 +70,10 @@ inputs:
     description: 'Opt-in: add AGENTS.md, .github/copilot-instructions.md, and .github/instructions/*.instructions.md (when their applyTo globs match a changed file) to the review rules. Only the copies at the pull request base commit are read, so a pull request cannot change its own rules.'
     required: false
     default: 'false'
+  secret-scan:
+    description: 'Opt-in: run the deterministic secret scanner over the added lines of every changed file (independent of exclude-patterns) and publish each credential match as a security finding. Matches never quote the value.'
+    required: false
+    default: 'false'
   mode:
     description: 'Execution mode: auto | review | security | agent'
     required: false
@@ -218,6 +222,7 @@ runs:
         INPUT_CHECK-RUN: ${{ inputs.check-run }}
         INPUT_SECURITY-SKILLS: ${{ inputs.security-skills }}
         INPUT_REPOSITORY-INSTRUCTIONS: ${{ inputs.repository-instructions }}
+        INPUT_SECRET-SCAN: ${{ inputs.secret-scan }}
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_SECURITY-PROFILE: ${{ inputs.security-profile }}
         INPUT_SECURITY-MIN-SEVERITY: ${{ inputs.security-min-severity }}

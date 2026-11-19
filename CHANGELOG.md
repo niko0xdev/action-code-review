@@ -10,6 +10,12 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 - Opt-in `repository-instructions` input: the review rules gain `AGENTS.md`, `.github/copilot-instructions.md`, and `.github/instructions/*.instructions.md` files whose `applyTo` globs match a changed path. Only base-commit copies are read, each file is capped at 50 KiB and fenced, and the files used are listed in `review-report` diagnostics (`repositoryInstructions`).
 - Opt-in `check-run` input for `pr-review` (default `'false'`): creates one `AI Code Review` check run on the reviewed head whose conclusion mirrors the review decision (`failure`, `neutral`, or `success`) and whose annotations carry the findings, so branch protection can require it. Needs `checks: write`; a Checks API error only logs a warning.
 - Opt-in `check-run` input for `pr-review` (default `'false'`): creates one `AI Code Review` check run on the reviewed head whose conclusion mirrors the review decision (`failure`, `neutral`, or `success`) and whose annotations carry the findings, so branch protection can require it. A run that reviews nothing (draft, empty file selection, head moved during the review) still reports a completed neutral check, so a required check is never left unreported. Model text in the check summary is redacted before it is escaped. Needs `checks: write`; a Checks API error only logs a warning, worded by status.
+- Opt-in `secret-scan` input: the deterministic secret scanner from `mode: security` also runs in normal reviews, over the added lines of every changed file, and each credential match is published as a critical or high security finding that never quotes the value (at most ten per run). The count is reported as `diagnostics.secretScanFindings`.
+- Opt-in `secret-scan` input: the deterministic secret scanner from `mode: security` also runs in normal reviews, over the added lines of every changed file, and each credential match is published as a critical or high security finding that never quotes the value (at most ten per run). A deterministic match always wins on its line, so model output cannot hide a credential. The count is reported as `diagnostics.secretScanFindings`.
+
+### Fixed
+
+- The secret scanner no longer counts a `\ No newline at end of file` marker as a line, which shifted later matches by one and made the quality gate reject them.
 
 ## [3.1.0] – 20/11/2026
 
