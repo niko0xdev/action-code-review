@@ -372,3 +372,25 @@ it('redacts an entire long provider key without retaining its tail', () => {
 		'key: [REDACTED_OPENAI_KEY] end'
 	);
 });
+
+describe('redaction precision', () => {
+	it('does not treat identifiers ending in "sk-" as OpenAI keys', () => {
+		const text = "from './disk-cache-manager-service-impl'";
+		expect(redactSecrets(text)).toBe(text);
+		expect(redactSecrets(' sk-proj-0123456789abcdef0123456789')).toBe(
+			' [REDACTED_OPENAI_KEY]'
+		);
+	});
+
+	it('keeps the line break after a bare "Bearer"', () => {
+		expect(redactSecrets('Bearer\nnext_line_identifier')).toBe(
+			'Bearer\nnext_line_identifier'
+		);
+	});
+
+	it('redacts Google API keys', () => {
+		expect(redactSecrets('key=AIzaSyA1234567890abcdefghijklmnopqrstuv')).toBe(
+			'key=[REDACTED_GOOGLE_API_KEY]'
+		);
+	});
+});

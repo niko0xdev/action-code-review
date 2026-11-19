@@ -81,6 +81,44 @@ describe('trusted review runtime boundary', () => {
 		expect(call('a.ts', 'bash').result?.block).toBe(true);
 		expect(await readFile(outside, 'utf8')).toBe('synthetic canary');
 	});
+	it('drops git metadata from grep and find results and redacts credentials', async () => {
+		const root = await mkdtemp(join(tmpdir(), 'acr-boundary-result-'));
+		scratch.push(root);
+		const extension = await preparePiBoundary(root, root);
+		const { filterToolResult } = await import(pathToFileURL(extension).href);
+		const run = (toolName: string, text: string) =>
+			filterToolResult({ toolName, content: [{ type: 'text', text }] })
+				?.content[0].text;
+		expect(
+			run(
+				'grep',
+				[
+					'.git/config:9: extraheader = AUTHORIZATION: basic eC1hY2Nlc3M6dG9rZW4=',
+					'.git/config-8- [http]',
+					'sub/.git/modules/x/config:2: url = x',
+					'.git\\packed-refs:1: abc',
+					'src/a.ts:3: // see .git/config for the remote',
+					'src/b.ts-4- next line',
+				].join('\n')
+			)
+		).toBe(
+			'src/a.ts:3: // see .git/config for the remote\nsrc/b.ts-4- next line'
+		);
+		expect(run('find', '.git/HEAD\nsrc/a.ts\nlib/.git\nsrc/.github/x')).toBe(
+			'src/a.ts\nsrc/.github/x'
+		);
+		const read = run(
+			'read',
+			'headers: { Authorization: Bearer abc.def-ghi }\ntoken ghs_0123456789abcdefABCDEF'
+		);
+		expect(read).toBe(
+			'headers: { Authorization: Bearer [REDACTED] }\ntoken [REDACTED]'
+		);
+		expect(run('bash', 'AUTHORIZATION: basic abc')).toBeUndefined();
+		const failed = filterToolResult({ toolName: 'grep', content: null });
+		expect(failed.isError).toBe(true);
+		expect(JSON.stringify(failed.content)).toContain('withheld');
+	});
 	it('gives concurrent subprocesses independent extension files', async () => {
 		const root = await mkdtemp(join(tmpdir(), 'acr-boundary-concurrent-'));
 		scratch.push(root);

@@ -216,7 +216,10 @@ export function stripReasoningArtifacts(
 
 export function scrubSecrets(text: string): string {
 	return text.replace(
-		/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+|(?:sk-|gh[oprsu]_|xox[abprs]-|AIza|github_pat_)[A-Za-z0-9._~+/=-]*/gi,
+		// The prefixes need a left boundary (so `task-` or `disk-` stay intact) and
+		// Bearer takes horizontal whitespace only (so a diff line is never merged
+		// with the next one).
+		/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|Bearer[ \t]+[A-Za-z0-9._~+/=-]+|(?<![A-Za-z0-9_-])(?:sk-|gh[oprsu]_|xox[abprs]-|AIza|github_pat_)[A-Za-z0-9._~+/=-]*/gi,
 		'[REDACTED-TOKEN]'
 	);
 }

@@ -221,13 +221,7 @@ describe('known gaps that are not asserted', () => {
 		'PR title and body are interpolated unfenced, so hostile text there shares a level with trusted instructions (only the SECURITY NOTICE wording defends it)'
 	);
 	it.todo(
-		'the prompt scrubber (scrubSecrets) has no AWS access key, PEM private key, or password-assignment classes, unlike redactSecrets'
-	);
-	it.todo(
 		'invisible characters (tag characters, bidi overrides, zero-width spaces) are passed to the model unchanged'
-	);
-	it.todo(
-		'the PR title is not passed through scrubSecrets, unlike the PR body and the patches'
 	);
 });
 

@@ -22,7 +22,8 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Keep the job token out of .git/config, which the reviewer can search.
+          persist-credentials: false
       - name: Run AI Code Review
         uses: niko0xdev/action-code-review/pr-review@v3
         with:

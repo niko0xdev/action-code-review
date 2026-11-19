@@ -2,8 +2,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PR_REVIEW_DEFAULTS } from '../../adapter/legacy-inputs.js';
-import { extractJsonBlock, scrubSecrets } from '../../llm/openai-compatible.js';
-import { escapeControlChars, fenced } from '../../shared/prompt-safety.js';
+import { extractJsonBlock } from '../../llm/openai-compatible.js';
+import {
+	escapeControlChars,
+	fenced,
+	redactForPrompt,
+} from '../../shared/prompt-safety.js';
 import { normalizeSecurityFinding } from '../findings/normalizer.js';
 import { redactSecrets } from '../redaction/redactor.js';
 import {
@@ -143,7 +147,7 @@ export class PiSecurityEngine implements SecurityEngine {
 		const fileDiffs = ctx.changedFiles
 			.map(
 				(f) =>
-					`### ${escapeControlChars(f.filename)} (${escapeControlChars(f.status)}, +${f.additions}/-${f.deletions})\n${fenced(f.patch ? scrubSecrets(f.patch) : '(binary or large file)', 'diff')}`
+					`### ${escapeControlChars(f.filename)} (${escapeControlChars(f.status)}, +${f.additions}/-${f.deletions})\n${fenced(f.patch ? redactForPrompt(f.patch) : '(binary or large file)', 'diff')}`
 			)
 			.join('\n\n');
 
@@ -183,7 +187,7 @@ export class PiSecurityEngine implements SecurityEngine {
 			`Claimed Evidence: ${escapeControlChars(finding.evidence.map((e) => e.description).join('; '))}`,
 			'',
 			'Diff Context (UNTRUSTED DATA):',
-			fenced(scrubSecrets(patchSnippet.slice(0, 5000)), 'diff'),
+			fenced(redactForPrompt(patchSnippet.slice(0, 5000)), 'diff'),
 			'',
 			'Analyse whether this is a genuine security issue or a false positive.',
 			'Respond ONLY with JSON:',
@@ -196,9 +200,16 @@ export class PiSecurityEngine implements SecurityEngine {
 		prompt: string
 	): Promise<string> {
 		// If LLM provider / API key configured, use provider or spawn Pi harness
+		// The frozen OPENAI_API_* names come first so a key meant for a custom
+		// gateway is never sent to the default OpenAI endpoint; the older
+		// OPENAI_BASE_URL / OPENAI_MODEL names stay as fallbacks.
 		const apiKey = ctx.options.apiKey || process.env.OPENAI_API_KEY;
-		const baseUrl = ctx.options.baseUrl || process.env.OPENAI_BASE_URL;
-		const model = ctx.options.model || process.env.OPENAI_MODEL || 'gpt-4o';
+		const baseUrl =
+			ctx.options.baseUrl ||
+			process.env.OPENAI_API_URL ||
+			process.env.OPENAI_BASE_URL;
+		const envModel = process.env.OPENAI_API_MODEL || process.env.OPENAI_MODEL;
+		const model = ctx.options.model || envModel || 'gpt-4o';
 
 		if (apiKey) {
 			const { OpenAiCompatibleProvider } = await import(
@@ -226,7 +237,7 @@ export class PiSecurityEngine implements SecurityEngine {
 				'A custom gateway requires an explicit API key; native provider credentials are not forwarded.'
 			);
 		}
-		const requestedModel = ctx.options.model || process.env.OPENAI_MODEL;
+		const requestedModel = ctx.options.model || envModel;
 		// The Action's OpenAI default must not replace a native provider's model.
 		const fallbackModel =
 			keyed && requestedModel === PR_REVIEW_DEFAULTS.openaiModel
