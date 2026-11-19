@@ -112,7 +112,8 @@ export function scanSecretsInDiff(
 					}
 				}
 				currentLine++;
-			} else if (!rawLine.startsWith('-')) {
+			} else if (!rawLine.startsWith('-') && !rawLine.startsWith('\\')) {
+				// "\ No newline at end of file" consumes no line.
 				currentLine++;
 			}
 		}

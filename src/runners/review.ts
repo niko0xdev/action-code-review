@@ -46,6 +46,10 @@ import {
 	withReviewReportOutput,
 } from '../review/report.js';
 import { runReview } from '../review/reviewer.js';
+import {
+	mergeSecretFindings,
+	scanReviewSecrets,
+} from '../review/secret-prepass.js';
 import { applyVerifyPass, sanitiseVerifyReason } from '../review/verify.js';
 import { selectReviewSecuritySkills } from '../security/skills/auto-select.js';
 import {
@@ -140,6 +144,7 @@ export async function runPrReviewAction(): Promise<void> {
 		'scorecard-context': core.getInput('scorecard-context'),
 		'repository-instructions': core.getInput('repository-instructions'),
 		'check-run': core.getInput('check-run'),
+		'secret-scan': core.getInput('secret-scan'),
 		'security-skills': core.getInput('security-skills'),
 	});
 	const llmConfig = resolveEngineConfig(legacyOptions);
@@ -416,6 +421,10 @@ export async function runPrReviewAction(): Promise<void> {
 				};
 			}
 		}
+		// Deterministic secret matches join after the verify pass, which only
+		// challenges model output; they need no second opinion.
+		if (legacyOptions.secretScan)
+			mergeSecretFindings(result, scanReviewSecrets(allPrFiles));
 		// Surface tool findings + prelint diagnostics in the result
 		// so they render in the GitHub review summary
 		// (collapsible section, see docs/index.md).

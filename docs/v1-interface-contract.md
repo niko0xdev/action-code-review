@@ -102,6 +102,7 @@ Additive input (not part of the frozen V1 surface; added after V1, optional, def
 | `check-run` | false | `'false'` |
 | `security-skills` | false | `'all'` |
 | `repository-instructions` | false | `'false'` |
+| `secret-scan` | false | `'false'` |
 
 `scorecard-context` is opt-in. When `'true'` and the repository is public, the
 review fetches the repository's published OSSF Scorecard once from
@@ -145,6 +146,14 @@ as an HTML entity. The workflow needs `checks: write`; any Checks API error
 and never fails, blocks, or changes the review. A pull request from a fork has a
 read-only token and cannot create a check, so the check is reported as missing
 on fork pull requests.
+`secret-scan` is opt-in. When `'true'`, the deterministic secret scanner used by
+`mode: security` runs over the added lines of every changed file with a patch,
+independent of `exclude-patterns`, after the main review and any verify pass.
+Each match becomes a `security` finding (critical or high, confidence 1, rule id
+`secret-scan/<rule>`) that names the credential type but never quotes the value;
+a line the model already flagged as a security issue is not duplicated, at most
+ten matches are added per run, and counts and risk are recomputed. The number
+added is reported as `diagnostics.secretScanFindings`.
 
 `security-skills` is a new optional input (additive; the default `'all'` leaves
 the review prompt byte-identical). `'auto'` keeps only the curated security skills

@@ -200,6 +200,8 @@ export interface ReviewDiagnostics {
 	verifyVerdicts?: ReviewVerificationVerdict[];
 	/** Repository instruction files (base commit) that fed the review rules. */
 	repositoryInstructions?: string[];
+	/** Findings added by the deterministic secret pre-pass (`secret-scan`). */
+	secretScanFindings?: number;
 }
 
 /**
