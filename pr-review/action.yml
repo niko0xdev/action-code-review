@@ -74,6 +74,12 @@ inputs:
     description: 'Opt-in: run the deterministic secret scanner over the added lines of every changed file (independent of exclude-patterns) and publish each credential match as a security finding. Matches never quote the value.'
     required: false
     default: 'false'
+  fix-prompts:
+    description: 'Opt-in: add a collapsed, copyable "Prompt for your coding agent" block to each inline finding comment. The text is redacted, has links removed, and is framed as a report rather than commands.'
+    required: false
+    default: 'false'
+    required: false
+    default: 'false'
   mode:
     description: 'Execution mode: auto | review | security | agent'
     required: false
@@ -223,6 +229,7 @@ runs:
         INPUT_SECURITY-SKILLS: ${{ inputs.security-skills }}
         INPUT_REPOSITORY-INSTRUCTIONS: ${{ inputs.repository-instructions }}
         INPUT_SECRET-SCAN: ${{ inputs.secret-scan }}
+        INPUT_FIX-PROMPTS: ${{ inputs.fix-prompts }}
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_SECURITY-PROFILE: ${{ inputs.security-profile }}
         INPUT_SECURITY-MIN-SEVERITY: ${{ inputs.security-min-severity }}

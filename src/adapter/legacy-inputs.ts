@@ -34,6 +34,7 @@ export interface PrReviewEngineOptions {
 	securitySkills: SecuritySkillsMode;
 	repositoryInstructions: boolean;
 	secretScan: boolean;
+	fixPrompts: boolean;
 }
 
 export interface PrContentEngineOptions {
@@ -98,6 +99,7 @@ export const PR_REVIEW_DEFAULTS = {
 	securitySkills: 'all',
 	repositoryInstructions: 'false',
 	secretScan: 'false',
+	fixPrompts: 'false',
 } as const;
 
 const PR_CONTENT_DEFAULTS = {
@@ -302,6 +304,7 @@ function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 			PR_REVIEW_DEFAULTS.repositoryInstructions
 		),
 		secretScan: bool(get(inputs, 'secret-scan'), PR_REVIEW_DEFAULTS.secretScan),
+		fixPrompts: bool(get(inputs, 'fix-prompts'), PR_REVIEW_DEFAULTS.fixPrompts),
 	};
 }
 

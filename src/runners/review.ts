@@ -145,6 +145,7 @@ export async function runPrReviewAction(): Promise<void> {
 		'repository-instructions': core.getInput('repository-instructions'),
 		'check-run': core.getInput('check-run'),
 		'secret-scan': core.getInput('secret-scan'),
+		'fix-prompts': core.getInput('fix-prompts'),
 		'security-skills': core.getInput('security-skills'),
 	});
 	const llmConfig = resolveEngineConfig(legacyOptions);
@@ -487,6 +488,7 @@ export async function runPrReviewAction(): Promise<void> {
 					incomplete: Boolean(incompleteFailure),
 					failOnIncomplete,
 					checkRun: legacyOptions.checkRun,
+					fixPrompts: legacyOptions.fixPrompts,
 					actor:
 						process.env.GITHUB_ACTOR ??
 						(
