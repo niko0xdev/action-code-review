@@ -32489,6 +32489,7 @@ const PR_REVIEW_DEFAULTS = {
     checkRun: 'false',
     securitySkills: 'all',
     repositoryInstructions: 'false',
+    secretScan: 'false',
 };
 const PR_CONTENT_DEFAULTS = {
     openaiModel: 'gpt-4',
@@ -32594,6 +32595,7 @@ function mapPrReview(inputs) {
         checkRun: bool(get(inputs, 'check-run'), PR_REVIEW_DEFAULTS.checkRun),
         securitySkills: (0,_shared_numeric_js__WEBPACK_IMPORTED_MODULE_2__/* .parseEnum */ .nL)(get(inputs, 'security-skills'), _security_skills_auto_select_js__WEBPACK_IMPORTED_MODULE_1__/* .SECURITY_SKILLS_MODES */ .j, PR_REVIEW_DEFAULTS.securitySkills, 'security-skills'),
         repositoryInstructions: bool(get(inputs, 'repository-instructions'), PR_REVIEW_DEFAULTS.repositoryInstructions),
+        secretScan: bool(get(inputs, 'secret-scan'), PR_REVIEW_DEFAULTS.secretScan),
     };
 }
 function mapPrContent(inputs) {
@@ -43723,6 +43725,171 @@ function deriveRuleCoverage(context, findings) {
     };
 }
 
+// EXTERNAL MODULE: ./src/security/findings/fingerprint.ts
+var fingerprint = __nccwpck_require__(9948);
+;// CONCATENATED MODULE: ./src/security/scanners/secret-scanner.ts
+
+const SECRET_RULES = [
+    {
+        id: 'sec-rule-gh-token',
+        name: 'Exposed GitHub Token',
+        pattern: /(?:ghp|gho|ghu|ghs|ghr|github_pat)_[a-zA-Z0-9_]{16,255}/g,
+        severity: 'critical',
+        cwe: 'CWE-798',
+    },
+    {
+        id: 'sec-rule-openai-key',
+        name: 'Exposed OpenAI API Key',
+        pattern: /(?<![A-Za-z0-9_-])sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,80}/g,
+        severity: 'critical',
+        cwe: 'CWE-798',
+    },
+    {
+        id: 'sec-rule-aws-key',
+        name: 'Exposed AWS Access Key ID',
+        pattern: /(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}/g,
+        severity: 'critical',
+        cwe: 'CWE-798',
+    },
+    {
+        id: 'sec-rule-private-key',
+        name: 'Exposed Private Key',
+        pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g,
+        severity: 'critical',
+        cwe: 'CWE-312',
+    },
+    {
+        id: 'sec-rule-slack-token',
+        name: 'Exposed Slack Token',
+        pattern: /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/g,
+        severity: 'high',
+        cwe: 'CWE-798',
+    },
+];
+/**
+ * Deterministic secret scanner over diff patches.
+ */
+function scanSecretsInDiff(changedFiles) {
+    const findings = [];
+    for (const file of changedFiles) {
+        if (!file.patch)
+            continue;
+        const lines = file.patch.split('\n');
+        let currentLine = 1;
+        for (const rawLine of lines) {
+            // In unified diff: @@ -a,b +c,d @@
+            const hunkMatch = rawLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+            if (hunkMatch) {
+                currentLine = Number.parseInt(hunkMatch[1], 10);
+                continue;
+            }
+            // Only scan added lines in diff ('+')
+            if (rawLine.startsWith('+') && !rawLine.startsWith('+++')) {
+                const addedContent = rawLine.slice(1);
+                for (const rule of SECRET_RULES) {
+                    rule.pattern.lastIndex = 0;
+                    if (rule.pattern.test(addedContent)) {
+                        const finding = {
+                            id: `${rule.id}-${file.filename}-${currentLine}`,
+                            fingerprint: (0,fingerprint/* computeFindingFingerprint */.V)({
+                                title: rule.name,
+                                file: file.filename,
+                                category: 'secrets',
+                                cwe: rule.cwe,
+                            }),
+                            title: rule.name,
+                            severity: rule.severity,
+                            confidence: 'confirmed',
+                            status: 'candidate',
+                            category: 'security',
+                            cwe: rule.cwe,
+                            owasp: 'A07:2021-Identification and Authentication Failures',
+                            file: file.filename,
+                            startLine: currentLine,
+                            endLine: currentLine,
+                            evidence: [
+                                {
+                                    type: 'scanner',
+                                    description: `Pattern match for ${rule.name} found in added code.`,
+                                    file: file.filename,
+                                    line: currentLine,
+                                },
+                            ],
+                            exploitability: 'confirmed',
+                            remediation: 'Remove hardcoded credential immediately and revoke/rotate any compromised tokens.',
+                            scannerSources: ['secret-scanner'],
+                        };
+                        findings.push(finding);
+                    }
+                }
+                currentLine++;
+            }
+            else if (!rawLine.startsWith('-') && !rawLine.startsWith('\\')) {
+                // "\ No newline at end of file" consumes no line.
+                currentLine++;
+            }
+        }
+    }
+    return findings;
+}
+
+;// CONCATENATED MODULE: ./src/review/secret-prepass.ts
+
+
+/** Inline comments one run may add for deterministic secret matches. */
+const MAX_SECRET_FINDINGS = 10;
+const SEVERITY = {
+    critical: 'critical',
+    high: 'high',
+    medium: 'medium',
+};
+/**
+ * Run the deterministic secret scanner over every changed file with a patch
+ * (independent of `exclude-patterns`: a credential is exposed wherever it is
+ * added) and express each match as a review finding. The finding names the
+ * rule but never quotes the matched value.
+ */
+function scanReviewSecrets(files) {
+    return scanSecretsInDiff([...files]).flatMap((secret) => {
+        if (!secret.file || typeof secret.startLine !== 'number')
+            return [];
+        const rule = secret.id.slice(0, secret.id.indexOf(`-${secret.file}-`));
+        return [
+            {
+                severity: SEVERITY[secret.severity] ?? 'low',
+                confidence: 1,
+                category: 'security',
+                path: secret.file,
+                line: secret.startLine,
+                title: `${secret.title} added in this change`,
+                ruleId: `secret-scan/${rule}`,
+                description: 'A credential pattern was found on an added line (deterministic secret scan). Remove it from the change and load it from a secret store or environment variable instead.',
+                impact: 'Anyone who can read the repository or its history can use the credential. Revoke or rotate it, since it is already in the pushed commits.',
+            },
+        ];
+    });
+}
+/**
+ * Add secret findings to a review result unless the model already reported a
+ * security finding on the same line, then recompute counts and risk.
+ */
+function mergeSecretFindings(result, secrets) {
+    // The deterministic match wins on its own line: a model finding there is
+    // dropped rather than allowed to hide the credential, so model output can
+    // never suppress a scan result.
+    const matched = new Set(secrets.map((secret) => `${secret.path}:${secret.line}`));
+    const kept = result.findings.filter((finding) => !(finding.category === 'security' &&
+        matched.has(`${finding.path}:${finding.line}`)));
+    const added = secrets.slice(0, MAX_SECRET_FINDINGS);
+    result.findings = [...added, ...kept];
+    result.counts = computeCounts(result.findings);
+    result.risk = riskFromFindings(result.findings);
+    result.diagnostics = {
+        ...result.diagnostics,
+        secretScanFindings: added.length,
+    };
+}
+
 // EXTERNAL MODULE: ./src/security/skills/auto-select.ts
 var auto_select = __nccwpck_require__(4654);
 // EXTERNAL MODULE: ./src/shared/numeric.ts
@@ -43730,6 +43897,7 @@ var numeric = __nccwpck_require__(317);
 // EXTERNAL MODULE: ./src/skills/registry.ts + 9 modules
 var registry = __nccwpck_require__(5672);
 ;// CONCATENATED MODULE: ./src/runners/review.ts
+
 
 
 
@@ -43829,6 +43997,7 @@ async function runPrReviewAction() {
         'scorecard-context': core.getInput('scorecard-context'),
         'repository-instructions': core.getInput('repository-instructions'),
         'check-run': core.getInput('check-run'),
+        'secret-scan': core.getInput('secret-scan'),
         'security-skills': core.getInput('security-skills'),
     });
     const llmConfig = resolveEngineConfig(legacyOptions);
@@ -44029,6 +44198,10 @@ async function runPrReviewAction() {
                 };
             }
         }
+        // Deterministic secret matches join after the verify pass, which only
+        // challenges model output; they need no second opinion.
+        if (legacyOptions.secretScan)
+            mergeSecretFindings(result, scanReviewSecrets(allPrFiles));
         // Surface tool findings + prelint diagnostics in the result
         // so they render in the GitHub review summary
         // (collapsible section, see docs/index.md).
@@ -44781,8 +44954,6 @@ function mapSeverityToSarifLevel(severity) {
     }
 }
 
-// EXTERNAL MODULE: ./src/security/findings/fingerprint.ts
-var fingerprint = __nccwpck_require__(9948);
 ;// CONCATENATED MODULE: ./src/security/scanners/dependency-scanner.ts
 
 /**
@@ -45182,111 +45353,6 @@ async function queryBatch(deps) {
         }
     });
     return found;
-}
-
-;// CONCATENATED MODULE: ./src/security/scanners/secret-scanner.ts
-
-const SECRET_RULES = [
-    {
-        id: 'sec-rule-gh-token',
-        name: 'Exposed GitHub Token',
-        pattern: /(?:ghp|gho|ghu|ghs|ghr|github_pat)_[a-zA-Z0-9_]{16,255}/g,
-        severity: 'critical',
-        cwe: 'CWE-798',
-    },
-    {
-        id: 'sec-rule-openai-key',
-        name: 'Exposed OpenAI API Key',
-        pattern: /(?<![A-Za-z0-9_-])sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,80}/g,
-        severity: 'critical',
-        cwe: 'CWE-798',
-    },
-    {
-        id: 'sec-rule-aws-key',
-        name: 'Exposed AWS Access Key ID',
-        pattern: /(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}/g,
-        severity: 'critical',
-        cwe: 'CWE-798',
-    },
-    {
-        id: 'sec-rule-private-key',
-        name: 'Exposed Private Key',
-        pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/g,
-        severity: 'critical',
-        cwe: 'CWE-312',
-    },
-    {
-        id: 'sec-rule-slack-token',
-        name: 'Exposed Slack Token',
-        pattern: /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/g,
-        severity: 'high',
-        cwe: 'CWE-798',
-    },
-];
-/**
- * Deterministic secret scanner over diff patches.
- */
-function scanSecretsInDiff(changedFiles) {
-    const findings = [];
-    for (const file of changedFiles) {
-        if (!file.patch)
-            continue;
-        const lines = file.patch.split('\n');
-        let currentLine = 1;
-        for (const rawLine of lines) {
-            // In unified diff: @@ -a,b +c,d @@
-            const hunkMatch = rawLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-            if (hunkMatch) {
-                currentLine = Number.parseInt(hunkMatch[1], 10);
-                continue;
-            }
-            // Only scan added lines in diff ('+')
-            if (rawLine.startsWith('+') && !rawLine.startsWith('+++')) {
-                const addedContent = rawLine.slice(1);
-                for (const rule of SECRET_RULES) {
-                    rule.pattern.lastIndex = 0;
-                    if (rule.pattern.test(addedContent)) {
-                        const finding = {
-                            id: `${rule.id}-${file.filename}-${currentLine}`,
-                            fingerprint: (0,fingerprint/* computeFindingFingerprint */.V)({
-                                title: rule.name,
-                                file: file.filename,
-                                category: 'secrets',
-                                cwe: rule.cwe,
-                            }),
-                            title: rule.name,
-                            severity: rule.severity,
-                            confidence: 'confirmed',
-                            status: 'candidate',
-                            category: 'security',
-                            cwe: rule.cwe,
-                            owasp: 'A07:2021-Identification and Authentication Failures',
-                            file: file.filename,
-                            startLine: currentLine,
-                            endLine: currentLine,
-                            evidence: [
-                                {
-                                    type: 'scanner',
-                                    description: `Pattern match for ${rule.name} found in added code.`,
-                                    file: file.filename,
-                                    line: currentLine,
-                                },
-                            ],
-                            exploitability: 'confirmed',
-                            remediation: 'Remove hardcoded credential immediately and revoke/rotate any compromised tokens.',
-                            scannerSources: ['secret-scanner'],
-                        };
-                        findings.push(finding);
-                    }
-                }
-                currentLine++;
-            }
-            else if (!rawLine.startsWith('-')) {
-                currentLine++;
-            }
-        }
-    }
-    return findings;
 }
 
 // EXTERNAL MODULE: external "node:string_decoder"

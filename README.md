@@ -40,6 +40,7 @@ jobs:
           # check-run: 'true'          # opt-in, default 'false'; needs checks: write
           # security-skills: auto      # opt-in, default 'all'; see below
           # repository-instructions: 'true'  # opt-in: AGENTS.md and .github/instructions from the base branch
+          # secret-scan: 'true'        # opt-in: deterministic credential scan in every review
 ```
 
 Use `@v3.1.0` for an exact release, `@v3.1` for updates within the minor line, or
