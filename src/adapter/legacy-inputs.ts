@@ -31,6 +31,7 @@ export interface PrReviewEngineOptions {
 	maxContextChars: number;
 	scorecardContext: boolean;
 	securitySkills: SecuritySkillsMode;
+	repositoryInstructions: boolean;
 }
 
 export interface PrContentEngineOptions {
@@ -92,6 +93,7 @@ export const PR_REVIEW_DEFAULTS = {
 	maxContextChars: '30000',
 	scorecardContext: 'false',
 	securitySkills: 'all',
+	repositoryInstructions: 'false',
 } as const;
 
 const PR_CONTENT_DEFAULTS = {
@@ -289,6 +291,10 @@ function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 			SECURITY_SKILLS_MODES,
 			PR_REVIEW_DEFAULTS.securitySkills,
 			'security-skills'
+		),
+		repositoryInstructions: bool(
+			get(inputs, 'repository-instructions'),
+			PR_REVIEW_DEFAULTS.repositoryInstructions
 		),
 	};
 }

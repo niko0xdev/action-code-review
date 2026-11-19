@@ -7,6 +7,7 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 ### Added
 
 - `pr-content` can append a short Mermaid sequence diagram of the main changed flow to the PR description under `### Change flow (generated)`. It is opt-in through the `AI_PR_CONTENT_DIAGRAM=true` environment variable (no new input), uses the existing single model call, and is published only after a grammar check and secret redaction. The grammar accepts the punctuation a real description uses (a number sign, an ampersand, a comparison, an activation suffix), participant names Mermaid cannot parse are rewritten to safe aliases, and a rejected diagram is reported with the offending line instead of being dropped silently.
+- Opt-in `repository-instructions` input: the review rules gain `AGENTS.md`, `.github/copilot-instructions.md`, and `.github/instructions/*.instructions.md` files whose `applyTo` globs match a changed path. Only base-commit copies are read, each file is capped at 50 KiB and fenced, and the files used are listed in `review-report` diagnostics (`repositoryInstructions`).
 
 ## [3.1.0] – 20/11/2026
 

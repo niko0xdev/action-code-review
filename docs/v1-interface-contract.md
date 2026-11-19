@@ -100,11 +100,21 @@ Additive input (not part of the frozen V1 surface; added after V1, optional, def
 |-------|----------|---------|
 | `scorecard-context` | false | `'false'` |
 | `security-skills` | false | `'all'` |
+| `repository-instructions` | false | `'false'` |
 
 `scorecard-context` is opt-in. When `'true'` and the repository is public, the
 review fetches the repository's published OSSF Scorecard once from
 `api.securityscorecards.dev` and gives the reviewer a fixed-format table of numeric
 scores as advisory context. Failures never fail or block a review.
+
+`repository-instructions` is opt-in. When `'true'`, the review rules also
+include `AGENTS.md`, `.github/copilot-instructions.md`, and every
+`.github/instructions/*.instructions.md` (at most 20) whose `applyTo` front-matter
+globs match a changed path. Only the copies at the pull request base commit are
+read (local git objects first, the contents API for shallow checkouts); without a
+base commit nothing is read. Each file keeps the 50 KiB cap, the total is capped
+at 64 KiB, each file is fenced, and the paths used are reported in
+`review-report` as `diagnostics.repositoryInstructions`.
 
 `security-skills` is a new optional input (additive; the default `'all'` leaves
 the review prompt byte-identical). `'auto'` keeps only the curated security skills

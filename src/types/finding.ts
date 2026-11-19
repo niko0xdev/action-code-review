@@ -198,6 +198,8 @@ export interface ReviewDiagnostics {
 	verifyCostUsd?: number;
 	verifyStatus?: 'complete' | 'error' | 'incomplete' | 'skipped';
 	verifyVerdicts?: ReviewVerificationVerdict[];
+	/** Repository instruction files (base commit) that fed the review rules. */
+	repositoryInstructions?: string[];
 }
 
 /**
