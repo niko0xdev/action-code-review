@@ -39,9 +39,10 @@ jobs:
           # security-skills: auto      # opt-in, default 'all'; see below
 ```
 
-Use `@v3.0.0` for an exact release, `@v3.0` for updates within the minor line, or
+Use `@v3.1.0` for an exact release, `@v3.1` for updates within the minor line, or
 `@v3` for compatible v3 updates. Both `pr-review` and `pr-content` use these tags.
-See the [v3 upgrade and release guide](docs/releases/v3.0.0.md) before upgrading from v2.
+See the [v3.1.0 release guide](docs/releases/v3.1.0.md) before upgrading from v3.0,
+and the [v3 upgrade and release guide](docs/releases/v3.0.0.md) before upgrading from v2.
 Full input list: [`pr-review/action.yml`](pr-review/action.yml),
 [`pr-content/action.yml`](pr-content/action.yml). Frozen behavior:
 [`docs/v1-interface-contract.md`](docs/v1-interface-contract.md).
