@@ -955,6 +955,45 @@ describe('approval outcome reporting', () => {
 		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
 	});
 
+	it('withholds approval when changed files were left unreviewed', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		octokit.rest.pulls.listThreads = vi.fn(async () => [resolvedAiThread()]);
+		const result = cleanResult();
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+			filesUnreviewed: 1,
+		});
+		expect(result.approval).toEqual({
+			state: 'not-requested',
+			detail: '1 changed file(s) were not reviewed',
+		});
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
+	it('withholds approval when a finding category had to be bucketed', async () => {
+		const octokit = octokitWithApproval(async () => ({ data: {} }));
+		octokit.rest.pulls.listThreads = vi.fn(async () => [resolvedAiThread()]);
+		const result = {
+			...cleanResult(),
+			diagnostics: { bucketedUnknownCategories: 1 },
+		};
+		await publishReview(octokit as never, {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 7,
+			headSha: 'sha-approve',
+			result,
+			autoApproveWhenResolved: true,
+		});
+		expect(result.approval?.state).toBe('not-requested');
+		expect(octokit.rest.pulls.createReview).not.toHaveBeenCalled();
+	});
+
 	it('ignores human threads when deciding AI thread resolution', async () => {
 		const octokit = octokitWithApproval(async () => ({ data: {} }));
 		octokit.rest.pulls.listThreads = vi.fn(async () => [

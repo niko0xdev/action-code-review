@@ -70,6 +70,30 @@ describe('normalizeCategories', () => {
 		expect(result.findings[2]?.severity).toBe('low');
 	});
 
+	it('accepts allowed categories in any case, with spaces, or as a synonym', () => {
+		const result = normalizeCategories([
+			mkFinding({
+				category: 'Security' as Finding['category'],
+				severity: 'critical',
+			}),
+			mkFinding({ category: ' ERROR_HANDLING ' as Finding['category'] }),
+			mkFinding({
+				category: 'Auth' as Finding['category'],
+				severity: 'high',
+			}),
+			mkFinding({ category: 'injection' as Finding['category'] }),
+		]);
+		expect(result.bucketedCount).toBe(0);
+		expect(result.findings.map((f) => f.category)).toEqual([
+			'security',
+			'error-handling',
+			'security',
+			'security',
+		]);
+		expect(result.findings[0]?.severity).toBe('critical');
+		expect(result.findings[2]?.severity).toBe('high');
+	});
+
 	it('preserves other fields when bucketing', () => {
 		const original = mkFinding({
 			category: 'smelly' as Finding['category'],

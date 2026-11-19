@@ -396,6 +396,10 @@ export async function runPrReviewAction(): Promise<void> {
 					filesTotal,
 					filesExcluded,
 					filesSelected,
+					// Kept by the configured filters but never reviewed: max-files
+					// cap, no patch, or a default-ignored path. Blocks auto-approval;
+					// list such paths in exclude-patterns to accept them explicitly.
+					filesUnreviewed: Math.max(filtered.length - filesSelected, 0),
 					blockOnIssues: legacyOptions.blockOnIssues,
 					minSeverity: legacyOptions.minSeverity,
 					requireWritePermissions:

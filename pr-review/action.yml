@@ -35,7 +35,7 @@ inputs:
     description: 'Comma-separated list of directory paths to include in review. Only files in these directories will be reviewed.'
     required: false
   auto-approve-when-resolved:
-    description: 'If true, approve the pull request when all AI-generated review threads are resolved. Requires a complete review, at least one earlier AI thread, and no findings dropped by min-severity'
+    description: 'If true, approve the pull request when all AI-generated review threads are resolved. Requires a complete review, at least one earlier AI thread, no findings dropped by min-severity, and every changed file kept by the filters reviewed (files cut by max-files, without a patch, or under default-ignored paths such as dist/ or lockfiles block approval unless listed in exclude-patterns)'
     required: false
     default: 'false'
   min-severity:
@@ -107,7 +107,7 @@ inputs:
     required: false
     default: 'false'
   buffer-inline-comments:
-    description: 'Buffer inline findings to /tmp/ai-inline-buffer.jsonl and classify before posting (confirmed=false never posts)'
+    description: 'Buffer inline findings to ai-inline-buffer.jsonl in the per-job runner temp directory and classify before posting (confirmed=false never posts; only low-severity findings can be filtered as test probes)'
     required: false
     default: 'true'
   classify-inline-comments:

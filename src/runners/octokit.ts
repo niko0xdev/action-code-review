@@ -62,8 +62,17 @@ export function toPublisherOctokit(
 					body: string;
 					side?: string;
 				}>,
+				// GitHub requires a body on a REQUEST_CHANGES review without
+				// comments, and the approval text travels here too.
+				...(typeof args.body === 'string' ? { body: args.body } : {}),
 			});
 		},
+		dismissReview: (args: Record<string, unknown>) =>
+			client.rest.pulls.dismissReview({
+				...repositoryArgs(args),
+				review_id: requiredNumber(args, 'review_id'),
+				message: requiredString(args, 'message'),
+			}),
 		createReviewComment: (args: Record<string, unknown>) =>
 			client.rest.pulls.createReviewComment({
 				...repositoryArgs(args),
@@ -97,8 +106,13 @@ export function toPublisherOctokit(
 				per_page: requiredNumber(args, 'per_page'),
 			});
 			return {
+				// The publisher reads state, commit and body to recognise its own
+				// blocking review on the current head; keep them.
 				data: response.data.map((review) => ({
 					id: review.id,
+					state: review.state ?? null,
+					commit_id: review.commit_id ?? null,
+					body: review.body ?? null,
 					user: review.user ? { login: review.user.login ?? undefined } : null,
 				})),
 			};
