@@ -4,6 +4,11 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 
 ## [Unreleased]
 
+### Changed
+
+- The Pi runtime moves from the deprecated `@mariozechner/pi-coding-agent@0.73.1` to `@earendil-works/pi-coding-agent@1.5.2`, which clears advisory GHSA-jfgx-wxx8-mp94 (predictable temporary extension install paths) and the remaining runtime audit findings. Self-hosted runners with a different `pi` on `PATH` get the pinned version installed, as before.
+- Pi runs with `--no-approve` and `--no-mcp`, so project-local settings, resources, and MCP servers are never loaded.
+
 ### Security
 
 - Drop `.git` entries from the reviewer's `grep` and `find` results and redact authorisation headers and GitHub tokens in every inspection result. With the default `actions/checkout` settings the job token in `.git/config` could otherwise reach the model provider. The documented workflows now set `persist-credentials: false`.

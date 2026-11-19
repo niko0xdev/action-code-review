@@ -8,9 +8,9 @@
  * PATH (warm caches).
  */
 
-export const PI_PACKAGE = '@mariozechner/pi-coding-agent';
+export const PI_PACKAGE = '@earendil-works/pi-coding-agent';
 /**
  * Pinned upstream release; bump deliberately and document in docs/architecture.md.
  * Mirrored in pr-review/pi-runtime/package.json and its package-lock.json.
  */
-export const PI_PACKAGE_PIN = '0.73.1';
+export const PI_PACKAGE_PIN = '1.5.2';

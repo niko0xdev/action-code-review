@@ -82,6 +82,12 @@ describe('buildPiArgs', () => {
 		expect(args).toContain('--no-context-files');
 	});
 
+	it('ignores project-local resources and MCP servers', () => {
+		const args = buildPiArgs('/repo');
+		expect(args).toContain('--no-approve');
+		expect(args).toContain('--no-mcp');
+	});
+
 	it('selects the openai provider and configured model', () => {
 		const args = buildPiArgs('/repo', 'gpt-4o-mini');
 		expect(args).toContain('--provider');
