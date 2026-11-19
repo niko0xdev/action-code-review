@@ -15,6 +15,7 @@ import {
 	buildSummaryBody,
 	describeApproval,
 	describeReviewExecution,
+	mdSafe,
 	stickySummaryMarker,
 } from './comments.js';
 import { hasWritePermission } from './permissions.js';
@@ -103,6 +104,10 @@ export interface PublisherOctokit extends OctokitLike {
 			}>;
 			updateComment?(args: Record<string, unknown>): Promise<{ data: unknown }>;
 		};
+		checks?: {
+			create(args: Record<string, unknown>): Promise<{ data: { id: number } }>;
+			update?(args: Record<string, unknown>): Promise<{ data: unknown }>;
+		};
 	};
 	users?: { getAuthenticated: () => Promise<{ data: { login: string } }> };
 }
@@ -149,6 +154,18 @@ export interface PublishParams {
 	 * dropped by `min-severity`. Defaults to false; opt in explicitly.
 	 */
 	autoApproveWhenResolved?: boolean;
+	/** Create the opt-in check run on the reviewed head. */
+	checkRun?: boolean;
+	/**
+	 * The review was incomplete, as the step itself judged it. Undefined falls
+	 * back to the publisher's own notion, so a direct call keeps working.
+	 */
+	incomplete?: boolean;
+	/**
+	 * Whether an incomplete review fails the step. When false the check is
+	 * neutral, mirroring the step that only warns.
+	 */
+	failOnIncomplete?: boolean;
 	/** Re-read PR head before publishing when the Octokit adapter supports it. */
 	recheckHead?: boolean;
 }
@@ -204,6 +221,15 @@ export async function publishReview(
 				core.warning(
 					`[review] PR head changed during review (${headSha} -> ${current.data.head.sha}); skipped publishing stale findings.`
 				);
+				// A required check must never hang: report the skip on the head
+				// that is now current instead of leaving it unreported.
+				if (params.checkRun)
+					await publishSkipCheckRun(octokit, {
+						owner,
+						repo,
+						headSha: current.data.head.sha,
+						reason: 'the pull request head changed during the review',
+					});
 				return;
 			}
 		} catch (error) {
@@ -404,6 +430,192 @@ export async function publishReview(
 			issue_number: prNumber,
 			body: summaryBody,
 		});
+	}
+	if (params.checkRun) {
+		await publishCheckRun(octokit, params, validFindings, {
+			blocking: shouldBlock,
+		});
+	}
+}
+
+const CHECK_RUN_NAME = 'AI Code Review';
+/** GitHub accepts at most 50 annotations per create or update request. */
+const ANNOTATIONS_PER_REQUEST = 50;
+const CHECK_SUMMARY_MAX_CHARS = 20_000;
+const CHECK_SUMMARY_MAX_FINDINGS = 50;
+const ANNOTATION_LEVEL: Record<string, 'failure' | 'warning' | 'notice'> = {
+	critical: 'failure',
+	high: 'failure',
+	medium: 'warning',
+	low: 'notice',
+};
+
+function cap(text: string, max: number): string {
+	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/**
+ * Opt-in check run on the reviewed head. Its conclusion mirrors the review
+ * decision so branch protection can require it. Best effort: a Checks API
+ * error (usually a missing `checks: write`) only logs a warning and never
+ * changes the review outcome.
+ */
+async function publishCheckRun(
+	octokit: PublisherOctokit,
+	params: PublishParams,
+	findings: Finding[],
+	state: { blocking: boolean }
+): Promise<void> {
+	const { owner, repo, headSha, result } = params;
+	// The step's own judgement of incompleteness wins, so the check and the
+	// step never disagree; without it the publisher's notion is used.
+	const incomplete = params.incomplete ?? reviewFailed(result);
+	const failOnIncomplete = params.failOnIncomplete !== false;
+	const conclusion = incomplete
+		? failOnIncomplete
+			? 'failure'
+			: 'neutral'
+		: state.blocking
+			? 'failure'
+			: findings.length > 0
+				? 'neutral'
+				: 'success';
+	const title =
+		conclusion === 'failure'
+			? incomplete
+				? 'Review incomplete'
+				: `${findings.length} finding(s), changes requested`
+			: conclusion === 'neutral'
+				? incomplete
+					? 'Review incomplete (the step only warns)'
+					: findings.length === 0
+						? 'No findings'
+						: `${findings.length} finding(s), non-blocking`
+				: 'No findings';
+	const count = (severity: string) =>
+		findings.filter((finding) => finding.severity === severity).length;
+	const lines = findings.slice(0, CHECK_SUMMARY_MAX_FINDINGS).map(
+		(finding) =>
+			// Redact before escaping: escaping first turns quotes into
+			// entities, which stops the quote-based secret detectors.
+			`- **${finding.severity.toUpperCase()}** \`${mdSafe(redactSecrets(finding.path))}:${finding.line}\` ${mdSafe(redactSecrets(finding.title))}`
+	);
+	const summary = cap(
+		redactSecrets(
+			[
+				`**Review status:** ${result.reviewStatus ?? 'complete'}${incomplete ? ' (incomplete or failed)' : ''}`,
+				`**Risk:** ${result.risk}`,
+				'',
+				'| Critical | High | Medium | Low |',
+				'|---|---|---|---|',
+				`| ${count('critical')} | ${count('high')} | ${count('medium')} | ${count('low')} |`,
+				...(lines.length > 0 ? ['', ...lines] : []),
+				...(findings.length > lines.length
+					? [
+							'',
+							`${findings.length - lines.length} more finding(s) in the annotations.`,
+						]
+					: []),
+			].join('\n')
+		),
+		CHECK_SUMMARY_MAX_CHARS
+	);
+	const annotations = findings.map((finding) => ({
+		path: finding.path,
+		start_line: finding.line,
+		end_line: finding.line,
+		annotation_level: ANNOTATION_LEVEL[finding.severity] ?? 'notice',
+		title: cap(
+			redactSecrets(`[${finding.severity.toUpperCase()}] ${finding.title}`),
+			255
+		),
+		message: cap(redactSecrets(finding.description || finding.title), 2000),
+	}));
+	try {
+		const checks = octokit.rest.checks;
+		if (!checks) throw new Error('Checks API is not available');
+		const created = await checks.create({
+			owner,
+			repo,
+			name: CHECK_RUN_NAME,
+			head_sha: headSha,
+			status: 'completed',
+			conclusion,
+			output: {
+				title,
+				summary,
+				annotations: annotations.slice(0, ANNOTATIONS_PER_REQUEST),
+			},
+		});
+		for (
+			let start = ANNOTATIONS_PER_REQUEST;
+			start < annotations.length;
+			start += ANNOTATIONS_PER_REQUEST
+		) {
+			if (!checks.update) {
+				core.warning(
+					'[check-run] The check run was created but the remaining annotations could not be published: checks.update is not available.'
+				);
+				return;
+			}
+			await checks.update({
+				owner,
+				repo,
+				check_run_id: created.data.id,
+				output: {
+					title,
+					summary,
+					annotations: annotations.slice(
+						start,
+						start + ANNOTATIONS_PER_REQUEST
+					),
+				},
+			});
+		}
+	} catch (error) {
+		core.warning(checkRunWarning(error, 'publish'));
+	}
+}
+
+/** A Checks API failure, worded by what the status actually means. */
+function checkRunWarning(error: unknown, phase: string): string {
+	const status = (error as { status?: number } | undefined)?.status;
+	const detail = redactDetail(error);
+	if (status === 403 || status === 404)
+		return `[check-run] Could not ${phase} the "${CHECK_RUN_NAME}" check run: ${detail}. Grant \`checks: write\` in the workflow permissions; a pull request from a fork has a read-only token and cannot create checks. The review itself is unaffected.`;
+	if (status === 422)
+		return `[check-run] Could not ${phase} the "${CHECK_RUN_NAME}" check run: ${detail}. GitHub rejected the request (an annotation path or line may be outside the commit). The review itself is unaffected.`;
+	return `[check-run] Could not ${phase} the "${CHECK_RUN_NAME}" check run: ${detail}. The review itself is unaffected.`;
+}
+
+/**
+ * Report a completed, neutral check for a run that did not review anything
+ * (a draft, an empty file selection, a head that moved). A required check
+ * must never be left unreported, or branch protection waits forever.
+ */
+export async function publishSkipCheckRun(
+	octokit: PublisherOctokit,
+	params: { owner: string; repo: string; headSha: string; reason: string }
+): Promise<void> {
+	const { owner, repo, headSha, reason } = params;
+	const checks = octokit.rest.checks;
+	if (!checks) return;
+	try {
+		await checks.create({
+			owner,
+			repo,
+			name: CHECK_RUN_NAME,
+			head_sha: headSha,
+			status: 'completed',
+			conclusion: 'neutral',
+			output: {
+				title: `Skipped: ${reason}`,
+				summary: `The review did not run: ${reason}. No findings were produced, and no approval was submitted.`,
+				annotations: [],
+			},
+		});
+	} catch (error) {
+		core.warning(checkRunWarning(error, 'publish'));
 	}
 }
 

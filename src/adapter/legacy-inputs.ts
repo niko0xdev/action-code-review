@@ -30,6 +30,7 @@ export interface PrReviewEngineOptions {
 	includeFullContent: boolean;
 	maxContextChars: number;
 	scorecardContext: boolean;
+	checkRun: boolean;
 	securitySkills: SecuritySkillsMode;
 	repositoryInstructions: boolean;
 }
@@ -92,6 +93,7 @@ export const PR_REVIEW_DEFAULTS = {
 	includeFullContent: 'false',
 	maxContextChars: '30000',
 	scorecardContext: 'false',
+	checkRun: 'false',
 	securitySkills: 'all',
 	repositoryInstructions: 'false',
 } as const;
@@ -286,6 +288,7 @@ function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 			get(inputs, 'scorecard-context'),
 			PR_REVIEW_DEFAULTS.scorecardContext
 		),
+		checkRun: bool(get(inputs, 'check-run'), PR_REVIEW_DEFAULTS.checkRun),
 		securitySkills: parseEnum(
 			get(inputs, 'security-skills'),
 			SECURITY_SKILLS_MODES,
