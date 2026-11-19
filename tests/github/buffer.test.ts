@@ -9,7 +9,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BUFFER_PATH, classifyFindings } from '../../src/github/buffer.js';
+import {
+	BUFFER_PATH,
+	classifyFindings,
+	defaultBufferPath,
+} from '../../src/github/buffer.js';
 import type { Finding } from '../../src/types/finding.js';
 
 function finding(overrides: Partial<Finding> = {}): Finding {
@@ -34,7 +38,7 @@ describe('classifyFindings', () => {
 			title: 'SQL injection in query',
 		};
 		const probe = {
-			...finding(),
+			...finding({ severity: 'low' }),
 			ts: new Date().toISOString(),
 			title: 'Test comment — does this work?',
 		};
@@ -45,6 +49,21 @@ describe('classifyFindings', () => {
 		expect(kept.length).toBe(1);
 		expect(filtered.length).toBe(1);
 		expect(filtered[0].title).toContain('Test comment');
+	});
+
+	it('never treats a medium or higher finding as a probe, whatever its title', () => {
+		const findings = (['critical', 'high', 'medium'] as const).map(
+			(severity) => ({
+				...finding({
+					severity,
+					title: 'Checking if the caller is admin happens after the write',
+				}),
+				ts: new Date().toISOString(),
+			})
+		);
+		const { real, probe } = classifyFindings(findings as any);
+		expect(real).toHaveLength(3);
+		expect(probe).toHaveLength(0);
 	});
 
 	it('never posts confirmed=false regardless of title', () => {
@@ -70,7 +89,19 @@ describe('classifyFindings', () => {
 });
 
 describe('BUFFER_PATH', () => {
-	it('defaults to /tmp/ai-inline-buffer.jsonl', () => {
+	it('names the inline buffer file', () => {
 		expect(BUFFER_PATH).toContain('ai-inline-buffer');
+	});
+
+	it('lives in the per-job runner temp directory when available', () => {
+		expect(defaultBufferPath({ RUNNER_TEMP: '/runner/_temp' })).toBe(
+			join('/runner/_temp', 'ai-inline-buffer.jsonl')
+		);
+		expect(
+			defaultBufferPath({
+				RUNNER_TEMP: '/runner/_temp',
+				AI_INLINE_BUFFER_PATH: '/custom.jsonl',
+			})
+		).toBe('/custom.jsonl');
 	});
 });

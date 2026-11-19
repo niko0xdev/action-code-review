@@ -46,9 +46,12 @@ What shipped from them:
   `AI_REVIEW_ENABLE_PRELINT=true`): biome, ruff, swiftlint, ktlint,
   sqlfluff run first; findings feed the review prompt as evidence.
   Missing binary = skip, never error.
-- **Unknown finding categories bucket to `low`** (`src/review/reviewer.ts`):
+- **Unknown finding categories bucket to `low`** (`src/review/validation.ts`):
   keeps unexpected harness output visible under the `low` cap instead of
-  dropping it silently.
+  dropping it silently. Case, underscores, and common synonyms (`Security`,
+  `auth`, `injection`, `error_handling`) map to the real category first, so a
+  mislabelled critical finding keeps its severity; any finding that still had
+  to be bucketed blocks auto-approval.
 - **Tool findings in summary** (`src/github/comments.ts`,
   `src/github/review.ts`): collapsible `<details>` section, collapsed by
   default; `buildJobSummary` renders the same for `$GITHUB_STEP_SUMMARY`.

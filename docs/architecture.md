@@ -288,7 +288,13 @@ Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic alrea
    body text), the body-only event is not
    submitted again (one timeline entry per head, not per run); a new head, a
    dismissed, `COMMENTED`, or approved earlier review, or any new inline
-   comment still submits. An empty file selection is a notice, except when an
+   comment still submits. A complete run with no blocking finding dismisses
+   the action's own earlier `CHANGES_REQUESTED` reviews (same authorship rule;
+   without a resolved login, a review also counts when one of its inline
+   comments carries the finding marker), because a later `COMMENT` does not
+   clear a block. Review state, commit, and body travel through the Octokit
+   adapter (`src/runners/octokit.ts`), which `tests/runners/octokit-adapter.test.ts`
+   exercises end to end. An empty file selection is a notice, except when an
    `include-dir` or a non-default `exclude-patterns` removed every file, which
    warns. `include-dir` strips a leading `/` and ignores entries with `..`.
 6. **Harness reliability** — a malformed harness answer is retried once with a

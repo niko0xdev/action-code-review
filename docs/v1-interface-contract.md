@@ -298,8 +298,11 @@ matching ids are skipped.
   reports bot logins without the `[bot]` suffix (`github-actions`), so they are
   normalised to the REST form (`github-actions[bot]`) before matching.
   Approval also requires a complete review, at least one AI-authored thread,
-  and no findings dropped by `min-severity`; a PR with no AI threads is never
-  approved. If every AI-authored thread is resolved, submits an `APPROVE` review with body
+  no findings dropped by `min-severity`, no finding whose unknown category was
+  bucketed to `low`, and every changed file kept by the configured filters
+  reviewed (a file cut by `max-files`, without a patch from GitHub, or under a
+  default-ignored path such as `dist/` or a lockfile blocks approval unless
+  `exclude-patterns` lists it); a PR with no AI threads is never approved. If every AI-authored thread is resolved, submits an `APPROVE` review with body
   `All AI-generated review comments have been resolved. Auto-approving PR.`
   Missing or malformed thread data fails closed and never triggers approval.
   GitHub refuses `APPROVE` from `GITHUB_TOKEN` unless the repository enables
