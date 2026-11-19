@@ -150,6 +150,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Run PR Security Review
         uses: niko0xdev/action-code-review/pr-review@main
@@ -285,6 +286,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Run Repository Security Audit
         uses: niko0xdev/action-code-review/pr-review@main

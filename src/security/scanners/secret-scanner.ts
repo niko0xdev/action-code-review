@@ -20,7 +20,8 @@ const SECRET_RULES: SecretRule[] = [
 	{
 		id: 'sec-rule-openai-key',
 		name: 'Exposed OpenAI API Key',
-		pattern: /sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,80}/g,
+		pattern:
+			/(?<![A-Za-z0-9_-])sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,80}/g,
 		severity: 'critical',
 		cwe: 'CWE-798',
 	},

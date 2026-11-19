@@ -37,6 +37,14 @@ async function fixture(
 	await writeFile(join(repo, '\u00a0', 'credential'), 'ordinary source');
 	await symlink(join(root, 'outside-dir'), join(repo, ' '));
 	await writeFile(join(repo, 'a.ts'), 'export const source = "SOURCE_CANARY";');
+	// actions/checkout persists the job token here unless persist-credentials
+	// is false; the model must never see it through grep or find.
+	await mkdir(join(repo, '.git'));
+	await writeFile(
+		join(repo, '.git', 'config'),
+		'[http]\n\textraheader = AUTHORIZATION: basic R0lUX0NSRURFTlRJQUxfQ0FOQVJZ\n'
+	);
+	await writeFile(join(repo, '.git', 'GIT_METADATA_CANARY'), 'ref');
 	const requests: Array<{
 		messages: Array<{ role: string; content: unknown }>;
 	}> = [];
@@ -197,6 +205,33 @@ describe('pinned Pi runtime against a loopback provider', () => {
 				'OUTSIDE_CREDENTIAL_CANARY'
 			);
 			expect(JSON.stringify(replies)).not.toContain('not available');
+		} finally {
+			await f.cleanup();
+		}
+	});
+	it('never returns git metadata or credentials from grep or find', async () => {
+		const f = await fixture([
+			{ name: 'grep', input: { pattern: 'AUTHORIZATION', path: '.' } },
+			{
+				name: 'grep',
+				input: { pattern: 'AUTHORIZATION', path: '.', glob: '*' },
+			},
+			{ name: 'grep', input: { pattern: 'SOURCE_CANARY', path: '.' } },
+			{ name: 'find', input: { pattern: '*', path: '.' } },
+			{ name: 'find', input: { pattern: '**/config', path: '.' } },
+		]);
+		try {
+			await f.harness.review(f.context);
+			const replies = JSON.stringify(
+				f.requests
+					.flatMap((request) => request.messages)
+					.filter((message) => message.role === 'tool')
+			);
+			expect(replies).not.toContain('R0lUX0NSRURFTlRJQUxfQ0FOQVJZ');
+			expect(replies).not.toContain('GIT_METADATA_CANARY');
+			expect(replies).not.toContain('.git/');
+			expect(replies).toContain('a.ts:1:');
+			expect(replies).toContain('SOURCE_CANARY');
 		} finally {
 			await f.cleanup();
 		}
