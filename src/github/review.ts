@@ -166,6 +166,8 @@ export interface PublishParams {
 	 * neutral, mirroring the step that only warns.
 	 */
 	failOnIncomplete?: boolean;
+	/** Add a collapsed "Prompt for your coding agent" block to each inline comment. */
+	fixPrompts?: boolean;
 	/** Re-read PR head before publishing when the Octokit adapter supports it. */
 	recheckHead?: boolean;
 }
@@ -173,13 +175,13 @@ export interface PublishParams {
 export function buildReviewPayload(
 	findings: Finding[],
 	headSha: string,
-	options: { blockOnIssues?: boolean } = {}
+	options: { blockOnIssues?: boolean; fixPrompts?: boolean } = {}
 ): ReviewPayload {
 	const comments = findings.map((finding) => ({
 		path: finding.path,
 		line: finding.line,
 		side: 'RIGHT' as const,
-		body: buildFindingBody(finding),
+		body: buildFindingBody(finding, { fixPrompt: options.fixPrompts }),
 	}));
 	return {
 		commit_id: headSha,
@@ -307,6 +309,7 @@ export async function publishReview(
 	if ((findingsToPublish.length > 0 || shouldBlock) && !alreadyBlockingOnHead) {
 		const payload = buildReviewPayload(findingsToPublish, headSha, {
 			blockOnIssues: shouldBlock,
+			fixPrompts: params.fixPrompts,
 		});
 		const event = shouldBlock ? 'REQUEST_CHANGES' : 'COMMENT';
 		// GitHub requires a body when a review carries no inline comments.

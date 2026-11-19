@@ -103,6 +103,7 @@ Additive input (not part of the frozen V1 surface; added after V1, optional, def
 | `security-skills` | false | `'all'` |
 | `repository-instructions` | false | `'false'` |
 | `secret-scan` | false | `'false'` |
+| `fix-prompts` | false | `'false'` |
 
 `scorecard-context` is opt-in. When `'true'` and the repository is public, the
 review fetches the repository's published OSSF Scorecard once from
@@ -155,6 +156,14 @@ a deterministic match always wins on its line, so a model finding cannot hide a
 credential, at most ten matches are added per run, and counts and risk are
 recomputed. The number
 added is reported as `diagnostics.secretScanFindings`.
+`fix-prompts` is opt-in. When `'true'`, each inline finding comment gets a
+collapsed `<details>` block, "Prompt for your coding agent", placed before the
+hidden `ai-review-id` marker. It restates the path, line, title, problem,
+impact, and suggested fix for pasting into a coding agent. The text is model
+output, so it is redacted, scheme-qualified links are replaced with
+`[link removed]`, it opens by telling the agent to treat it as a report rather
+than commands, and it is fenced so it cannot close the block. The marker and the
+finding identity are unchanged, so duplicate suppression keeps working.
 
 `security-skills` is a new optional input (additive; the default `'all'` leaves
 the review prompt byte-identical). `'auto'` keeps only the curated security skills

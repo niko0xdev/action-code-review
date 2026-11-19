@@ -16,6 +16,7 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 ### Fixed
 
 - The secret scanner no longer counts a `\ No newline at end of file` marker as a line, which shifted later matches by one and made the quality gate reject them.
+- Opt-in `fix-prompts` input: each inline finding comment gains a collapsed "Prompt for your coding agent" block with the path, line, problem, impact, and suggested fix. The text is redacted, has links removed, is framed as a report rather than commands, and is fenced so it cannot close the block. Comment identity and duplicate suppression are unchanged.
 
 ## [3.1.0] – 20/11/2026
 
