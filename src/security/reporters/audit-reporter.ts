@@ -41,7 +41,7 @@ function normalizeInline(value: string): string {
  */
 const PROSE_ESCAPE_PATTERN = /[\\`*_[\]()|#:@]|\.(?=\.?\w)/g;
 
-function proseEscape(value: string): string {
+export function proseEscape(value: string): string {
 	const escaped = redactSecrets(normalizeInline(value))
 		.replace(PROSE_ESCAPE_PATTERN, '\\$&')
 		.replace(/</g, '&lt;')
@@ -70,7 +70,7 @@ function longestBacktickRun(value: string): number {
  * longer than any backtick run inside the value, so the value cannot close
  * the span early and leak Markdown syntax.
  */
-function codeSpan(value: string): string {
+export function codeSpan(value: string): string {
 	const normalized = normalizeInline(value);
 	const fence = '`'.repeat(longestBacktickRun(normalized) + 1);
 	const padded =

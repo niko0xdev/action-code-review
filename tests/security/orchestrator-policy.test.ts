@@ -17,6 +17,7 @@ const engine = vi.hoisted(() => ({
 	confirmed: [] as unknown[],
 	confirmOutput: undefined as unknown[] | undefined,
 	refutations: [] as unknown[],
+	scannerFindings: [] as unknown[],
 }));
 
 vi.mock('../../src/security/engines/pi-security-engine.js', () => ({
@@ -43,7 +44,10 @@ vi.mock('../../src/security/engines/pi-security-engine.js', () => ({
 	},
 }));
 vi.mock('../../src/security/scanners/scanner-engine.js', () => ({
-	runSecurityScanners: async () => ({ findings: [], executions: [] }),
+	runSecurityScanners: async () => ({
+		findings: engine.scannerFindings,
+		executions: [],
+	}),
 }));
 
 const { runSecurityWorkflow } = await import(
@@ -110,9 +114,45 @@ afterEach(() => {
 	engine.confirmed = [];
 	engine.confirmOutput = undefined;
 	engine.refutations = [];
+	engine.scannerFindings = [];
 });
 
 describe('security orchestrator policy', () => {
+	it('confirms reasoning findings even when the model labels them confirmed', async () => {
+		engine.findings = [
+			{ ...finding('self', 'critical'), confidence: 'confirmed' },
+		];
+		await run({});
+		expect((engine.confirmed as SecurityFinding[]).map((f) => f.id)).toEqual([
+			'self',
+		]);
+	});
+
+	it('confirms a reasoning finding that copies a scanner occurrence', async () => {
+		const scanned = {
+			...finding('copy', 'critical'),
+			confidence: 'confirmed',
+			scannerSources: ['secret-scanner'],
+		};
+		engine.scannerFindings = [scanned];
+		engine.findings = [{ ...scanned, scannerSources: undefined }];
+		await run({});
+		expect(engine.confirmed).not.toEqual([]);
+	});
+
+	it('does not re-confirm deterministic scanner findings', async () => {
+		engine.scannerFindings = [
+			{
+				...finding('scan', 'critical'),
+				confidence: 'confirmed',
+				scannerSources: ['secret-scanner'],
+			},
+		];
+		const result = await run({});
+		expect(engine.confirmed).toEqual([]);
+		expect(result.findings.map((f) => f.id)).toContain('scan');
+	});
+
 	it('marks the review incomplete when the confirm pass fails', async () => {
 		const warning = vi.spyOn(core, 'warning').mockImplementation(() => {});
 		engine.findings = [finding('a', 'high')];

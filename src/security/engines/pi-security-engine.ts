@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PR_REVIEW_DEFAULTS } from '../../adapter/legacy-inputs.js';
+import { parseUnifiedHunkHeader } from '../../context/diff.js';
 import { extractJsonBlock } from '../../llm/openai-compatible.js';
 import {
 	escapeControlChars,
@@ -45,6 +46,66 @@ const PI_PROVIDER_KEYS: ReadonlyArray<readonly [string, string]> = [
  * Pi-powered security engine for diff security reviews and finding confirmations.
  * Spec reference: §5.2, §15, §22.
  */
+const CONFIRMATION_SNIPPET_CHARS = 5000;
+
+/**
+ * The part of a patch a confirmer needs: the hunks that cover the claimed
+ * lines, within `maxChars`. A covering hunk larger than the budget is cut to a
+ * window around the claimed line, so the sink is always shown. When no hunk
+ * covers the line, the head of the patch is supplied as before.
+ */
+export function confirmationSnippet(
+	patch: string,
+	startLine: number | undefined,
+	endLine: number | undefined,
+	maxChars: number
+): string {
+	if (!patch) return '';
+	const head = patch.slice(0, maxChars);
+	if (typeof startLine !== 'number') return head;
+	const last =
+		typeof endLine === 'number' ? Math.max(endLine, startLine) : startLine;
+	const covering = patch.split(/\n(?=@@ )/).filter((hunk) => {
+		const header = parseUnifiedHunkHeader(hunk.split('\n', 1)[0]);
+		if (!header) return false;
+		const hunkEnd = header.newStart + Math.max(header.newLines, 1) - 1;
+		return header.newStart <= last && startLine <= hunkEnd;
+	});
+	if (covering.length === 0) return head;
+	const joined = covering.join('\n');
+	if (joined.length <= maxChars) return joined;
+	const [header, ...body] = covering[0].split('\n');
+	if (body.length === 0) return head;
+	const parsed = parseUnifiedHunkHeader(header);
+	let newLine = parsed?.newStart ?? 1;
+	let target = 0;
+	for (let i = 0; i < body.length; i++) {
+		if (newLine >= startLine && !body[i].startsWith('-')) {
+			target = i;
+			break;
+		}
+		if (!body[i].startsWith('-') && !body[i].startsWith('\\')) newLine += 1;
+	}
+	const title = `${header} (excerpt around new line ${startLine})`;
+	let from = target;
+	let to = target;
+	let used = title.length + 1 + body[target].length;
+	for (let grew = true; grew; ) {
+		grew = false;
+		if (to + 1 < body.length && used + body[to + 1].length + 1 <= maxChars) {
+			to += 1;
+			used += body[to].length + 1;
+			grew = true;
+		}
+		if (from > 0 && used + body[from - 1].length + 1 <= maxChars) {
+			from -= 1;
+			used += body[from].length + 1;
+			grew = true;
+		}
+	}
+	return [title, ...body.slice(from, to + 1)].join('\n').slice(0, maxChars);
+}
+
 export class PiSecurityEngine implements SecurityEngine {
 	readonly name = 'pi-security';
 	/** One isolated Pi config directory per engine run, not per Pi call. */
@@ -174,7 +235,12 @@ export class PiSecurityEngine implements SecurityEngine {
 		const targetFile = ctx.changedFiles.find(
 			(f) => f.filename === finding.file
 		);
-		const patchSnippet = targetFile?.patch || '';
+		const patchSnippet = confirmationSnippet(
+			targetFile?.patch || '',
+			finding.startLine,
+			finding.endLine ?? finding.startLine,
+			CONFIRMATION_SNIPPET_CHARS
+		);
 
 		return [
 			PI_SECURITY_SYSTEM_PROMPT,
@@ -187,7 +253,7 @@ export class PiSecurityEngine implements SecurityEngine {
 			`Claimed Evidence: ${escapeControlChars(finding.evidence.map((e) => e.description).join('; '))}`,
 			'',
 			'Diff Context (UNTRUSTED DATA):',
-			fenced(redactForPrompt(patchSnippet.slice(0, 5000)), 'diff'),
+			fenced(redactForPrompt(patchSnippet), 'diff'),
 			'',
 			'Analyse whether this is a genuine security issue or a false positive.',
 			'Respond ONLY with JSON:',

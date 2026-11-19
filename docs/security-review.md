@@ -51,6 +51,13 @@
 - **`deep`**: Exhaustive security audit evaluating data flows, indirect attack chains, and multi-file vulnerabilities.
 - **`confirm`**: Independent verification pass for high-risk findings without anchoring to discoverer reasoning.
 
+The confirmation pass (`security-confirm-findings`) re-checks every high and
+critical finding from the reasoning engine, including findings the model itself
+labelled `confirmed`; only deterministic scanner findings may skip it, and only
+when no reasoning finding shares their occurrence. The confirmer receives the
+diff hunks that cover the claimed lines (up to 5,000 characters, cut to a window
+around the claimed line when a hunk is larger), not simply the head of the patch.
+
 Repository-wide profiles require a compatible Piolium adapter exposing
 `runAudit()`. If that adapter is unavailable, the run is marked incomplete and
 fails closed; it is never silently downgraded to a diff-only review.
