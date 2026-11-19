@@ -2,9 +2,9 @@ import * as core from '@actions/core';
 import { extractJsonBlock } from '../llm/openai-compatible.js';
 import { redactSecrets } from '../security/redaction/redactor.js';
 import {
+	describeSequenceDiagram,
 	diagramSection,
 	stripDiagramSection,
-	validateSequenceDiagram,
 } from './sequence-diagram.js';
 
 export interface PrContentOctokit {
@@ -108,13 +108,16 @@ export async function updatePrContent(
 	const update = { title: redactSecrets(parsed.title) };
 	let description = applyTemplate(parsed.description, options.templateContent);
 	if (options.diagram) {
-		const diagram =
+		const check =
 			typeof parsed.diagram === 'string'
-				? validateSequenceDiagram(parsed.diagram)
-				: undefined;
+				? describeSequenceDiagram(parsed.diagram)
+				: { error: 'the model returned no diagram' };
 		description = stripDiagramSection(description);
-		if (diagram) description += diagramSection(diagram);
-		else core.info('Sequence diagram missing or rejected; section omitted');
+		if (check.diagram) description += diagramSection(check.diagram);
+		else
+			core.info(
+				`Sequence diagram rejected (${check.error ?? 'unknown reason'}); section omitted`
+			);
 	}
 	description = redactSecrets(description);
 	const current = await octokit.rest.pulls.get({
