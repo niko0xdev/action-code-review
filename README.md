@@ -18,6 +18,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      # checks: write  # only with check-run: 'true'
     steps:
       - uses: actions/checkout@v5
         with:
@@ -36,6 +37,7 @@ jobs:
           # max-files: 10
           # exclude-patterns: '*.md,*.json,*.lock'
           # scorecard-context: 'true'  # opt-in, default 'false'; see below
+          # check-run: 'true'          # opt-in, default 'false'; needs checks: write
           # security-skills: auto      # opt-in, default 'all'; see below
           # repository-instructions: 'true'  # opt-in: AGENTS.md and .github/instructions from the base branch
 ```
@@ -53,6 +55,12 @@ public repositories as review context. Privacy note: when enabled, the owner and
 repository name are sent to `api.securityscorecards.dev`, a third-party service.
 Only numeric scores are used, and a failed lookup never affects the review. See
 [`docs/architecture.md`](docs/architecture.md).
+
+`check-run` (default `'false'`) adds one `AI Code Review` check run on the PR head
+commit, with findings as annotations. Its conclusion mirrors the review decision
+(`failure` when blocking or incomplete, `neutral` for non-blocking findings,
+`success` when clean), so branch protection can require it. Grant `checks: write`;
+without it the action logs a warning and the review is unaffected.
 
 `security-skills` (default `'all'`) controls which curated security skills are
 added to the review prompt. `'all'` is the current behaviour. `'auto'` includes

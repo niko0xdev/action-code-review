@@ -212,6 +212,19 @@ repository) logs one `[scorecard]` line and the review continues without it.
 **Privacy:** when enabled, the owner and repository name are sent to
 `api.securityscorecards.dev`, a third-party service.
 
+## Check run (opt-in)
+
+Input `check-run` (default `'false'`; see `publishCheckRun` in `src/github/review.ts`).
+When `'true'`, `publishReview` creates one completed `AI Code Review` check run on
+the reviewed head after the summary comment is posted, and never when publishing is
+skipped as stale. The conclusion is `failure` for a blocking review (blocking finding
+with `block-on-issues: 'true'`) or an incomplete or failed one (the same rule as
+`reviewFailed`), `neutral` for non-blocking findings, and `success` with none.
+Findings become redacted, length-capped annotations; GitHub takes at most 50 per
+request, so the rest follow in `checks.update` batches of 50. The Checks calls are
+mapped explicitly in `src/runners/octokit.ts`. Needs `checks: write`; any Checks API
+error logs one `[check-run]` warning and the review outcome is unchanged.
+
 ## Optional configuration (spec §8)
 
 Numeric variables are validated by `src/shared/numeric.ts`: an invalid value logs a warning and falls back to the default, so it can never disable a limit.
