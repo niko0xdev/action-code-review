@@ -4,6 +4,18 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 
 ## [Unreleased]
 
+No changes yet.
+
+## [3.1.0] – 20/11/2026
+
+### Upgrade notes
+
+- Auto-approval (still opt-in through `auto-approve-when-resolved`) is stricter: it is refused while any changed file kept by the filters went unreviewed (cut by `max-files`, without a patch, or under a default-ignored path such as `dist/` or a lockfile), or when a finding's unknown category had to be lowered to `low`. List paths in `exclude-patterns` to accept them explicitly.
+- A complete run with no blocking finding now dismisses the action's own earlier `CHANGES_REQUESTED` review. The workflow token already needs `pull-requests: write`; no new permission is required.
+- The bundled Pi runtime is now `@earendil-works/pi-coding-agent@1.5.2` and is called with `--no-approve` and `--no-mcp`. A custom `pi-binary-path`, or a preinstalled `pi` used by the security fallback, must be Pi 1.x; Pi 0.x rejects those options.
+- Documented workflows set `persist-credentials: false` on `actions/checkout`. Callers should do the same so the job token never sits in `.git/config` during a review.
+- `security-profile: lite|balanced|deep` still needs a compatible Piolium adapter and reports an incomplete run without one, as in 3.0.0.
+
 ### Changed
 
 - The Pi runtime moves from the deprecated `@mariozechner/pi-coding-agent@0.73.1` to `@earendil-works/pi-coding-agent@1.5.2`, which clears advisory GHSA-jfgx-wxx8-mp94 (predictable temporary extension install paths) and the remaining runtime audit findings. Self-hosted runners with a different `pi` on `PATH` get the pinned version installed, as before.

@@ -43,7 +43,7 @@ interface SarifResult {
 export function generateSarif(
 	findings: SecurityFinding[],
 	toolName = 'action-code-review',
-	toolVersion = '3.0.0'
+	toolVersion = '3.1.0'
 ): string {
 	const rulesMap = new Map<string, SarifRule>();
 	const results: SarifResult[] = [];

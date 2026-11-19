@@ -1,6 +1,6 @@
 {
 	"name": "action-code-review",
-	"version": "3.0.0",
+	"version": "3.1.0",
 	"description": "AI code review engine: repository-aware review via a coding harness over an OpenAI-compatible endpoint",
 	"type": "module",
 	"scripts": {
