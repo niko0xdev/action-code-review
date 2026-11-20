@@ -21,6 +21,7 @@ export interface PrReviewEngineOptions {
 	baseUrl?: string;
 	model: string;
 	reviewPrompt?: string;
+	reviewEffort: 'auto' | 'lite' | 'balanced' | 'deep';
 	maxFiles: number;
 	excludePatterns: string[];
 	includeDirs?: string[];
@@ -87,6 +88,7 @@ export const DEFAULT_EXCLUDE_PATTERNS = ['*.md', '*.txt'];
 /** Frozen Action defaults shared with native fallback selection. */
 export const PR_REVIEW_DEFAULTS = {
 	openaiModel: 'gpt-4',
+	reviewEffort: 'auto',
 	maxFiles: '10',
 	excludePatterns: DEFAULT_EXCLUDE_PATTERNS.join(','),
 	autoApproveWhenResolved: 'false',
@@ -258,6 +260,12 @@ function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 		baseUrl: rawBaseUrl ? normalizeBaseUrl(rawBaseUrl) : undefined,
 		model: get(inputs, 'openai-model') ?? PR_REVIEW_DEFAULTS.openaiModel,
 		reviewPrompt: get(inputs, 'review-prompt'),
+		reviewEffort: parseEnum(
+			get(inputs, 'review-effort') ?? PR_REVIEW_DEFAULTS.reviewEffort,
+			['auto', 'lite', 'balanced', 'deep'] as const,
+			'balanced',
+			'review-effort'
+		),
 		maxFiles: int(
 			get(inputs, 'max-files'),
 			PR_REVIEW_DEFAULTS.maxFiles,

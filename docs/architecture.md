@@ -325,3 +325,16 @@ Deferred/Rejected: **#9** OIDC/non-standard auth header (provider-agnostic alrea
    A group that still fails marks the run incomplete and fails the step, and
    `AI_REVIEW_DEBUG_HARNESS=true` dumps the raw harness output to the step
    summary for diagnosis.
+
+## Review effort presets
+
+The review runner resolves effort before prioritising files. `auto` chooses
+`lite` only when the complete, filtered scope has at most three files, the
+risk classifier flags no domain, the existing caps would select the same
+files, and Scorecard context, automatic security-skill selection, prelint,
+and verification are all off. Otherwise it uses `balanced`. This never widens
+the scope or drops enabled optional work under `auto`. Explicit `lite` applies
+a three-file ceiling and skips those optional steps. Explicit `deep` bypasses
+only the input file cap, keeps the environment ceiling and context budgets,
+and defaults verification on. The resolved preset is carried in diagnostics
+to the PR summary, job summary, and JSON report.

@@ -98,12 +98,28 @@ Additive input (not part of the frozen V1 surface; added after V1, optional, def
 
 | Input | Required | Default |
 |-------|----------|---------|
+| `review-effort` | false | `'auto'` |
 | `scorecard-context` | false | `'false'` |
 | `check-run` | false | `'false'` |
 | `security-skills` | false | `'all'` |
 | `repository-instructions` | false | `'false'` |
 | `secret-scan` | false | `'false'` |
 | `fix-prompts` | false | `'false'` |
+
+`review-effort` accepts `auto`, `lite`, `balanced`, or `deep`. `auto` selects
+`lite` only for a complete file list with at most three files after filtering,
+no classifier risk domain, no change to the file selection, and no enabled
+Scorecard context, automatic security-skill selection, prelint, or verify pass.
+Otherwise it selects `balanced`, the existing behaviour. `auto` never widens
+the scope or drops enabled optional work. Explicit `lite` caps review at three
+files (largest changes first, subject to lower caps), skips those optional
+steps, and retains the standard security skills and any enabled secret scan.
+`deep` ignores the `max-files` input, keeps all other budgets including the
+`AI_REVIEW_MAX_FILES` ceiling and `max-context-chars`, and defaults verification
+on for high and critical findings unless `AI_REVIEW_VERIFY_PASS` is set.
+Invalid effort values warn and fall back to `balanced`, as do non-positive file
+caps. The effective preset is visible in the summary and in
+`review-report.diagnostics.reviewEffort`.
 
 `scorecard-context` is opt-in. When `'true'` and the repository is public, the
 review fetches the repository's published OSSF Scorecard once from
