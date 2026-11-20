@@ -104,6 +104,7 @@ vi.mock('../src/llm/openai-compatible.js', async (importOriginal) => ({
 }));
 
 import { main } from '../src/cli.js';
+import { buildReviewPrompt } from '../src/harness/harness.js';
 import { verifyOutputTokenBudget } from '../src/review/verify.js';
 
 const ENV_KEYS = [
@@ -319,6 +320,93 @@ describe('main: top-level flows', () => {
 		expect(state.runReview).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		['auto', '', 2, 'lite', false],
+		['auto', '1', 1, 'balanced', false],
+		['lite', '', 3, 'lite', false],
+		['deep', '1', 5, 'deep', false],
+		['deep', '0', 5, 'balanced', false],
+		['invalid', '', 5, 'balanced', false],
+	] as const)(
+		'runs %s with cap %s',
+		async (input, cap, count, effort, verify) => {
+			inputs['review-effort'] = input;
+			inputs['max-files'] = cap;
+			const fixture = prContext();
+			const files = Array.from(
+				{ length: input === 'auto' ? 2 : 5 },
+				(_, i) => ({
+					...fixture.diff.files[0],
+					filename: `src/file${i}.ts`,
+					changes: i,
+				})
+			);
+			state.pr = prContext({ diff: { files } });
+			const verifyPass = vi.fn(async () => {});
+			state.applyVerify = verifyPass;
+			await main(['pr-review']);
+			const [context, , options] = state.runReview.mock.calls[0] ?? [];
+			const paths = context.diff.files.map(
+				(f: { filename: string }) => f.filename
+			);
+			expect(paths).toEqual(
+				files
+					.slice()
+					.reverse()
+					.slice(0, count)
+					.map((f) => f.filename)
+			);
+			expect(verifyPass).toHaveBeenCalledTimes(verify ? 1 : 0);
+			const report = setOutput.mock.calls.find(
+				([key]) => key === 'review-report'
+			);
+			expect(JSON.parse(String(report?.[1])).diagnostics.reviewEffort).toBe(
+				effort
+			);
+			expect(core.summary.addRaw).toHaveBeenCalledWith(
+				expect.stringContaining(`**Review effort:** ${effort}`)
+			);
+			if (input === 'invalid')
+				expect(warning).toHaveBeenCalledWith(
+					expect.stringMatching(/review-effort.*balanced/)
+				);
+			if (input === 'auto') {
+				inputs['review-effort'] = 'balanced';
+				state.pr = prContext({ diff: { files } });
+				await main(['pr-review']);
+				const [baseline, , baselineOptions] =
+					state.runReview.mock.calls[1] ?? [];
+				expect(context.diff.files).toEqual(baseline.diff.files);
+				expect(buildReviewPrompt(context, options.extraRules)).toBe(
+					buildReviewPrompt(baseline, baselineOptions.extraRules)
+				);
+			}
+		}
+	);
+
+	it.each(['risk', 'scorecard', 'skills', 'prelint', 'verify', 'truncated'])(
+		'keeps balanced under auto with %s',
+		async (reason) => {
+			inputs['review-effort'] = 'auto';
+			if (reason === 'scorecard') {
+				inputs['scorecard-context'] = 'true';
+				state.payload.repository = { private: true };
+			}
+			if (reason === 'skills') inputs['security-skills'] = 'auto';
+			if (reason === 'prelint') process.env.AI_REVIEW_ENABLE_PRELINT = 'true';
+			if (reason === 'verify') process.env.AI_REVIEW_VERIFY_PASS = 'true';
+			const fixture = prContext();
+			if (reason === 'risk') fixture.diff.files[0].filename = 'src/auth.ts';
+			state.pr = prContext({
+				diff: { ...fixture.diff, filesTruncated: reason === 'truncated' },
+			});
+			await main(['pr-review']);
+			expect(core.summary.addRaw).toHaveBeenCalledWith(
+				expect.stringContaining('**Review effort:** balanced')
+			);
+		}
+	);
+
 	it('runs a normal review, publishes it, and restores the runtime', async () => {
 		await main(['pr-review']);
 		expect(state.runReview).toHaveBeenCalledTimes(1);
@@ -401,6 +489,37 @@ describe('main: top-level flows', () => {
 		const sentPrompt = () =>
 			(state.complete.mock.calls[0]?.[0] as Array<{ content: string }>)[0]
 				.content;
+
+		it.each(['balanced', 'deep'])(
+			'keeps the review complete under %s without explicit verification',
+			async (effort) => {
+				inputs['review-effort'] = effort;
+				const reviewed = { ...withFindings(), reviewStatus: 'complete' };
+				state.runReview.mockResolvedValue(reviewed);
+				state.complete.mockRejectedValue(new Error('Verifier timed out'));
+				await main(['pr-review']);
+				expect(state.complete).not.toHaveBeenCalled();
+				const report = setOutput.mock.calls.find(
+					([key]) => key === 'review-report'
+				);
+				expect(JSON.parse(String(report?.[1])).status).toBe('complete');
+				expect(reviewed.findings).toHaveLength(2);
+				expect(setFailed).not.toHaveBeenCalled();
+			}
+		);
+
+		it('omits verifier evidence above the configured context budget', async () => {
+			inputs['max-context-chars'] = '5000';
+			process.env.AI_REVIEW_VERIFY_PASS = 'true';
+			const fixture = prContext();
+			fixture.diff.files[0].patch = `@@ -1 +1 @@\n-${'x'.repeat(6000)}\n+oversized-evidence`;
+			state.pr = fixture;
+			state.runReview.mockResolvedValue(withFindings());
+			state.complete.mockImplementation(approveAll);
+			await main(['pr-review']);
+			expect(sentPrompt()).toContain('High finding title');
+			expect(sentPrompt()).not.toContain('oversized-evidence');
+		});
 
 		it('marks the review incomplete and fails the step when the verify pass throws', async () => {
 			process.env.AI_REVIEW_VERIFY_PASS = 'true';

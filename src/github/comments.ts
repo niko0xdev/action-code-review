@@ -446,6 +446,9 @@ export function buildSummaryBody(result: SummaryResult): string {
 		`**Duration:** ${formatDuration(result.durationMs)}`,
 		truncationNotice,
 		filesLine,
+		...(result.diagnostics?.reviewEffort
+			? [`**Review effort:** ${result.diagnostics.reviewEffort}`]
+			: []),
 		describeReviewExecution({ ...result, reviewStatus }),
 		describeApproval(result.approval),
 		`**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,

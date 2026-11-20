@@ -167,6 +167,7 @@ export interface ReviewVerificationVerdict {
 }
 
 export interface ReviewDiagnostics {
+	reviewEffort?: 'lite' | 'balanced' | 'deep';
 	/** Number of tool findings emitted across all tools. */
 	toolFindingsTotal?: number;
 	/** Number of LLM findings dropped because the category was unknown. */

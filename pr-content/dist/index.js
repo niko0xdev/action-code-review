@@ -32478,6 +32478,7 @@ const DEFAULT_EXCLUDE_PATTERNS = ['*.md', '*.txt'];
 /** Frozen Action defaults shared with native fallback selection. */
 const PR_REVIEW_DEFAULTS = {
     openaiModel: 'gpt-4',
+    reviewEffort: 'auto',
     maxFiles: '10',
     excludePatterns: DEFAULT_EXCLUDE_PATTERNS.join(','),
     autoApproveWhenResolved: 'false',
@@ -32581,6 +32582,7 @@ function mapPrReview(inputs) {
         baseUrl: rawBaseUrl ? (0,_llm_config_js__WEBPACK_IMPORTED_MODULE_0__/* .normalizeBaseUrl */ .qT)(rawBaseUrl) : undefined,
         model: get(inputs, 'openai-model') ?? PR_REVIEW_DEFAULTS.openaiModel,
         reviewPrompt: get(inputs, 'review-prompt'),
+        reviewEffort: (0,_shared_numeric_js__WEBPACK_IMPORTED_MODULE_2__/* .parseEnum */ .nL)(get(inputs, 'review-effort') ?? PR_REVIEW_DEFAULTS.reviewEffort, ['auto', 'lite', 'balanced', 'deep'], 'balanced', 'review-effort'),
         maxFiles: int(get(inputs, 'max-files'), PR_REVIEW_DEFAULTS.maxFiles, 'max-files'),
         excludePatterns: splitList(get(inputs, 'exclude-patterns') ?? PR_REVIEW_DEFAULTS.excludePatterns),
         includeDirs: (() => {
@@ -39780,7 +39782,8 @@ function riskFromFindings(findings) {
 function sourceEvidence(candidates, context) {
     const paths = new Set(candidates.map((candidate) => candidate.path));
     const files = (context.changedFiles ?? []).filter((file) => paths.has(file.filename) && file.patch);
-    const supplied = new Set((0,harness/* allocateReviewDiff */.PN)(files, 24_000).suppliedPaths);
+    const maxChars = Math.min(context.maxContextChars ?? 24_000, 24_000);
+    const supplied = new Set((0,harness/* allocateReviewDiff */.PN)(files, maxChars).suppliedPaths);
     return files
         .filter((file) => supplied.has(file.filename))
         .map((file, index) => ({
@@ -39989,6 +39992,7 @@ async function applyVerifyPass(result, args) {
             body: args.body,
             filenames: result.filesReviewed,
             changedFiles: args.changedFiles,
+            maxContextChars: args.maxContextChars,
             baseSha: args.baseSha,
             headSha: args.headSha,
         },
@@ -40584,6 +40588,9 @@ function buildSummaryBody(result) {
         `**Duration:** ${formatDuration(result.durationMs)}`,
         truncationNotice,
         filesLine,
+        ...(result.diagnostics?.reviewEffort
+            ? [`**Review effort:** ${result.diagnostics.reviewEffort}`]
+            : []),
         describeReviewExecution({ ...result, reviewStatus }),
         describeApproval(result.approval),
         `**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,
@@ -41496,6 +41503,9 @@ function buildJobSummary(input) {
         '- **Detected stack:** see review comment',
         `- **Review duration:** ${seconds}`,
         `- ${filesLine}`,
+        ...(input.diagnostics?.reviewEffort
+            ? [`- **Review effort:** ${input.diagnostics.reviewEffort}`]
+            : []),
         `- ${describeReviewExecution({
             risk: input.result.risk,
             counts: input.result.counts,
@@ -44262,6 +44272,8 @@ function mergeSecretFindings(result, secrets) {
     };
 }
 
+// EXTERNAL MODULE: ./src/security/classifier/risk-classifier.ts
+var risk_classifier = __nccwpck_require__(8000);
 // EXTERNAL MODULE: ./src/security/skills/auto-select.ts
 var auto_select = __nccwpck_require__(4654);
 // EXTERNAL MODULE: ./src/shared/numeric.ts
@@ -44269,6 +44281,7 @@ var numeric = __nccwpck_require__(317);
 // EXTERNAL MODULE: ./src/skills/registry.ts + 9 modules
 var registry = __nccwpck_require__(5672);
 ;// CONCATENATED MODULE: ./src/runners/review.ts
+
 
 
 
@@ -44352,13 +44365,15 @@ async function runPrReviewAction() {
         core.setFailed('This action only runs on pull requests');
         return;
     }
+    const rawMaxFiles = core.getInput('max-files');
     const legacyOptions = (0,legacy_inputs/* mapPrReviewInputs */.eP)({
         'github-token': core.getInput('github-token'),
         'openai-api-key': core.getInput('openai-api-key'),
         'openai-base-url': core.getInput('openai-base-url'),
         'openai-model': core.getInput('openai-model'),
         'review-prompt': core.getInput('review-prompt'),
-        'max-files': core.getInput('max-files'),
+        'max-files': rawMaxFiles,
+        'review-effort': core.getInput('review-effort'),
         'exclude-patterns': core.getInput('exclude-patterns'),
         'include-dir': core.getInput('include-dir'),
         'auto-approve-when-resolved': core.getInput('auto-approve-when-resolved'),
@@ -44395,7 +44410,35 @@ async function runPrReviewAction() {
     // Captured before filtering so the summary can report
     // "N of M (X excluded by filter)" (src/github/comments.ts).
     const filesTotal = allPrFiles.length;
-    reviewContext.diff.files = prioritizeFiles(allPrFiles.filter((f) => filtered.includes(f.filename) && Boolean(f.patch)), maxFiles);
+    const candidates = allPrFiles.filter((f) => filtered.includes(f.filename) && Boolean(f.patch));
+    const prelintRequested = process.env.AI_REVIEW_ENABLE_PRELINT === 'true';
+    const verifySetting = process.env.AI_REVIEW_VERIFY_PASS;
+    const requestedEffort = legacyOptions.reviewEffort;
+    const nonPositiveCap = [rawMaxFiles, process.env.AI_REVIEW_MAX_FILES].some((value) => value?.trim() && Number(value) <= 0);
+    let reviewEffort = requestedEffort === 'auto' ? 'balanced' : requestedEffort;
+    if (nonPositiveCap) {
+        reviewEffort = 'balanced';
+    }
+    else if (requestedEffort === 'auto' &&
+        filtered.length <= 3 &&
+        filtered.length <= maxFiles &&
+        !reviewContext.diff.filesTruncated &&
+        !legacyOptions.scorecardContext &&
+        legacyOptions.securitySkills !== 'auto' &&
+        !prelintRequested &&
+        verifySetting !== 'true' &&
+        (0,risk_classifier/* classifyPrRisk */.C)(allPrFiles.filter((f) => filtered.includes(f.filename)))
+            .domains.length === 0) {
+        reviewEffort = 'lite';
+    }
+    const skipOptional = reviewEffort === 'lite';
+    const securitySkills = skipOptional ? 'all' : legacyOptions.securitySkills;
+    const enableVerify = !skipOptional && verifySetting === 'true';
+    reviewContext.diff.files = prioritizeFiles(candidates, reviewEffort === 'deep'
+        ? envLimits.maxFiles
+        : skipOptional
+            ? Math.min(3, maxFiles)
+            : maxFiles);
     const filesSelected = reviewContext.diff.files.length;
     // Publication settings shared by the model review and the secret-only path.
     const publishBase = {
@@ -44442,6 +44485,7 @@ async function runPrReviewAction() {
                 risk: 'none',
                 counts: { critical: 0, high: 0, medium: 0, low: 0 },
                 filesReviewed: [],
+                diagnostics: { reviewEffort },
                 reviewStatus: 'complete',
             };
             mergeSecretFindings(result, secrets);
@@ -44516,7 +44560,7 @@ async function runPrReviewAction() {
         // Run deterministic static analyzers when opted in via env
         // var. Cannot add a new action input because the V1
         // contract (docs/v1-interface-contract.md) is frozen.
-        const enablePrelint = process.env.AI_REVIEW_ENABLE_PRELINT === 'true';
+        const enablePrelint = !skipOptional && prelintRequested;
         const prelintResult = enablePrelint
             ? await (0,prelint/* runPrelint */.MA)({
                 repositoryPath: reviewContext.repositoryPath,
@@ -44530,7 +44574,7 @@ async function runPrReviewAction() {
             core.info(`[prelint] Ran ${prelintResult.ran.join(', ')} — ${prelintResult.findings.length} findings`);
         }
         const scorecardContext = await loadScorecardContext({
-            enabled: legacyOptions.scorecardContext,
+            enabled: !skipOptional && legacyOptions.scorecardContext,
             owner: repoInfo.owner,
             repo: repoInfo.repo,
             isPrivate: context.payload.repository?.private,
@@ -44550,8 +44594,8 @@ async function runPrReviewAction() {
             }
         }
         // Default `all` keeps every skill; opt-in `auto` filters by classified domain.
-        const skillSelection = (0,auto_select/* selectReviewSecuritySkills */.v)(legacyOptions.securitySkills, reviewContext.diff.files, reviewContext.diff.filesTruncated);
-        if (legacyOptions.securitySkills === 'auto') {
+        const skillSelection = (0,auto_select/* selectReviewSecuritySkills */.v)(securitySkills, reviewContext.diff.files, reviewContext.diff.filesTruncated);
+        if (securitySkills === 'auto') {
             core.info(`[security-skills] auto: ${skillSelection.fellBackToAll ? 'could not classify, using all skills' : `${skillSelection.domains.join(', ') || 'validation gate only'} (saved ${skillSelection.savedChars} chars)`}`);
         }
         const allSecurityPrompt = skillSelection.prompt;
@@ -44622,7 +44666,7 @@ async function runPrReviewAction() {
         const failOnIncomplete = process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false';
         // Opt-in second LLM pass (env-only; V1 contract frozen, no new
         // input): challenges high/critical findings, drops hallucinations.
-        if (process.env.AI_REVIEW_VERIFY_PASS === 'true') {
+        if (enableVerify) {
             try {
                 const verifyProvider = new openai_compatible.OpenAiCompatibleProvider(llmConfig);
                 await applyVerifyPass(result, {
@@ -44630,6 +44674,7 @@ async function runPrReviewAction() {
                     title: reviewContext.pullRequest.title,
                     body: reviewContext.pullRequest.body,
                     changedFiles: reviewContext.diff.files,
+                    maxContextChars: legacyOptions.maxContextChars,
                     baseSha: reviewContext.pullRequest.baseSha,
                     headSha: reviewContext.pullRequest.headSha,
                     verify: async (prompt, maxOutputTokens) => (await verifyProvider.complete([{ role: 'user', content: prompt }], { temperature: 0, maxOutputTokens })).content,
@@ -44658,6 +44703,7 @@ async function runPrReviewAction() {
         result.toolFindings = prelintResult.findings;
         result.diagnostics = {
             ...result.diagnostics,
+            reviewEffort,
             toolFindingsTotal: prelintResult.findings.length,
             prelintRan: prelintResult.ran,
             prelintSkipped: prelintResult.skipped,
@@ -44842,8 +44888,6 @@ function securityFailureMessage(conclusion, failOn) {
     return undefined;
 }
 
-// EXTERNAL MODULE: ./src/security/classifier/risk-classifier.ts
-var risk_classifier = __nccwpck_require__(8000);
 // EXTERNAL MODULE: ./src/security/engines/pi-security-engine.ts
 var pi_security_engine = __nccwpck_require__(7924);
 // EXTERNAL MODULE: ./src/security/findings/normalizer.ts

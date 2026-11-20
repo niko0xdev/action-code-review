@@ -36,6 +36,7 @@ jobs:
           # review-prompt-file: .github/review-rules.md  # read from the base branch
           # max-files: 10
           # exclude-patterns: '*.md,*.json,*.lock'
+          # review-effort: 'deep'  # optional; default 'auto' preserves existing behaviour
           # scorecard-context: 'true'  # opt-in, default 'false'; see below
           # check-run: 'true'          # opt-in, default 'false'; needs checks: write
           # security-skills: auto      # opt-in, default 'all'; see below

@@ -23,6 +23,10 @@ inputs:
     description: 'Custom prompt for OpenAI review'
     required: false
     default: 'Focus on correctness, code quality, security, performance, test coverage, and best practices. Provide actionable, line-specific feedback whenever possible.'
+  review-effort:
+    description: 'Review effort: auto | lite | balanced | deep'
+    required: false
+    default: 'auto'
   max-files:
     description: 'Maximum number of files to review'
     required: false
@@ -214,6 +218,7 @@ runs:
         INPUT_OPENAI-BASE-URL: ${{ inputs.openai-base-url }}
         INPUT_OPENAI-MODEL: ${{ inputs.openai-model }}
         INPUT_REVIEW-PROMPT: ${{ inputs.review-prompt }}
+        INPUT_REVIEW-EFFORT: ${{ inputs.review-effort }}
         INPUT_MAX-FILES: ${{ inputs.max-files }}
         INPUT_EXCLUDE-PATTERNS: ${{ inputs.exclude-patterns }}
         INPUT_INCLUDE-DIR: ${{ inputs.include-dir }}

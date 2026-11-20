@@ -41,6 +41,7 @@ export interface VerifyContext {
 	filenames: string[];
 	/** Patches from the same base/head input as the main review. */
 	changedFiles?: ChangedFile[];
+	maxContextChars?: number;
 	baseSha?: string;
 	headSha?: string;
 }
@@ -62,7 +63,8 @@ function sourceEvidence(
 	const files = (context.changedFiles ?? []).filter(
 		(file) => paths.has(file.filename) && file.patch
 	);
-	const supplied = new Set(allocateReviewDiff(files, 24_000).suppliedPaths);
+	const maxChars = Math.min(context.maxContextChars ?? 24_000, 24_000);
+	const supplied = new Set(allocateReviewDiff(files, maxChars).suppliedPaths);
 	return files
 		.filter((file) => supplied.has(file.filename))
 		.map((file, index) => ({
@@ -358,6 +360,7 @@ export async function applyVerifyPass(
 		title: string;
 		body: string;
 		changedFiles?: ChangedFile[];
+		maxContextChars?: number;
 		baseSha?: string;
 		headSha?: string;
 		verify: (prompt: string, maxOutputTokens: number) => Promise<string>;
@@ -373,6 +376,7 @@ export async function applyVerifyPass(
 			body: args.body,
 			filenames: result.filesReviewed,
 			changedFiles: args.changedFiles,
+			maxContextChars: args.maxContextChars,
 			baseSha: args.baseSha,
 			headSha: args.headSha,
 		},

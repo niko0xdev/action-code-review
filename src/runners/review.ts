@@ -51,6 +51,7 @@ import {
 	scanReviewSecrets,
 } from '../review/secret-prepass.js';
 import { applyVerifyPass, sanitiseVerifyReason } from '../review/verify.js';
+import { classifyPrRisk } from '../security/classifier/risk-classifier.js';
 import { selectReviewSecuritySkills } from '../security/skills/auto-select.js';
 import {
 	parseBoundedFloat,
@@ -127,13 +128,15 @@ export async function runPrReviewAction(): Promise<void> {
 		return;
 	}
 
+	const rawMaxFiles = core.getInput('max-files');
 	const legacyOptions: PrReviewEngineOptions = mapPrReviewInputs({
 		'github-token': core.getInput('github-token'),
 		'openai-api-key': core.getInput('openai-api-key'),
 		'openai-base-url': core.getInput('openai-base-url'),
 		'openai-model': core.getInput('openai-model'),
 		'review-prompt': core.getInput('review-prompt'),
-		'max-files': core.getInput('max-files'),
+		'max-files': rawMaxFiles,
+		'review-effort': core.getInput('review-effort'),
 		'exclude-patterns': core.getInput('exclude-patterns'),
 		'include-dir': core.getInput('include-dir'),
 		'auto-approve-when-resolved': core.getInput('auto-approve-when-resolved'),
@@ -183,9 +186,42 @@ export async function runPrReviewAction(): Promise<void> {
 	// Captured before filtering so the summary can report
 	// "N of M (X excluded by filter)" (src/github/comments.ts).
 	const filesTotal = allPrFiles.length;
+	const candidates = allPrFiles.filter(
+		(f) => filtered.includes(f.filename) && Boolean(f.patch)
+	);
+	const prelintRequested = process.env.AI_REVIEW_ENABLE_PRELINT === 'true';
+	const verifySetting = process.env.AI_REVIEW_VERIFY_PASS;
+	const requestedEffort = legacyOptions.reviewEffort;
+	const nonPositiveCap = [rawMaxFiles, process.env.AI_REVIEW_MAX_FILES].some(
+		(value) => value?.trim() && Number(value) <= 0
+	);
+	let reviewEffort = requestedEffort === 'auto' ? 'balanced' : requestedEffort;
+	if (nonPositiveCap) {
+		reviewEffort = 'balanced';
+	} else if (
+		requestedEffort === 'auto' &&
+		filtered.length <= 3 &&
+		filtered.length <= maxFiles &&
+		!reviewContext.diff.filesTruncated &&
+		!legacyOptions.scorecardContext &&
+		legacyOptions.securitySkills !== 'auto' &&
+		!prelintRequested &&
+		verifySetting !== 'true' &&
+		classifyPrRisk(allPrFiles.filter((f) => filtered.includes(f.filename)))
+			.domains.length === 0
+	) {
+		reviewEffort = 'lite';
+	}
+	const skipOptional = reviewEffort === 'lite';
+	const securitySkills = skipOptional ? 'all' : legacyOptions.securitySkills;
+	const enableVerify = !skipOptional && verifySetting === 'true';
 	reviewContext.diff.files = prioritizeFiles(
-		allPrFiles.filter((f) => filtered.includes(f.filename) && Boolean(f.patch)),
-		maxFiles
+		candidates,
+		reviewEffort === 'deep'
+			? envLimits.maxFiles
+			: skipOptional
+				? Math.min(3, maxFiles)
+				: maxFiles
 	);
 	const filesSelected = reviewContext.diff.files.length;
 	// Publication settings shared by the model review and the secret-only path.
@@ -246,6 +282,7 @@ export async function runPrReviewAction(): Promise<void> {
 				risk: 'none',
 				counts: { critical: 0, high: 0, medium: 0, low: 0 },
 				filesReviewed: [],
+				diagnostics: { reviewEffort },
 				reviewStatus: 'complete',
 			};
 			mergeSecretFindings(result, secrets);
@@ -346,7 +383,7 @@ export async function runPrReviewAction(): Promise<void> {
 		// Run deterministic static analyzers when opted in via env
 		// var. Cannot add a new action input because the V1
 		// contract (docs/v1-interface-contract.md) is frozen.
-		const enablePrelint = process.env.AI_REVIEW_ENABLE_PRELINT === 'true';
+		const enablePrelint = !skipOptional && prelintRequested;
 		const prelintResult = enablePrelint
 			? await runPrelint({
 					repositoryPath: reviewContext.repositoryPath,
@@ -362,7 +399,7 @@ export async function runPrReviewAction(): Promise<void> {
 			);
 		}
 		const scorecardContext = await loadScorecardContext({
-			enabled: legacyOptions.scorecardContext,
+			enabled: !skipOptional && legacyOptions.scorecardContext,
 			owner: repoInfo.owner,
 			repo: repoInfo.repo,
 			isPrivate: context.payload.repository?.private,
@@ -384,11 +421,11 @@ export async function runPrReviewAction(): Promise<void> {
 		}
 		// Default `all` keeps every skill; opt-in `auto` filters by classified domain.
 		const skillSelection = selectReviewSecuritySkills(
-			legacyOptions.securitySkills,
+			securitySkills,
 			reviewContext.diff.files,
 			reviewContext.diff.filesTruncated
 		);
-		if (legacyOptions.securitySkills === 'auto') {
+		if (securitySkills === 'auto') {
 			core.info(
 				`[security-skills] auto: ${skillSelection.fellBackToAll ? 'could not classify, using all skills' : `${skillSelection.domains.join(', ') || 'validation gate only'} (saved ${skillSelection.savedChars} chars)`}`
 			);
@@ -480,7 +517,7 @@ export async function runPrReviewAction(): Promise<void> {
 			process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false';
 		// Opt-in second LLM pass (env-only; V1 contract frozen, no new
 		// input): challenges high/critical findings, drops hallucinations.
-		if (process.env.AI_REVIEW_VERIFY_PASS === 'true') {
+		if (enableVerify) {
 			try {
 				const verifyProvider = new OpenAiCompatibleProvider(llmConfig);
 				await applyVerifyPass(result, {
@@ -488,6 +525,7 @@ export async function runPrReviewAction(): Promise<void> {
 					title: reviewContext.pullRequest.title,
 					body: reviewContext.pullRequest.body,
 					changedFiles: reviewContext.diff.files,
+					maxContextChars: legacyOptions.maxContextChars,
 					baseSha: reviewContext.pullRequest.baseSha,
 					headSha: reviewContext.pullRequest.headSha,
 					verify: async (prompt: string, maxOutputTokens: number) =>
@@ -529,6 +567,7 @@ export async function runPrReviewAction(): Promise<void> {
 		result.toolFindings = prelintResult.findings;
 		result.diagnostics = {
 			...result.diagnostics,
+			reviewEffort,
 			toolFindingsTotal: prelintResult.findings.length,
 			prelintRan: prelintResult.ran,
 			prelintSkipped: prelintResult.skipped,

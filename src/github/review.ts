@@ -1131,6 +1131,9 @@ export function buildJobSummary(input: {
 		'- **Detected stack:** see review comment',
 		`- **Review duration:** ${seconds}`,
 		`- ${filesLine}`,
+		...(input.diagnostics?.reviewEffort
+			? [`- **Review effort:** ${input.diagnostics.reviewEffort}`]
+			: []),
 		`- ${describeReviewExecution({
 			risk: input.result.risk,
 			counts: input.result.counts,
