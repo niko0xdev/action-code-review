@@ -264,6 +264,14 @@ failing rule that names a file and a line becomes a blocking finding; in
 base commit, a pull request cannot change the rules it is judged by, and a
 failure to read or judge the rules only warns.
 
+### Repository review feedback
+
+`review-feedback` defaults to `'false'`. When enabled, the action samples up to ten other closed or merged pull requests in this repository, most recently updated first. It reads at most 30 review threads per pull request and 20 reactions per finding root, and verifies at most 30 distinct reacting accounts. The review comment, job summary, and optional `review-report.feedback` show the sampled pull request count, completeness, and category totals: distinct findings, resolved threads, voted findings (`samples`), positive votes, and negative votes. Only explicit thumbs-up and thumbs-down reactions count. Duplicate votes are counted once per collaborator and finding within a pull request; conflicting votes are discarded. Resolution counts are independent of votes.
+
+`suppress-feedback-inline` also defaults to `'false'`, and requires `review-feedback`. With complete evidence, only low-severity `maintainability` findings may be omitted inline, after at least five distinct voted findings in that category and at least 80% negative votes. Truncated threads or reactions, unavailable verification, and incomplete responses disable suppression. Findings stay in the summary, report, and any enabled ledger. Review decisions and merge rules are unchanged. Suppression is disabled when `auto-approve-when-resolved` is enabled, because omitting an inline comment could otherwise change the live thread resolution check.
+
+### Incremental review
+
 `incremental-review` is opt-in. When `'true'`, the action keeps a ledger of the
 findings of the last run in the sticky summary comment, as a base64 payload in
 the hidden marker `ai-review-ledger`. On the next run it asks GitHub which files

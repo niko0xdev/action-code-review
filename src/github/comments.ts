@@ -10,6 +10,7 @@ import {
 import type {
 	ApprovalOutcome,
 	Finding,
+	FindingCategory,
 	LinkedIssueAssessment,
 	PreMergeCheckMode,
 	PreMergeCheckResult,
@@ -19,6 +20,8 @@ import type {
 	RuleCoverage,
 	ToolFinding,
 } from '../types/finding.js';
+
+import { type ReviewFeedback, renderReviewFeedback } from './feedback.js';
 
 export function mdSafe(value: string): string {
 	return value
@@ -123,6 +126,20 @@ function buildFixPrompt(finding: Finding): string {
 	].join('\n');
 }
 
+/** Parse only the generated header and final marker, never reply prose. */
+export function findingCommentCategory(
+	body: string
+): { id: string; category: FindingCategory } | undefined {
+	const id = /\n\n<!-- ai-review-id:([a-f0-9]{12}) -->\s*$/.exec(body)?.[1];
+	const label = /^(?:🚨 CRITICAL|🔥 HIGH|⚠️ MEDIUM|✅ LOW) · ([^\n]+)\n/.exec(
+		body
+	)?.[1];
+	const category = Object.keys(CATEGORY_LABEL).find(
+		(key) => CATEGORY_LABEL[key] === label
+	) as FindingCategory | undefined;
+	return id && category ? { id, category } : undefined;
+}
+
 /** Full inline-comment body for a finding, ending with its id marker. */
 export function buildFindingBody(
 	finding: Finding,
@@ -200,6 +217,7 @@ type SummaryResult = {
 	ruleCoverage?: RuleCoverage;
 	reviewStatus?: 'complete' | 'incomplete' | 'failed' | 'stale';
 	linkedIssues?: LinkedIssueAssessment[];
+	feedback?: ReviewFeedback;
 	approval?: ApprovalOutcome;
 	ledger?: ReviewLedgerState;
 	preMergeChecks?: {
@@ -583,6 +601,7 @@ export function buildSummaryBody(result: SummaryResult): string {
 			: []),
 		footer
 	);
+	if (result.feedback) lines.push('', renderReviewFeedback(result.feedback));
 	return lines.join('\n');
 }
 

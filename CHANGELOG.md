@@ -4,6 +4,8 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 
 ## [Unreleased]
 
+- Opt-in repository review feedback reports verified collaborator reactions and resolved threads by category. A separate opt-in can omit eligible low-severity maintainability findings inline without removing them from the review.
+
 ### Added
 
 - Opt-in `pre-merge-checks` input (`off | warning | error`): the merge rules of the repository are read from `.github/review-checks.md` at the base commit, one rule per line, and judged against the change in a separate tool-free call. The verdicts appear in the summary and in `review-report` as `preMergeChecks`. In `error` mode a failing rule that names a file and a line becomes a blocking finding; `warning` mode only reports it. A pull request cannot change the rules it is judged by, and a failure to judge them only warns.

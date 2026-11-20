@@ -43,6 +43,8 @@ export interface PrReviewEngineOptions {
 	secretScan: boolean;
 	fixPrompts: boolean;
 	incrementalReview: boolean;
+	reviewFeedback: boolean;
+	suppressFeedbackInline: boolean;
 	preMergeChecks: PreMergeCheckMode;
 }
 
@@ -112,6 +114,8 @@ export const PR_REVIEW_DEFAULTS = {
 	secretScan: 'false',
 	fixPrompts: 'false',
 	incrementalReview: 'false',
+	reviewFeedback: 'false',
+	suppressFeedbackInline: 'false',
 	preMergeChecks: 'off',
 } as const;
 
@@ -328,6 +332,14 @@ function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 		),
 		secretScan: bool(get(inputs, 'secret-scan'), PR_REVIEW_DEFAULTS.secretScan),
 		fixPrompts: bool(get(inputs, 'fix-prompts'), PR_REVIEW_DEFAULTS.fixPrompts),
+		reviewFeedback: bool(
+			get(inputs, 'review-feedback'),
+			PR_REVIEW_DEFAULTS.reviewFeedback
+		),
+		suppressFeedbackInline: bool(
+			get(inputs, 'suppress-feedback-inline'),
+			PR_REVIEW_DEFAULTS.suppressFeedbackInline
+		),
 		incrementalReview: bool(
 			get(inputs, 'incremental-review'),
 			PR_REVIEW_DEFAULTS.incrementalReview
