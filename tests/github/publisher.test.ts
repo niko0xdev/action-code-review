@@ -206,6 +206,46 @@ describe('publishReview', () => {
 		};
 	}
 
+	it('omits the advisory section before the final sticky comment exceeds the limit', async () => {
+		const octokit = makeOctokit();
+		const result: ReviewResult = {
+			findings: [],
+			risk: 'none',
+			counts: { critical: 0, high: 0, medium: 0, low: 0 },
+			filesReviewed: [],
+			summary: 'x'.repeat(64_000),
+		};
+		const params = {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 5,
+			headSha: 'sha1',
+			stickySummary: true,
+			result,
+		};
+		await publishReview(octokit, params);
+		const body = (index: number) =>
+			(
+				octokit.rest.issues.createComment.mock.calls[index] as unknown as [
+					{ body: string },
+				]
+			)[0].body;
+		expect(body(0).length).toBeLessThan(65_536);
+		await publishReview(octokit, {
+			...params,
+			result: {
+				...result,
+				linkedIssues: [1, 2, 3].map((number) => ({
+					number,
+					title: 't'.repeat(500),
+					verdict: 'unclear',
+					reasoning: 'No valid assessment.',
+				})),
+			},
+		});
+		expect(body(1)).toBe(body(0));
+	});
+
 	function makeApprovalOctokit(
 		threads: unknown[] = [
 			{

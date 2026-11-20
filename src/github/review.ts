@@ -400,7 +400,7 @@ export async function publishReview(
 			? `\n\n> ${alreadyCommented} finding(s) already commented on earlier runs; not posted again.`
 			: '';
 	const marker = stickySummaryMarker(owner, repo, prNumber);
-	const summaryBody = `${buildSummaryBody({
+	const summaryOptions = {
 		risk: result.risk,
 		counts: result.counts,
 		filesReviewed: result.filesReviewed,
@@ -418,7 +418,12 @@ export async function publishReview(
 		reviewStatus: result.reviewStatus,
 		linkedIssues: result.linkedIssues,
 		approval: result.approval,
-	})}${alreadyCommentedNote}\n\n${marker}`;
+	};
+	const suffix = `${alreadyCommentedNote}\n\n${marker}`;
+	let summaryBody = `${buildSummaryBody(summaryOptions)}${suffix}`;
+	if (result.linkedIssues?.length && summaryBody.length > 65_536) {
+		summaryBody = `${buildSummaryBody({ ...summaryOptions, linkedIssues: undefined })}${suffix}`;
+	}
 	if (params.stickySummary) {
 		const existing = await findStickyComment(
 			octokit,

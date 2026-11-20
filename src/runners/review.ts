@@ -523,12 +523,12 @@ export async function runPrReviewAction(): Promise<void> {
 				),
 				maxContextChars: legacyOptions.maxContextChars,
 				query: (query, variables) => client.graphql(query, { ...variables }),
-				complete: async (prompt) =>
+				complete: async (messages) =>
 					(
-						await new OpenAiCompatibleProvider(llmConfig).complete(
-							[{ role: 'user', content: prompt }],
-							{ temperature: 0, maxOutputTokens: 750 }
-						)
+						await new OpenAiCompatibleProvider(llmConfig).complete(messages, {
+							temperature: 0,
+							maxOutputTokens: 900,
+						})
 					).content,
 				warn: core.warning,
 			});
