@@ -7,6 +7,8 @@ interface SecretRule {
 	pattern: RegExp;
 	severity: 'critical' | 'high';
 	cwe: string;
+	/** Optional second check on the matched text, to drop look-alikes. */
+	accept?: (match: string) => boolean;
 }
 
 const SECRET_RULES: SecretRule[] = [
@@ -24,6 +26,10 @@ const SECRET_RULES: SecretRule[] = [
 			/(?<![A-Za-z0-9_-])sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,80}/g,
 		severity: 'critical',
 		cwe: 'CWE-798',
+		// Real keys carry a long random run with digits; kebab-case names such
+		// as `sk-react-loading-spinner` do not.
+		accept: (match) =>
+			(match.match(/[A-Za-z0-9]{16,}/g) ?? []).some((run) => /\d/.test(run)),
 	},
 	{
 		id: 'sec-rule-aws-key',
@@ -32,6 +38,8 @@ const SECRET_RULES: SecretRule[] = [
 			/(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}/g,
 		severity: 'critical',
 		cwe: 'CWE-798',
+		// AWS documentation keys end in EXAMPLE (`AKIAIOSFODNN7EXAMPLE`).
+		accept: (match) => !match.endsWith('EXAMPLE'),
 	},
 	{
 		id: 'sec-rule-private-key',
@@ -48,6 +56,22 @@ const SECRET_RULES: SecretRule[] = [
 		cwe: 'CWE-798',
 	},
 ];
+
+/**
+ * An added line carrying either marker is skipped: `secret-scan: allow`, or the
+ * detect-secrets convention `pragma: allowlist secret`. Use it for fixtures and
+ * documented placeholders.
+ */
+const ALLOW_PRAGMA =
+	/secret-scan:[ \t]*allow\b|pragma:[ \t]*allowlist[ \t]+secret\b/i;
+
+function ruleMatches(rule: SecretRule, text: string): boolean {
+	rule.pattern.lastIndex = 0;
+	for (const match of text.matchAll(rule.pattern)) {
+		if (!rule.accept || rule.accept(match[0])) return true;
+	}
+	return false;
+}
 
 /**
  * Deterministic secret scanner over diff patches.
@@ -74,9 +98,10 @@ export function scanSecretsInDiff(
 			if (rawLine.startsWith('+') && !rawLine.startsWith('+++')) {
 				const addedContent = rawLine.slice(1);
 
-				for (const rule of SECRET_RULES) {
-					rule.pattern.lastIndex = 0;
-					if (rule.pattern.test(addedContent)) {
+				for (const rule of ALLOW_PRAGMA.test(addedContent)
+					? []
+					: SECRET_RULES) {
+					if (ruleMatches(rule, addedContent)) {
 						const finding: SecurityFinding = {
 							id: `${rule.id}-${file.filename}-${currentLine}`,
 							fingerprint: computeFindingFingerprint({
@@ -107,6 +132,7 @@ export function scanSecretsInDiff(
 							remediation:
 								'Remove hardcoded credential immediately and revoke/rotate any compromised tokens.',
 							scannerSources: ['secret-scanner'],
+							ruleId: rule.id,
 						};
 						findings.push(finding);
 					}

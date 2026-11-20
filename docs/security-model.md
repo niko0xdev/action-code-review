@@ -49,7 +49,8 @@ The opt-in `repository-instructions` files (`AGENTS.md`,
 the same trusted slot and follow a stricter rule: they are read only from the
 base commit, with no fallback to the checkout, so a pull request can neither add
 nor edit the instructions it is reviewed against. Only regular blobs of at most
-50 KiB are used, `applyTo` globs are compiled to linear expressions, and each file
+50 KiB are used, `applyTo` globs with more than two `**` segments are rejected so
+matching stays bounded, symlinks are ignored on both read paths, and each file
 is fenced.
 
 The file named by `review-prompt-file` is injected into the trusted rules slot,

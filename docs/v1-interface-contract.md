@@ -147,24 +147,81 @@ blocks, or changes the review. When the check was created but a later
 annotation batch failed, the warning says the annotations were partially
 published. A pull request from a fork has a read-only token and cannot create a
 check (warning only), so the check is reported as missing on fork pull requests.
+include the root `AGENTS.md`, `.github/copilot-instructions.md`, and the
+`.github/instructions/*.instructions.md` files whose `applyTo` front-matter globs
+match a changed path (at most 20 matching files, from the first 200 listed).
+`applyTo` may be a string, comma-separated or quoted strings, an inline `[...]`
+list, or a YAML block list; globs support `**`, `*`, `?`, and one level of
+`{a,b}`, a leading `./` or `/` is ignored, and a glob with more than two `**`
+segments is skipped with a warning, as is a file whose `applyTo` yields no glob.
+A file with `excludeAgent: "code-review"` is skipped. Only the copies at the pull
+request base commit are read (local git objects first, the contents API for
+shallow checkouts), and a symlink is ignored on both paths; without a base commit
+nothing is read. Identical texts are used once, each file keeps the 50 KiB cap,
+the total is capped at 64 KiB, each file is fenced, and the paths used are
+reported in `review-report` as `diagnostics.repositoryInstructions`. Nested
+`AGENTS.md` files are not read.
 
+`check-run` is opt-in. When `'true'`, after the review is published (never when
+publishing is skipped because the head moved) the action creates one completed
+check run named `AI Code Review` on the reviewed head commit, so teams can require
+it in branch protection. Its conclusion mirrors the review decision: `failure`
+when a blocking finding exists and `block-on-issues` is `'true'`, or when the
+review is incomplete or failed; `neutral` when only non-blocking findings exist;
+`success` when there are no findings. Each finding becomes an annotation
+`check-run` is opt-in. When `'true'`, after the review is published the action
+creates one completed check run named `AI Code Review` on the reviewed head
+commit, so teams can require it in branch protection. Its conclusion mirrors
+the review decision exactly: `failure` when the review submitted
+`REQUEST_CHANGES` (a blocking finding, `block-on-issues` `'true'`, and write
+permission), `neutral` when only non-blocking findings exist, `success` when
+there are no findings, and `neutral` for an incomplete review when
+`AI_REVIEW_FAIL_ON_INCOMPLETE=false` (the step only warns in that case, so the
+check must not fail the branch). A run that reviews nothing still reports a
+completed, neutral check, so a required check is never left unreported: a draft,
+an empty file selection, and a head that moved during the review each produce
+one with a `Skipped:` title, the last on the head that is current. Each finding becomes an annotation
+(`failure` for critical and high, `warning` for medium, `notice` for low) with a
+redacted, length-capped title and message; the first 50 go with the create
+request and the rest follow in `checks.update` batches of 50. The output summary
+is compact Markdown capped at 20,000 characters, and every model-supplied value
+in it is redacted before it is escaped, so a quoted credential cannot survive
+as an HTML entity. The workflow needs `checks: write`; any Checks API error
+(403, 404, 422, or other) only logs a warning, worded by what the status means,
+and never fails, blocks, or changes the review. A pull request from a fork has a
+read-only token and cannot create a check, so the check is reported as missing
+on fork pull requests.
 `secret-scan` is opt-in. When `'true'`, the deterministic secret scanner used by
 `mode: security` runs over the added lines of every changed file with a patch,
 independent of `exclude-patterns`, after the main review and any verify pass.
 Each match becomes a `security` finding (critical or high, confidence 1, rule id
 `secret-scan/<rule>`) that names the credential type but never quotes the value;
-a deterministic match always wins on its line, so a model finding cannot hide a
-credential, at most ten matches are added per run, and counts and risk are
-recomputed. The number
-added is reported as `diagnostics.secretScanFindings`.
+a published match replaces a model `security` finding on its line, keeping the
+higher of the two severities, so a model finding cannot hide a credential. At
+most ten matches are added per run, counts and risk are recomputed, and the
+number added is reported as `diagnostics.secretScanFindings`. Secret findings are
+added after the `min-severity` filter, so a high-severity match (a Slack token)
+is published and blocks even with the default `min-severity: critical`. The scan
+also runs when the file filters leave nothing for the model to review: a
+docs-only pull request with a credential is still published and blocked. AWS
+documentation keys ending in `EXAMPLE` and `sk-` names without a long random run
+containing a digit are not reported, and an added line containing
+`secret-scan: allow` or `pragma: allowlist secret` is skipped, in normal reviews
+and in `mode: security` alike.
+
 `fix-prompts` is opt-in. When `'true'`, each inline finding comment gets a
 collapsed `<details>` block, "Prompt for your coding agent", placed before the
 hidden `ai-review-id` marker. It restates the path, line, title, problem,
 impact, and suggested fix for pasting into a coding agent. The text is model
-output, so it is redacted, scheme-qualified links are replaced with
-`[link removed]`, it opens by telling the agent to treat it as a report rather
-than commands, and it is fenced so it cannot close the block. The marker and the
-finding identity are unchanged, so duplicate suppression keeps working.
+output, so it is redacted, links (scheme URLs, `javascript:` and similar
+schemes, `www.` hosts, and bare `host.tld/path` text) are replaced with
+`[link removed]` on a best-effort basis, the path and title are kept on one line
+with control and hidden characters escaped (Unicode tag characters included),
+HTML comment delimiters are broken up so the text cannot carry a comment marker,
+each field is capped at 2,000 characters, it opens by telling the agent to treat
+it as a report rather than commands, and it is fenced so it cannot close the
+block. The marker and the finding identity are unchanged, and the publisher reads
+the last marker in a comment, so duplicate suppression keeps working.
 
 `security-skills` is a new optional input (additive; the default `'all'` leaves
 the review prompt byte-identical). `'auto'` keeps only the curated security skills

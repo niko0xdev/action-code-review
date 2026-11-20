@@ -82,7 +82,7 @@ describe('SecurityScanners', () => {
 					status: 'modified',
 					additions: 1,
 					deletions: 0,
-					patch: '+const key = "AKIAIOSFODNN7EXAMPLE";',
+					patch: '+const key = "AKIAZ7Q2X4C6V8B0N1M3";',
 				},
 			],
 			options: {

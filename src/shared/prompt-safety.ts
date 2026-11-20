@@ -21,10 +21,15 @@ function isHidden(code: number): boolean {
 	);
 }
 
-/** Write every hidden character as `\uXXXX`; other text is untouched. */
-function escapeHidden(text: string): string {
+/**
+ * Write every hidden character as `\uXXXX` (`\u{XXXXX}` for Unicode tag
+ * characters, U+E0000 to U+E007F, which are invisible to people but read by
+ * models); other text is untouched.
+ */
+export function escapeHidden(text: string): string {
 	return Array.from(text, (ch) => {
-		const code = ch.charCodeAt(0);
+		const code = ch.codePointAt(0) ?? 0;
+		if (code >= 0xe0000 && code <= 0xe007f) return `\\u{${code.toString(16)}}`;
 		return isHidden(code) ? `\\u${code.toString(16).padStart(4, '0')}` : ch;
 	}).join('');
 }

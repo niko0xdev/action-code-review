@@ -58,7 +58,7 @@ import {
 	parsePositiveInt,
 } from '../shared/numeric.js';
 import { profilesWithSkills } from '../skills/registry.js';
-import type { Severity } from '../types/finding.js';
+import type { ReviewResult, Severity } from '../types/finding.js';
 import { toPublisherOctokit } from './octokit.js';
 
 /**
@@ -188,6 +188,34 @@ export async function runPrReviewAction(): Promise<void> {
 		maxFiles
 	);
 	const filesSelected = reviewContext.diff.files.length;
+	// Publication settings shared by the model review and the secret-only path.
+	const publishBase = {
+		owner: repoInfo.owner,
+		repo: repoInfo.repo,
+		prNumber,
+		headSha: reviewContext.pullRequest.headSha,
+		model: llmConfig.model,
+		filesTotal,
+		blockOnIssues: legacyOptions.blockOnIssues,
+		minSeverity: legacyOptions.minSeverity,
+		requireWritePermissions:
+			core.getInput('require-write-permissions') === 'true',
+		stickySummary: core.getInput('sticky-summary') !== 'false',
+		bufferInlineComments:
+			core.getInput('buffer-inline-comments') !== 'false' &&
+			core.getInput('classify-inline-comments') !== 'false',
+		autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
+		checkRun: legacyOptions.checkRun,
+		fixPrompts: legacyOptions.fixPrompts,
+		actor:
+			process.env.GITHUB_ACTOR ??
+			(
+				github.context.payload.pull_request?.user as
+					| { login?: string }
+					| undefined
+			)?.login ??
+			(github.context.actor as string | undefined),
+	};
 	trackPhase(
 		'filter',
 		`${reviewContext.diff.files.length} files after filter`,
@@ -205,6 +233,34 @@ export async function runPrReviewAction(): Promise<void> {
 		)
 			core.warning(emptyMessage);
 		else core.notice(emptyMessage);
+		// The secret scan is independent of the file filters, so a docs-only or
+		// fully excluded pull request is still scanned and blocked on a match.
+		const secrets = legacyOptions.secretScan
+			? scanReviewSecrets(allPrFiles)
+			: [];
+		if (secrets.length > 0) {
+			const result: ReviewResult = {
+				findings: [],
+				summary:
+					'No files were selected for the model review; only the deterministic secret scan ran.',
+				risk: 'none',
+				counts: { critical: 0, high: 0, medium: 0, low: 0 },
+				filesReviewed: [],
+				reviewStatus: 'complete',
+			};
+			mergeSecretFindings(result, secrets);
+			await publishReview(octokit, {
+				...publishBase,
+				result,
+				filesExcluded: filesTotal,
+				filesSelected: 0,
+			});
+			core.setOutput(
+				'review-summary',
+				`secret scan only: ${result.findings.length} credential finding(s); no files were selected for review`
+			);
+			return;
+		}
 		core.setOutput('review-summary', 'skipped: no files to review');
 		await reportSkippedCheck(
 			legacyOptions.checkRun,
@@ -463,40 +519,16 @@ export async function runPrReviewAction(): Promise<void> {
 		await withReviewReportOutput(
 			async () => {
 				await publishReview(octokit, {
-					owner: repoInfo.owner,
-					repo: repoInfo.repo,
-					prNumber,
-					headSha: reviewContext.pullRequest.headSha,
+					...publishBase,
 					result,
-					model: llmConfig.model,
-					filesTotal,
 					filesExcluded,
 					filesSelected,
 					// Kept by the configured filters but never reviewed: max-files
 					// cap, no patch, or a default-ignored path. Blocks auto-approval;
 					// list such paths in exclude-patterns to accept them explicitly.
 					filesUnreviewed: Math.max(filtered.length - filesSelected, 0),
-					blockOnIssues: legacyOptions.blockOnIssues,
-					minSeverity: legacyOptions.minSeverity,
-					requireWritePermissions:
-						core.getInput('require-write-permissions') === 'true',
-					stickySummary: core.getInput('sticky-summary') !== 'false',
-					bufferInlineComments:
-						core.getInput('buffer-inline-comments') !== 'false' &&
-						core.getInput('classify-inline-comments') !== 'false',
-					autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
 					incomplete: Boolean(incompleteFailure),
 					failOnIncomplete,
-					checkRun: legacyOptions.checkRun,
-					fixPrompts: legacyOptions.fixPrompts,
-					actor:
-						process.env.GITHUB_ACTOR ??
-						(
-							github.context.payload.pull_request?.user as
-								| { login?: string }
-								| undefined
-						)?.login ??
-						(github.context.actor as string | undefined),
 				});
 				trackPhase('publish', 'review published', { enabled: trackEnabled });
 			},

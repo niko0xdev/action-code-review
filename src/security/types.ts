@@ -59,6 +59,8 @@ export interface SecurityFinding {
 	exploitability: SecurityExploitability;
 	remediation?: string;
 	scannerSources?: string[];
+	/** Deterministic scanner rule that produced the finding. */
+	ruleId?: string;
 }
 
 export interface RiskClassification {

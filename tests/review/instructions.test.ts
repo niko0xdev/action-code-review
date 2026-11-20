@@ -191,3 +191,104 @@ describe('repository-instructions input', () => {
 		expect(report.diagnostics?.repositoryInstructions).toEqual(['AGENTS.md']);
 	});
 });
+
+describe('repository instructions review findings (20/11/2026)', () => {
+	const scoped = (name: string, front: string, body = `rules for ${name}`) =>
+		write(`.github/instructions/${name}.instructions.md`, `${front}\n${body}`);
+	const load = async (changedPaths: string[]) =>
+		loadRepositoryInstructions({
+			repoPath: repo,
+			baseSha: commit(),
+			changedPaths,
+		});
+
+	it('caps matched files at 20, not the listing', async () => {
+		for (let i = 0; i < 25; i++)
+			scoped(
+				`f${String(i).padStart(2, '0')}`,
+				`---\napplyTo: "${i === 24 ? '**/*.ts' : '**/*.py'}"\n---`
+			);
+		const out = await load(['src/app.ts']);
+		expect(out.files).toEqual(['.github/instructions/f24.instructions.md']);
+	});
+
+	it('accepts the applyTo forms instruction files use', async () => {
+		scoped('list', '---\napplyTo:\n  - "**/*.ts"\n  - "docs/**"\n---');
+		scoped('inline', "---\napplyTo: ['**/*.go', '**/*.rs']\n---");
+		scoped('brace', '---\napplyTo: "**/*.{ts,tsx}"\n---');
+		scoped('quoted', '---\napplyTo: "**/*.py", "**/*.ts" # comment\n---');
+		scoped('slash', '---\napplyTo: "./src/**"\n---');
+		write(
+			'.github/instructions/bom.instructions.md',
+			'﻿---\napplyTo: "**/*.ts"\n---\nbom rules'
+		);
+		const out = await load(['src/view.tsx', 'src/app.ts', 'lib/x.rs']);
+		expect(out.files).toEqual([
+			'.github/instructions/bom.instructions.md',
+			'.github/instructions/brace.instructions.md',
+			'.github/instructions/inline.instructions.md',
+			'.github/instructions/list.instructions.md',
+			'.github/instructions/quoted.instructions.md',
+			'.github/instructions/slash.instructions.md',
+		]);
+		expect(out.text).not.toContain('applyTo');
+	});
+
+	it('warns when front matter has an applyTo that yields no glob', async () => {
+		scoped('empty', '---\napplyTo: ""\n---');
+		await load(['a.ts']);
+		expect(core.warning).toHaveBeenCalledWith(
+			expect.stringContaining('empty.instructions.md')
+		);
+	});
+
+	it('honours excludeAgent: code-review', async () => {
+		scoped('ex', '---\napplyTo: "**"\nexcludeAgent: "code-review"\n---');
+		scoped('keep', '---\napplyTo: "**"\nexcludeAgent: "cloud-agent"\n---');
+		const out = await load(['a.ts']);
+		expect(out.files).toEqual(['.github/instructions/keep.instructions.md']);
+	});
+
+	it('skips a glob with more than two ** segments', async () => {
+		scoped('deep', '---\napplyTo: "**/a/**/b/**/*.ts"\n---');
+		const out = await load(['x/a/y/b/z/c.ts']);
+		expect(out.files).toEqual([]);
+		expect(core.warning).toHaveBeenCalled();
+	});
+
+	it('uses identical instruction text only once', async () => {
+		write('AGENTS.md', 'Shared rules.');
+		write('.github/copilot-instructions.md', 'Shared rules.');
+		const out = await load(['a.ts']);
+		expect(out.files).toEqual(['AGENTS.md']);
+	});
+
+	it('ignores an API answer for a different path (a followed symlink)', async () => {
+		write('README.md', 'x');
+		commit();
+		const out = await loadRepositoryInstructions({
+			repoPath: repo,
+			baseSha: 'c'.repeat(40),
+			changedPaths: ['a.ts'],
+			fetchBase: async (path: string) =>
+				path === 'AGENTS.md'
+					? {
+							type: 'file',
+							size: 5,
+							path: 'CLAUDE.md',
+							encoding: 'base64',
+							content: Buffer.from('rules').toString('base64'),
+						}
+					: undefined,
+		});
+		expect(out.files).toEqual([]);
+	});
+});
+
+describe('globToRegExp brace sets', () => {
+	it('expands one level of braces', () => {
+		const re = globToRegExp('src/**/*.{ts,tsx}');
+		expect(re.test('src/a/b.tsx')).toBe(true);
+		expect(re.test('src/a/b.js')).toBe(false);
+	});
+});

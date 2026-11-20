@@ -12,6 +12,8 @@ const MAX_BYTES = 50 * 1024;
 export interface BaseFileData {
 	type: string;
 	size: number;
+	/** Repository path the answer describes (a followed symlink reports its target). */
+	path?: string;
 	content?: string;
 	encoding?: string;
 }
@@ -104,7 +106,13 @@ export async function readFromApi(
 		return { kind: 'unavailable' };
 	}
 	if (!data) return { kind: 'absent' };
-	if (Array.isArray(data) || data.type !== 'file') {
+	// The contents API follows an in-repository symlink and answers for its
+	// target; the git path rejects symlinks, so this one does too.
+	if (
+		Array.isArray(data) ||
+		data.type !== 'file' ||
+		(data.path !== undefined && data.path !== rel)
+	) {
 		return { kind: 'ignore', why: 'is not a regular file at the base ref' };
 	}
 	if (data.size > MAX_BYTES) {

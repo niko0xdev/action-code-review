@@ -1020,9 +1020,13 @@ async function fetchExistingCommentIds(
 			});
 			for (const comment of comments) {
 				if (!isTrustedAuthor(comment.user?.login, selfLogin)) continue;
-				const match = comment.body?.match(
-					/<!-- ai-review-id:([a-f0-9]{12}) -->/
-				);
+				// The action writes its marker last, so the last match is the real
+				// one; an earlier one could only come from quoted finding text.
+				const match = [
+					...(comment.body ?? '').matchAll(
+						/<!-- ai-review-id:([a-f0-9]{12}) -->/g
+					),
+				].at(-1);
 				if (match) ids.add(match[1]);
 			}
 		}

@@ -17,6 +17,8 @@ const FIXED_FILES = ['AGENTS.md', '.github/copilot-instructions.md'];
 const SCOPED_DIR = '.github/instructions';
 const SCOPED_SUFFIX = '.instructions.md';
 const MAX_SCOPED_FILES = 20;
+/** Directory entries considered before `applyTo` matching. */
+const MAX_LISTED_FILES = 200;
 /** Budget for all instruction text together, after the 50 KiB per-file cap. */
 const MAX_TOTAL_CHARS = 64 * 1024;
 
@@ -36,12 +38,27 @@ export interface RepositoryInstructions {
 	files: string[];
 }
 
-/**
- * Glob as used by `applyTo`: `**` spans directories, `*` and `?` stay inside
- * one path segment, everything else is literal. Built from escaped literals
- * and bounded classes, so matching stays linear.
- */
-export function globToRegExp(glob: string): RegExp {
+/** Most `**` segments a glob may use; more could make matching costly. */
+const MAX_GLOBSTARS = 2;
+
+/** Split on commas outside `{...}` brace sets. */
+function splitTopLevel(value: string): string[] {
+	const parts: string[] = [];
+	let depth = 0;
+	let current = '';
+	for (const char of value) {
+		if (char === '{') depth += 1;
+		else if (char === '}') depth = Math.max(0, depth - 1);
+		if (char === ',' && depth === 0) {
+			parts.push(current);
+			current = '';
+		} else current += char;
+	}
+	parts.push(current);
+	return parts;
+}
+
+function globBody(glob: string): string {
 	let out = '';
 	for (let i = 0; i < glob.length; i++) {
 		const char = glob[i];
@@ -51,23 +68,83 @@ export function globToRegExp(glob: string): RegExp {
 			i += slash ? 2 : 1;
 		} else if (char === '*') out += '[^/]*';
 		else if (char === '?') out += '[^/]';
-		else out += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+		else if (char === '{') {
+			// One level of `{a,b}`; anything else stays literal.
+			const close = glob.indexOf('}', i);
+			const inner = close > i ? glob.slice(i + 1, close) : '';
+			if (close > i && inner.includes(',') && !inner.includes('{')) {
+				out += `(?:${inner.split(',').map(globBody).join('|')})`;
+				i = close;
+			} else out += '\\{';
+		} else out += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
 	}
-	return new RegExp(`^${out}$`);
+	return out;
 }
 
-/** Split `---` front matter from the body and read its `applyTo` globs. */
-function parseScoped(text: string): { body: string; applyTo?: string[] } {
-	const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
-	if (!match) return { body: text };
-	const line = /^applyTo:[ \t]*(.*)$/m.exec(match[1]);
-	const value = line?.[1].trim().replace(/^(["'])(.*)\1$/, '$2');
+/**
+ * Glob as used by `applyTo`: `**` spans directories, `*` and `?` stay inside
+ * one path segment, `{a,b}` is one level of alternatives, everything else is
+ * literal. Built from escaped literals and bounded classes; callers reject
+ * globs with more than two `**`, which keeps backtracking bounded.
+ */
+export function globToRegExp(glob: string): RegExp {
+	return new RegExp(`^${globBody(glob)}$`);
+}
+
+interface ScopedFile {
+	body: string;
+	/** True when front matter declares `applyTo`, even if empty. */
+	declared: boolean;
+	applyTo: string[];
+	/** `excludeAgent: code-review` keeps the file out of code review. */
+	excluded: boolean;
+}
+
+/** Normalise one `applyTo` entry: quotes, a leading `./` or `/`. */
+function cleanGlob(raw: string): string {
+	return raw
+		.trim()
+		.replace(/^(["'])(.*)\1$/, '$2')
+		.trim()
+		.replace(/^\.?\//, '');
+}
+
+/** Read `applyTo` as a string, quoted strings, an inline list, or a block list. */
+function parseApplyTo(lines: string[], index: number): string[] {
+	const rest = lines[index].replace(/^applyTo:/, '').trim();
+	let raw: string[];
+	if (!rest) {
+		raw = [];
+		for (let i = index + 1; i < lines.length; i++) {
+			const item = /^\s*-\s*(.+)$/.exec(lines[i]);
+			if (!item) break;
+			raw.push(item[1].replace(/\s+#.*$/, ''));
+		}
+	} else if (rest.startsWith('[')) {
+		raw = splitTopLevel(rest.replace(/^\[|\][^\]]*$/g, ''));
+	} else {
+		const quoted = [...rest.matchAll(/"([^"]*)"|'([^']*)'/g)].map(
+			(m) => m[1] ?? m[2]
+		);
+		raw = quoted.length > 0 ? quoted : [rest.replace(/\s+#.*$/, '')];
+	}
+	return raw.flatMap(splitTopLevel).map(cleanGlob).filter(Boolean);
+}
+
+/** Split `---` front matter from the body and read `applyTo` and `excludeAgent`. */
+function parseScoped(text: string): ScopedFile {
+	const source = text.replace(/^\uFEFF/, '');
+	const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(source);
+	if (!match)
+		return { body: source, declared: false, applyTo: [], excluded: false };
+	const lines = match[1].split(/\r?\n/);
+	const index = lines.findIndex((line) => /^applyTo:/.test(line));
+	const exclude = lines.find((line) => /^excludeAgent:/.test(line)) ?? '';
 	return {
-		body: text.slice(match[0].length),
-		applyTo: value
-			?.split(',')
-			.map((glob) => glob.trim())
-			.filter(Boolean),
+		body: source.slice(match[0].length),
+		declared: index >= 0,
+		applyTo: index >= 0 ? parseApplyTo(lines, index) : [],
+		excluded: /\bcode-review\b/.test(exclude),
 	};
 }
 
@@ -138,11 +215,13 @@ export async function loadRepositoryInstructions(
 	const baseSha = opts.baseSha;
 	if (!baseSha || !/^[0-9a-f]{40,64}$/i.test(baseSha)) return empty;
 	const scoped = (await listScoped(opts, baseSha))
-		.slice(0, MAX_SCOPED_FILES)
+		.slice(0, MAX_LISTED_FILES)
 		.map((name) => `${SCOPED_DIR}/${name}`);
 	const blocks: string[] = [];
 	const files: string[] = [];
+	const seen = new Set<string>();
 	let used = 0;
+	let matchedScoped = 0;
 	for (const path of [...FIXED_FILES, ...scoped]) {
 		const base = await readBase(opts, baseSha, path);
 		if (base.kind === 'ignore') {
@@ -150,16 +229,37 @@ export async function loadRepositoryInstructions(
 			continue;
 		}
 		if (base.kind !== 'content') continue;
-		let body = base.text;
+		let body = base.text.replace(/^\uFEFF/, '');
 		if (path.startsWith(`${SCOPED_DIR}/`)) {
 			const parsed = parseScoped(body);
-			const globs = (parsed.applyTo ?? []).map(globToRegExp);
-			if (!opts.changedPaths.some((p) => globs.some((g) => g.test(p))))
+			if (parsed.excluded) continue;
+			const globs = parsed.applyTo.filter((glob) => {
+				if ((glob.match(/\*\*/g) ?? []).length <= MAX_GLOBSTARS) return true;
+				core.warning(
+					`[review] instruction file ${path}: applyTo glob "${glob}" uses more than ${MAX_GLOBSTARS} ** segments – ignored`
+				);
+				return false;
+			});
+			if (parsed.declared && globs.length === 0) {
+				core.warning(
+					`[review] instruction file ${path} has an applyTo with no usable glob – ignored`
+				);
 				continue;
+			}
+			const patterns = globs.map(globToRegExp);
+			if (!opts.changedPaths.some((p) => patterns.some((g) => g.test(p))))
+				continue;
+			if (matchedScoped >= MAX_SCOPED_FILES) {
+				core.warning(
+					`[review] more than ${MAX_SCOPED_FILES} instruction files match this change; ${path} and later ones are ignored`
+				);
+				break;
+			}
+			matchedScoped += 1;
 			body = parsed.body;
 		}
 		body = body.trim();
-		if (!body) continue;
+		if (!body || seen.has(body)) continue;
 		const block = `Repository instructions from ${path}:\n${fenced(body, 'markdown')}`;
 		if (used + block.length > MAX_TOTAL_CHARS) {
 			core.warning(
@@ -168,6 +268,7 @@ export async function loadRepositoryInstructions(
 			continue;
 		}
 		used += block.length + 2;
+		seen.add(body);
 		blocks.push(block);
 		files.push(path);
 	}
