@@ -96,6 +96,10 @@ inputs:
   suppress-feedback-inline:
     description: 'With review-feedback, omit eligible low-severity maintainability findings inline only.'
     default: 'false'
+  code-graph:
+    description: 'Opt-in TypeScript import hints from selected files at the checked-out PR head.'
+    required: false
+    default: 'false'
   incremental-review:
     description: 'Opt-in: keep a ledger of the open findings in the summary comment, and on a new push review only the files that changed since the last reviewed head (plus the files that still carry open findings). The summary then reports what is new, still open, fixed, and regressed.'
     required: false
@@ -255,6 +259,7 @@ runs:
         INPUT_PRE-MERGE-CHECKS: ${{ inputs.pre-merge-checks }}
         INPUT_REVIEW-FEEDBACK: ${{ inputs.review-feedback }}
         INPUT_SUPPRESS-FEEDBACK-INLINE: ${{ inputs.suppress-feedback-inline }}
+        INPUT_CODE-GRAPH: ${{ inputs.code-graph }}
         INPUT_INCREMENTAL-REVIEW: ${{ inputs.incremental-review }}
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_SECURITY-PROFILE: ${{ inputs.security-profile }}

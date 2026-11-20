@@ -590,3 +590,7 @@ The additive `review-report` output may include `contextCoverage` with `supplied
 Security failure thresholds use every validated occurrence before publication filters and caps. The publisher only trusts its own markers. More precise security identity can produce a one-off new comment after upgrading from the older fingerprint algorithm. Auto-approval remains opt-in.
 
 The existing `security_conclusion` JSON output may include an additive `refutations` array for explicit confirmation rejections. Each entry contains pattern-redacted `id`, `fingerprint`, `title`, optional `file`/`startLine`, and `reason`. It is absent when no complete explicit refutation was committed. Audit reports render the same ledger; publication filters and invalid confirmation batches do not manufacture refutations.
+
+## Optional TypeScript import hints
+
+Set `code-graph: 'true'` to include syntactic relative-import hints between selected TypeScript files. The default is `false`. The action reads regular blobs at the exact PR head from the local Git object store; if that commit is missing, review continues without hints. Hints never displace diff evidence or count towards reviewed-file coverage. This does not resolve packages or infer callers.

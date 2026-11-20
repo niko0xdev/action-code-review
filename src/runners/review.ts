@@ -8,6 +8,7 @@ import {
 	mapPrReviewInputs,
 } from '../adapter/legacy-inputs.js';
 import { preparePiRuntimeConfig } from '../adapter/runtime.js';
+import { loadGraphHints } from '../context/code-graph.js';
 import { prioritizeFiles } from '../context/files.js';
 import { fetchPrContext } from '../context/pr.js';
 import { runPrelint } from '../context/prelint.js';
@@ -679,6 +680,13 @@ export async function runPrReviewAction(): Promise<void> {
 			toolFindings: prelintResult.findings,
 			scorecardContext,
 		});
+		if (core.getInput('code-graph') === 'true') {
+			reviewContext.codeGraph = await loadGraphHints(
+				reviewContext.diff.files.map((file) => file.filename),
+				reviewContext.pullRequest.headSha,
+				reviewContext.repositoryPath
+			);
+		}
 		const result = await runReview(reviewContext, harness, {
 			minConfidence: envLimits.minConfidence,
 			extraRules: reviewRules,

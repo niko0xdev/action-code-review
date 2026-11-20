@@ -81,4 +81,5 @@ export interface ReviewContext {
 	repositoryPath: string;
 	/** Optional caller-supplied policy text forwarded to the harness. */
 	reviewRules?: string;
+	codeGraph?: string[];
 }
