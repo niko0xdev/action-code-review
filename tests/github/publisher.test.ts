@@ -277,6 +277,94 @@ describe('publishReview', () => {
 		};
 	}
 
+	it('suppresses only inline comments, retaining findings, ledger, and approval', async () => {
+		const standard = makeApprovalOctokit();
+		const suppressed = makeApprovalOctokit();
+		const result: ReviewResult = {
+			findings: [
+				finding({
+					severity: 'low',
+					category: 'maintainability',
+					title: 'Use a clearer name',
+				}),
+			],
+			risk: 'low',
+			counts: { critical: 0, high: 0, medium: 0, low: 1 },
+			filesReviewed: ['src/a.ts'],
+			reviewStatus: 'complete',
+			ledger: {
+				head: 'sha1',
+				payload: 'test-ledger',
+				new: 1,
+				stillOpen: 0,
+				fixed: 0,
+				regressed: 0,
+				incremental: false,
+			},
+			feedback: {
+				complete: true,
+				pullRequests: 2,
+				categories: [
+					{
+						category: 'maintainability',
+						findings: 5,
+						samples: 5,
+						resolvedThreads: 2,
+						positive: 1,
+						negative: 4,
+					},
+				],
+			},
+		};
+		const params = {
+			owner: 'acme',
+			repo: 'widget',
+			prNumber: 5,
+			headSha: 'sha1',
+			stickySummary: true,
+			autoApproveWhenResolved: false,
+		};
+		const baseline = structuredClone(result);
+		await publishReview(standard, { ...params, result: baseline });
+		await publishReview(suppressed, {
+			...params,
+			result,
+			suppressFeedbackInline: true,
+		});
+		expect(standard.rest.pulls.createReview).toHaveBeenCalledWith(
+			expect.objectContaining({
+				event: 'COMMENT',
+				comments: [expect.anything()],
+			})
+		);
+		expect(suppressed.rest.pulls.createReview).not.toHaveBeenCalledWith(
+			expect.objectContaining({ event: 'COMMENT' })
+		);
+		expect(result).toEqual(baseline);
+		expect(suppressed.rest.issues.createComment).toHaveBeenCalledWith(
+			expect.objectContaining({ body: expect.stringContaining('test-ledger') })
+		);
+		expect(suppressed.rest.issues.createComment).toHaveBeenCalledWith(
+			expect.objectContaining({
+				body: expect.stringContaining('1 finding(s) omitted inline'),
+			})
+		);
+		const approvalRun = makeApprovalOctokit();
+		await publishReview(approvalRun, {
+			...params,
+			result,
+			autoApproveWhenResolved: true,
+			suppressFeedbackInline: true,
+		});
+		expect(approvalRun.rest.pulls.createReview).toHaveBeenCalledWith(
+			expect.objectContaining({
+				event: 'COMMENT',
+				comments: [expect.anything()],
+			})
+		);
+		expect(result.approval?.state).toBe('approved');
+	});
+
 	it('refuses to publish when the PR head changed during review', async () => {
 		const octokit = makeOctokit() as any;
 		octokit.rest.pulls.get = vi.fn(async () => ({

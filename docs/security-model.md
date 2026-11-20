@@ -115,3 +115,7 @@ Publishing Plane (GitHub PR Comments, Sticky Summary, SARIF Output)
 
 Curated cybersecurity skills embedded in this action are derived from `mukul975/Anthropic-Cybersecurity-Skills` licensed under Apache-2.0. Copyright (c) 2024 Anthropic Cybersecurity Skills Contributors.
 Pi coding harness integration is provided via `@earendil-works/pi-coding-agent` (MIT) and `@vigolium/piolium` (MIT/Apache).
+
+### Repository review feedback
+
+Feedback uses repository-local review threads and checks the generated finding marker against the same publisher identity used for the ledger (the authenticated account, or the standard Actions bot when that identity cannot be queried). A pasted marker or a reply is not evidence. Only human accounts with verified repository write, maintain, or admin permission can vote. The token must be able to read pull requests and query collaborator permissions; a missing endpoint or failed lookup disables suppression. Only aggregate counts are emitted, and reaction data is not sent to the review model.

@@ -6,6 +6,42 @@ export function isBotActor(actor: string): boolean {
 	return actor.endsWith('[bot]');
 }
 
+/** Null means the caller could not verify the permission. */
+export async function strictHumanWritePermission(
+	octokit: PublisherOctokit,
+	owner: string,
+	repo: string,
+	user: { login: string; __typename: string }
+): Promise<boolean | null> {
+	if (
+		user.__typename !== 'User' ||
+		!user.login ||
+		isBotActor(user.login.toLowerCase())
+	)
+		return false;
+	try {
+		const result = await octokit.rest.repos?.getCollaboratorPermissionLevel({
+			owner,
+			repo,
+			username: user.login.toLowerCase(),
+		});
+		switch (result?.data.permission) {
+			case 'admin':
+			case 'maintain':
+			case 'write':
+				return true;
+			case 'triage':
+			case 'read':
+			case 'none':
+				return false;
+			default:
+				return null;
+		}
+	} catch {
+		return null;
+	}
+}
+
 export async function hasWritePermission(
 	octokit: PublisherOctokit,
 	owner: string,

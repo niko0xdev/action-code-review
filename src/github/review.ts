@@ -28,6 +28,8 @@ function ledgerMarker(payload: string): string {
 	return `<!-- ai-review-ledger:${payload} -->`;
 }
 
+import { renderReviewFeedback, suppressInlineFinding } from './feedback.js';
+
 export { buildFindingBody, buildSummaryBody } from './comments.js';
 
 function isPermissionError(error: unknown): boolean {
@@ -182,6 +184,7 @@ export interface PublishParams {
 	failOnIncomplete?: boolean;
 	/** Add a collapsed "Prompt for your coding agent" block to each inline comment. */
 	fixPrompts?: boolean;
+	suppressFeedbackInline?: boolean;
 	/** Re-read PR head before publishing when the Octokit adapter supports it. */
 	recheckHead?: boolean;
 }
@@ -324,6 +327,22 @@ export async function publishReview(
 	// A re-run with nothing new to post must not add another body-only
 	// REQUEST_CHANGES to the timeline when the bot's latest review already
 	// requests changes on this exact head.
+	const alreadyCommented = validFindings.length - findingsToPublish.length;
+	const feedback = result.feedback;
+	let suppressed = 0;
+	// Omitting a new thread could otherwise make the later live resolution
+	// check approve when the unfiltered publication would leave it unresolved.
+	if (
+		params.suppressFeedbackInline &&
+		!params.autoApproveWhenResolved &&
+		feedback
+	) {
+		const before = findingsToPublish.length;
+		findingsToPublish = findingsToPublish.filter(
+			(finding) => !suppressInlineFinding(finding, feedback)
+		);
+		suppressed = before - findingsToPublish.length;
+	}
 	const alreadyBlockingOnHead =
 		findingsToPublish.length === 0 &&
 		shouldBlock &&
@@ -408,7 +427,6 @@ export async function publishReview(
 			blocking: shouldBlock,
 		});
 	}
-	const alreadyCommented = validFindings.length - findingsToPublish.length;
 	const alreadyCommentedNote =
 		alreadyCommented > 0
 			? `\n\n> ${alreadyCommented} finding(s) already commented on earlier runs; not posted again.`
@@ -431,9 +449,10 @@ export async function publishReview(
 		ruleCoverage: result.ruleCoverage,
 		reviewStatus: result.reviewStatus,
 		linkedIssues: result.linkedIssues,
+		feedback,
 		approval: result.approval,
 	};
-	const suffix = `${alreadyCommentedNote}\n\n${marker}`;
+	const suffix = `${alreadyCommentedNote}${suppressed ? `\n\n> ${suppressed} finding(s) omitted inline by repository feedback; retained in this review.` : ''}\n\n${marker}`;
 	let summaryBody = `${buildSummaryBody(summaryOptions)}${suffix}`;
 	if (result.linkedIssues?.length && summaryBody.length > 65_536) {
 		summaryBody = `${buildSummaryBody({ ...summaryOptions, linkedIssues: undefined })}${suffix}`;
@@ -1172,6 +1191,7 @@ export function buildJobSummary(input: {
 		findings: unknown[];
 		reviewStatus?: ReviewResult['reviewStatus'];
 		approval?: ReviewResult['approval'];
+		feedback?: ReviewResult['feedback'];
 	};
 	toolFindings?: ReviewResult['toolFindings'];
 	diagnostics?: ReviewResult['diagnostics'];
@@ -1224,6 +1244,8 @@ export function buildJobSummary(input: {
 			renderToolFindingsSection(input.toolFindings, input.diagnostics)
 		);
 	}
+	if (input.result.feedback)
+		lines.push('', renderReviewFeedback(input.result.feedback));
 	return lines.join('\n');
 }
 

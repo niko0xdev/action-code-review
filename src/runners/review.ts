@@ -12,6 +12,7 @@ import { prioritizeFiles } from '../context/files.js';
 import { fetchPrContext } from '../context/pr.js';
 import { runPrelint } from '../context/prelint.js';
 import { loadScorecardContext } from '../context/scorecard.js';
+import { sampleReviewFeedback } from '../github/feedback.js';
 import { trackPhase } from '../github/progress.js';
 import {
 	type PublisherOctokit,
@@ -286,6 +287,8 @@ export async function runPrReviewAction(): Promise<void> {
 		'check-run': core.getInput('check-run'),
 		'secret-scan': core.getInput('secret-scan'),
 		'fix-prompts': core.getInput('fix-prompts'),
+		'review-feedback': core.getInput('review-feedback'),
+		'suppress-feedback-inline': core.getInput('suppress-feedback-inline'),
 		'incremental-review': core.getInput('incremental-review'),
 		'pre-merge-checks': core.getInput('pre-merge-checks'),
 		'security-skills': core.getInput('security-skills'),
@@ -415,6 +418,7 @@ export async function runPrReviewAction(): Promise<void> {
 		autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
 		checkRun: legacyOptions.checkRun,
 		fixPrompts: legacyOptions.fixPrompts,
+		suppressFeedbackInline: legacyOptions.suppressFeedbackInline,
 		actor:
 			process.env.GITHUB_ACTOR ??
 			(
@@ -816,6 +820,13 @@ export async function runPrReviewAction(): Promise<void> {
 				regressed: delta.regressed.length,
 				incremental,
 			};
+		}
+		if (legacyOptions.reviewFeedback) {
+			result.feedback = await sampleReviewFeedback(
+				octokit,
+				(query, variables) => client.graphql(query, variables),
+				publishBase
+			);
 		}
 		await withReviewReportOutput(
 			async () => {

@@ -149,6 +149,7 @@ export interface ReviewResult {
 	filesReviewed: string[];
 	/** Prompt supply accounting only; it does not certify source inspection. */
 	linkedIssues?: LinkedIssueAssessment[];
+	feedback?: import('../github/feedback.js').ReviewFeedback;
 	contextCoverage?: { suppliedPaths: string[]; omittedPaths: string[] };
 	/** True when the PR file list was capped by pagination safety limits. */
 	filesTruncated?: boolean;

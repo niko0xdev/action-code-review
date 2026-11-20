@@ -32496,6 +32496,8 @@ const PR_REVIEW_DEFAULTS = {
     secretScan: 'false',
     fixPrompts: 'false',
     incrementalReview: 'false',
+    reviewFeedback: 'false',
+    suppressFeedbackInline: 'false',
     preMergeChecks: 'off',
 };
 const PR_CONTENT_DEFAULTS = {
@@ -32606,6 +32608,8 @@ function mapPrReview(inputs) {
         repositoryInstructions: bool(get(inputs, 'repository-instructions'), PR_REVIEW_DEFAULTS.repositoryInstructions),
         secretScan: bool(get(inputs, 'secret-scan'), PR_REVIEW_DEFAULTS.secretScan),
         fixPrompts: bool(get(inputs, 'fix-prompts'), PR_REVIEW_DEFAULTS.fixPrompts),
+        reviewFeedback: bool(get(inputs, 'review-feedback'), PR_REVIEW_DEFAULTS.reviewFeedback),
+        suppressFeedbackInline: bool(get(inputs, 'suppress-feedback-inline'), PR_REVIEW_DEFAULTS.suppressFeedbackInline),
         incrementalReview: bool(get(inputs, 'incremental-review'), PR_REVIEW_DEFAULTS.incrementalReview),
         preMergeChecks: (0,_shared_numeric_js__WEBPACK_IMPORTED_MODULE_3__/* .parseEnum */ .nL)(get(inputs, 'pre-merge-checks'), _types_finding_js__WEBPACK_IMPORTED_MODULE_1__/* .PRE_MERGE_CHECK_MODES */ .t8, PR_REVIEW_DEFAULTS.preMergeChecks, 'pre-merge-checks'),
     };
@@ -40459,7 +40463,238 @@ ${refutationsSection}
     return (0,redactor/* redactSecrets */.f)(raw.trim());
 }
 
+;// CONCATENATED MODULE: ./src/github/permissions.ts
+
+function permissions_isBotActor(actor) {
+    return actor.endsWith('[bot]');
+}
+/** Null means the caller could not verify the permission. */
+async function strictHumanWritePermission(octokit, owner, repo, user) {
+    if (user.__typename !== 'User' ||
+        !user.login ||
+        permissions_isBotActor(user.login.toLowerCase()))
+        return false;
+    try {
+        const result = await octokit.rest.repos?.getCollaboratorPermissionLevel({
+            owner,
+            repo,
+            username: user.login.toLowerCase(),
+        });
+        switch (result?.data.permission) {
+            case 'admin':
+            case 'maintain':
+            case 'write':
+                return true;
+            case 'triage':
+            case 'read':
+            case 'none':
+                return false;
+            default:
+                return null;
+        }
+    }
+    catch {
+        return null;
+    }
+}
+async function hasWritePermission(octokit, owner, repo, actor) {
+    if (!actor)
+        return true;
+    if (permissions_isBotActor(actor))
+        return true;
+    const repos = octokit.rest?.repos;
+    const method = repos?.getCollaboratorPermissionLevel;
+    if (!method) {
+        core.warning('[review] getCollaboratorPermissionLevel not available — assuming write permission');
+        return true;
+    }
+    try {
+        const { data } = await method({ owner, repo, username: actor });
+        const perm = data.permission;
+        core.info(`[review] Permission for ${actor}: ${perm}`);
+        return perm === 'admin' || perm === 'write';
+    }
+    catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        core.warning(`[review] Permission check failed for ${actor}: ${msg}`);
+        return false;
+    }
+}
+
+;// CONCATENATED MODULE: ./src/github/feedback.ts
+
+
+
+const query = `query ReviewFeedback($owner: String!, $repo: String!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequests(first: 11, states: [MERGED, CLOSED], orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { number reviewThreads(first: 30) {
+        pageInfo { hasNextPage }
+        nodes { isResolved comments(first: 1) { nodes {
+          body author { login __typename }
+          reactions(first: 20, orderBy: {field: CREATED_AT, direction: ASC}) {
+            pageInfo { hasNextPage }
+            nodes { content user { login __typename } }
+          }
+        } } }
+      } }
+    }
+  }
+}`;
+async function sampleReviewFeedback(octokit, graphql, { owner, repo, prNumber }) {
+    const result = {
+        complete: true,
+        pullRequests: 0,
+        categories: [],
+    };
+    const categories = new Map();
+    const permissions = new Map();
+    const permissionLimit = 30;
+    try {
+        const self = await resolveSelfLogin(octokit);
+        const response = (await graphql(query, { owner, repo }));
+        const pulls = response.repository?.pullRequests?.nodes;
+        if (!Array.isArray(pulls))
+            throw new Error('Missing pull requests');
+        for (const pr of pulls
+            .filter((pr) => pr?.number !== prNumber)
+            .slice(0, 10)) {
+            if (!pr || !Number.isSafeInteger(pr.number)) {
+                result.complete = false;
+                continue;
+            }
+            result.pullRequests++;
+            const threads = pr.reviewThreads;
+            if (threads?.pageInfo?.hasNextPage !== false ||
+                !Array.isArray(threads.nodes))
+                result.complete = false;
+            const findings = new Map();
+            for (const thread of threads?.nodes?.slice(0, 30) ?? []) {
+                const root = thread?.comments?.nodes?.[0];
+                if (!root ||
+                    typeof thread?.isResolved !== 'boolean' ||
+                    !root.author?.login ||
+                    !root.author.__typename ||
+                    typeof root.body !== 'string') {
+                    result.complete = false;
+                    continue;
+                }
+                const { login, __typename } = root.author;
+                const publisher = __typename === 'Bot' && !login.endsWith('[bot]')
+                    ? `${login}[bot]`
+                    : login;
+                if ((!self && __typename !== 'Bot') ||
+                    !isTrustedAuthor(publisher, self))
+                    continue;
+                const identity = findingCommentCategory(root.body);
+                if (!identity)
+                    continue;
+                const { id, category } = identity;
+                const row = categories.get(category) ?? {
+                    category,
+                    findings: 0,
+                    resolvedThreads: 0,
+                    samples: 0,
+                    positive: 0,
+                    negative: 0,
+                };
+                categories.set(category, row);
+                if (thread.isResolved)
+                    row.resolvedThreads++;
+                const entry = findings.get(id) ?? {
+                    category,
+                    votes: new Map(),
+                };
+                if (!findings.has(id))
+                    row.findings++;
+                if (entry.category !== category) {
+                    result.complete = false;
+                    continue;
+                }
+                findings.set(id, entry);
+                const reactions = root.reactions;
+                if (reactions?.pageInfo?.hasNextPage !== false ||
+                    !Array.isArray(reactions.nodes))
+                    result.complete = false;
+                for (const reaction of reactions?.nodes?.slice(0, 20) ?? []) {
+                    if (!reaction || typeof reaction.content !== 'string') {
+                        result.complete = false;
+                        continue;
+                    }
+                    const vote = reaction.content === 'THUMBS_UP'
+                        ? 1
+                        : reaction.content === 'THUMBS_DOWN'
+                            ? 2
+                            : 0;
+                    if (!vote)
+                        continue;
+                    const user = reaction.user;
+                    if (!user?.login || !user.__typename) {
+                        result.complete = false;
+                        continue;
+                    }
+                    if (user.__typename !== 'User' ||
+                        user.login.toLowerCase() === self?.toLowerCase())
+                        continue;
+                    const key = user.login.toLowerCase();
+                    if (!permissions.has(key) && permissions.size < permissionLimit)
+                        permissions.set(key, await strictHumanWritePermission(octokit, owner, repo, user));
+                    const permitted = permissions.get(key);
+                    if (permitted == null)
+                        result.complete = false;
+                    if (permitted)
+                        entry.votes.set(key, (entry.votes.get(key) ?? 0) | vote);
+                }
+            }
+            for (const { category, votes } of findings.values()) {
+                const row = categories.get(category);
+                if (!row)
+                    continue;
+                let voted = false;
+                for (const vote of votes.values()) {
+                    if (vote === 1)
+                        row.positive++;
+                    else if (vote === 2)
+                        row.negative++;
+                    else
+                        continue;
+                    voted = true;
+                }
+                if (voted)
+                    row.samples++;
+            }
+        }
+    }
+    catch {
+        result.complete = false;
+    }
+    result.categories = [...categories.values()].sort((a, b) => a.category.localeCompare(b.category, 'en-GB'));
+    return result;
+}
+function suppressInlineFinding(finding, feedback) {
+    if (!feedback.complete ||
+        finding.severity !== 'low' ||
+        finding.category !== 'maintainability')
+        return false;
+    const row = feedback.categories.find(({ category }) => category === finding.category);
+    return (!!row &&
+        row.samples >= 5 &&
+        row.negative * 5 >= (row.positive + row.negative) * 4);
+}
+function renderReviewFeedback(feedback) {
+    return [
+        '### Repository review feedback',
+        '',
+        `Sampled pull requests: ${feedback.pullRequests}. Evidence: ${feedback.complete ? 'complete within the sample' : 'incomplete (inline suppression disabled)'}.`,
+        '',
+        '| Category | Findings | Resolved threads | Voted findings | Positive votes | Negative votes |',
+        '| --- | ---: | ---: | ---: | ---: | ---: |',
+        ...feedback.categories.map((row) => `| ${row.category} | ${row.findings} | ${row.resolvedThreads} | ${row.samples} | ${row.positive} | ${row.negative} |`),
+    ].join('\n');
+}
+
 ;// CONCATENATED MODULE: ./src/github/comments.ts
+
 
 
 
@@ -40557,6 +40792,13 @@ function buildFixPrompt(finding) {
         '',
         '</details>',
     ].join('\n');
+}
+/** Parse only the generated header and final marker, never reply prose. */
+function findingCommentCategory(body) {
+    const id = /\n\n<!-- ai-review-id:([a-f0-9]{12}) -->\s*$/.exec(body)?.[1];
+    const label = /^(?:🚨 CRITICAL|🔥 HIGH|⚠️ MEDIUM|✅ LOW) · ([^\n]+)\n/.exec(body)?.[1];
+    const category = Object.keys(CATEGORY_LABEL).find((key) => CATEGORY_LABEL[key] === label);
+    return id && category ? { id, category } : undefined;
 }
 /** Full inline-comment body for a finding, ending with its id marker. */
 function buildFindingBody(finding, options = {}) {
@@ -40905,6 +41147,8 @@ function buildSummaryBody(result) {
             '',
         ]
         : []), footer);
+    if (result.feedback)
+        lines.push('', renderReviewFeedback(result.feedback));
     return lines.join('\n');
 }
 function stickySummaryMarker(owner, repo, prNumber) {
@@ -40922,35 +41166,6 @@ function footerComment(model) {
     return `<!-- Auto-generated by AI Code Review (https://github.com/niko0xdev/action-code-review) · model: ${safe(model)} · run: ${safe(runUrl)} -->`;
 }
 
-;// CONCATENATED MODULE: ./src/github/permissions.ts
-
-function permissions_isBotActor(actor) {
-    return actor.endsWith('[bot]');
-}
-async function hasWritePermission(octokit, owner, repo, actor) {
-    if (!actor)
-        return true;
-    if (permissions_isBotActor(actor))
-        return true;
-    const repos = octokit.rest?.repos;
-    const method = repos?.getCollaboratorPermissionLevel;
-    if (!method) {
-        core.warning('[review] getCollaboratorPermissionLevel not available — assuming write permission');
-        return true;
-    }
-    try {
-        const { data } = await method({ owner, repo, username: actor });
-        const perm = data.permission;
-        core.info(`[review] Permission for ${actor}: ${perm}`);
-        return perm === 'admin' || perm === 'write';
-    }
-    catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        core.warning(`[review] Permission check failed for ${actor}: ${msg}`);
-        return false;
-    }
-}
-
 ;// CONCATENATED MODULE: ./src/github/review.ts
 
 
@@ -40965,6 +41180,7 @@ const LEDGER_MARKER = /<!--\s*ai-review-ledger:([A-Za-z0-9+/=]+)\s*-->/;
 function ledgerMarker(payload) {
     return `<!-- ai-review-ledger:${payload} -->`;
 }
+
 
 function isPermissionError(error) {
     const err = error;
@@ -41073,6 +41289,18 @@ async function publishReview(octokit, params) {
     // A re-run with nothing new to post must not add another body-only
     // REQUEST_CHANGES to the timeline when the bot's latest review already
     // requests changes on this exact head.
+    const alreadyCommented = validFindings.length - findingsToPublish.length;
+    const feedback = result.feedback;
+    let suppressed = 0;
+    // Omitting a new thread could otherwise make the later live resolution
+    // check approve when the unfiltered publication would leave it unresolved.
+    if (params.suppressFeedbackInline &&
+        !params.autoApproveWhenResolved &&
+        feedback) {
+        const before = findingsToPublish.length;
+        findingsToPublish = findingsToPublish.filter((finding) => !suppressInlineFinding(finding, feedback));
+        suppressed = before - findingsToPublish.length;
+    }
     const alreadyBlockingOnHead = findingsToPublish.length === 0 &&
         shouldBlock &&
         (await hasCurrentBlockingReview(octokit, owner, repo, prNumber, headSha));
@@ -41157,7 +41385,6 @@ async function publishReview(octokit, params) {
             blocking: shouldBlock,
         });
     }
-    const alreadyCommented = validFindings.length - findingsToPublish.length;
     const alreadyCommentedNote = alreadyCommented > 0
         ? `\n\n> ${alreadyCommented} finding(s) already commented on earlier runs; not posted again.`
         : '';
@@ -41179,9 +41406,10 @@ async function publishReview(octokit, params) {
         ruleCoverage: result.ruleCoverage,
         reviewStatus: result.reviewStatus,
         linkedIssues: result.linkedIssues,
+        feedback,
         approval: result.approval,
     };
-    const suffix = `${alreadyCommentedNote}\n\n${marker}`;
+    const suffix = `${alreadyCommentedNote}${suppressed ? `\n\n> ${suppressed} finding(s) omitted inline by repository feedback; retained in this review.` : ''}\n\n${marker}`;
     let summaryBody = `${buildSummaryBody(summaryOptions)}${suffix}`;
     if (result.linkedIssues?.length && summaryBody.length > 65_536) {
         summaryBody = `${buildSummaryBody({ ...summaryOptions, linkedIssues: undefined })}${suffix}`;
@@ -41808,6 +42036,8 @@ function buildJobSummary(input) {
         lines.push('');
         lines.push(renderToolFindingsSection(input.toolFindings, input.diagnostics));
     }
+    if (input.result.feedback)
+        lines.push('', renderReviewFeedback(input.result.feedback));
     return lines.join('\n');
 }
 /**
@@ -44118,6 +44348,8 @@ function buildReviewReport(input) {
     };
     if (result.linkedIssues?.length)
         report.linkedIssues = result.linkedIssues.map((issue) => ({ ...issue }));
+    if (result.feedback)
+        report.feedback = result.feedback;
     if (result.contextCoverage)
         report.contextCoverage = {
             suppliedPaths: [...result.contextCoverage.suppliedPaths],
@@ -45038,6 +45270,7 @@ var registry = __nccwpck_require__(5672);
 
 
 
+
 /**
  * Judge the merge rules of the repository against the change. The rules come
  * from the base commit, the judgement runs in a separate tool-free call, and
@@ -45202,6 +45435,8 @@ async function runPrReviewAction() {
         'check-run': core.getInput('check-run'),
         'secret-scan': core.getInput('secret-scan'),
         'fix-prompts': core.getInput('fix-prompts'),
+        'review-feedback': core.getInput('review-feedback'),
+        'suppress-feedback-inline': core.getInput('suppress-feedback-inline'),
         'incremental-review': core.getInput('incremental-review'),
         'pre-merge-checks': core.getInput('pre-merge-checks'),
         'security-skills': core.getInput('security-skills'),
@@ -45296,6 +45531,7 @@ async function runPrReviewAction() {
         autoApproveWhenResolved: legacyOptions.autoApproveWhenResolved,
         checkRun: legacyOptions.checkRun,
         fixPrompts: legacyOptions.fixPrompts,
+        suppressFeedbackInline: legacyOptions.suppressFeedbackInline,
         actor: process.env.GITHUB_ACTOR ??
             github.context.payload.pull_request?.user?.login ??
             github.context.actor,
@@ -45596,6 +45832,9 @@ async function runPrReviewAction() {
                 regressed: delta.regressed.length,
                 incremental,
             };
+        }
+        if (legacyOptions.reviewFeedback) {
+            result.feedback = await sampleReviewFeedback(octokit, (query, variables) => client.graphql(query, variables), publishBase);
         }
         await withReviewReportOutput(async () => {
             await publishReview(octokit, {
