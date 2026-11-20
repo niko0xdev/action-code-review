@@ -38,6 +38,7 @@ import {
 	reviewSummaryText,
 } from '../review/execution.js';
 import { loadRepositoryInstructions } from '../review/instructions.js';
+import { assessLinkedIssues } from '../review/linked-issues.js';
 import type { BaseFileData } from '../review/prompt-file.js';
 import { loadReviewPromptFile } from '../review/prompt-file.js';
 import {
@@ -144,6 +145,7 @@ export async function runPrReviewAction(): Promise<void> {
 		'block-on-issues': core.getInput('block-on-issues'),
 		'include-full-content': core.getInput('include-full-content'),
 		'max-context-chars': core.getInput('max-context-chars'),
+		'linked-issue': core.getInput('linked-issue'),
 		'scorecard-context': core.getInput('scorecard-context'),
 		'repository-instructions': core.getInput('repository-instructions'),
 		'check-run': core.getInput('check-run'),
@@ -152,9 +154,8 @@ export async function runPrReviewAction(): Promise<void> {
 		'security-skills': core.getInput('security-skills'),
 	});
 	const llmConfig = resolveEngineConfig(legacyOptions);
-	const octokit = toPublisherOctokit(
-		github.getOctokit(legacyOptions.githubToken)
-	);
+	const client = github.getOctokit(legacyOptions.githubToken);
+	const octokit = toPublisherOctokit(client);
 	const prNumber = context.payload.pull_request.number;
 	const repoInfo = { owner: context.repo.owner, repo: context.repo.repo };
 	const trackEnabled = core.getInput('track-progress') === 'true';
@@ -513,6 +514,25 @@ export async function runPrReviewAction(): Promise<void> {
 				...result.diagnostics,
 				repositoryInstructions: instructions.files,
 			};
+		if (legacyOptions.linkedIssue) {
+			result.linkedIssues = await assessLinkedIssues({
+				repository: repoInfo,
+				prNumber,
+				files: reviewContext.diff.files.filter((file) =>
+					result.filesReviewed.includes(file.filename)
+				),
+				maxContextChars: legacyOptions.maxContextChars,
+				query: (query, variables) => client.graphql(query, { ...variables }),
+				complete: async (messages) =>
+					(
+						await new OpenAiCompatibleProvider(llmConfig).complete(messages, {
+							temperature: 0,
+							maxOutputTokens: 900,
+						})
+					).content,
+				warn: core.warning,
+			});
+		}
 		const failOnIncomplete =
 			process.env.AI_REVIEW_FAIL_ON_INCOMPLETE !== 'false';
 		// Opt-in second LLM pass (env-only; V1 contract frozen, no new

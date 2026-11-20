@@ -88,6 +88,13 @@ export interface ReviewUsageMetrics {
 	processes: ReviewUsageProcessCounts;
 }
 
+export interface LinkedIssueAssessment {
+	number: number;
+	title: string;
+	verdict: 'satisfied' | 'partially satisfied' | 'not satisfied' | 'unclear';
+	reasoning: string;
+}
+
 export interface ReviewResult {
 	/** Findings that survived validation, sorted by severity then confidence. */
 	findings: Finding[];
@@ -99,6 +106,7 @@ export interface ReviewResult {
 	/** Files actually included in the review pass. */
 	filesReviewed: string[];
 	/** Prompt supply accounting only; it does not certify source inspection. */
+	linkedIssues?: LinkedIssueAssessment[];
 	contextCoverage?: { suppliedPaths: string[]; omittedPaths: string[] };
 	/** True when the PR file list was capped by pagination safety limits. */
 	filesTruncated?: boolean;

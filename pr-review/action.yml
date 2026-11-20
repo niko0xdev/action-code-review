@@ -58,6 +58,10 @@ inputs:
     description: 'Global character limit for all context content combined (prevents exceeding LLM context window)'
     required: false
     default: '30000'
+  linked-issue:
+    description: 'Opt-in: assess whether the pull request satisfies up to three same-repository issues it closes. Advisory only.'
+    required: false
+    default: 'false'
   scorecard-context:
     description: 'Opt-in: for public repositories, fetch the published OSSF Scorecard (supply-chain health scores) as advisory review context. Sends the owner/repo name to api.securityscorecards.dev, a third-party service. Never fails a review.'
     required: false
@@ -227,6 +231,7 @@ runs:
         INPUT_BLOCK-ON-ISSUES: ${{ inputs.block-on-issues }}
         INPUT_INCLUDE-FULL-CONTENT: ${{ inputs.include-full-content }}
         INPUT_MAX-CONTEXT-CHARS: ${{ inputs.max-context-chars }}
+        INPUT_LINKED-ISSUE: ${{ inputs.linked-issue }}
         INPUT_SCORECARD-CONTEXT: ${{ inputs.scorecard-context }}
         INPUT_CHECK-RUN: ${{ inputs.check-run }}
         INPUT_SECURITY-SKILLS: ${{ inputs.security-skills }}

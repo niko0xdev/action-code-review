@@ -341,3 +341,6 @@ evidence by both `max-context-chars` and its 24,000-character ceiling. Wider
 scope can surface more findings, and unreviewed paths prevent auto-approval.
 The resolved preset is carried in diagnostics
 to the PR summary, job summary, and JSON report.
+## Linked issue assessment
+
+When enabled, the review runner reads same-repository closing references and sends them with budgeted, numbered diff hunks to the configured provider in a separate call without tools. The system message defines the task and output contract; the user message contains only fenced, untrusted data. Issue text is redacted before clipping. A verdict other than `unclear` requires valid references to supplied hunks, which validates the citations, not the correctness of the verdict. The publisher derives the explanation from the cited paths and never renders free-form response prose. This advisory pass does not feed findings, blocking, or approval, and the comment omits the section if it would exceed the final size limit.

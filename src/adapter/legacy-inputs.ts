@@ -30,6 +30,7 @@ export interface PrReviewEngineOptions {
 	blockOnIssues: boolean;
 	includeFullContent: boolean;
 	maxContextChars: number;
+	linkedIssue: boolean;
 	scorecardContext: boolean;
 	checkRun: boolean;
 	securitySkills: SecuritySkillsMode;
@@ -96,6 +97,7 @@ export const PR_REVIEW_DEFAULTS = {
 	blockOnIssues: 'true',
 	includeFullContent: 'false',
 	maxContextChars: '30000',
+	linkedIssue: 'false',
 	scorecardContext: 'false',
 	checkRun: 'false',
 	securitySkills: 'all',
@@ -295,6 +297,10 @@ function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 			get(inputs, 'max-context-chars'),
 			PR_REVIEW_DEFAULTS.maxContextChars,
 			'max-context-chars'
+		),
+		linkedIssue: bool(
+			get(inputs, 'linked-issue'),
+			PR_REVIEW_DEFAULTS.linkedIssue
 		),
 		scorecardContext: bool(
 			get(inputs, 'scorecard-context'),

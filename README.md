@@ -37,6 +37,7 @@ jobs:
           # max-files: 10
           # exclude-patterns: '*.md,*.json,*.lock'
           # review-effort: 'deep'  # optional; default 'auto' preserves existing behaviour
+          # linked-issue: 'true'       # optional advisory assessment of issues the PR closes
           # scorecard-context: 'true'  # opt-in, default 'false'; see below
           # check-run: 'true'          # opt-in, default 'false'; needs checks: write
           # security-skills: auto      # opt-in, default 'all'; see below
