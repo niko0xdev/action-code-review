@@ -2,6 +2,7 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { isActorAllowed } from './github/actor-filter.js';
 import { resolveReviewMode, validateReviewEvent } from './modes/detector.js';
+import { runFollowup } from './runners/followup.js';
 import { runPrContentAction } from './runners/pr-content.js';
 import { runPrReviewAction } from './runners/review.js';
 import { runSecurityAction } from './runners/security.js';
@@ -26,6 +27,10 @@ export async function main(argv: string[]): Promise<void> {
 		const mode = resolveReviewMode(core.getInput('mode') || undefined);
 		const eventName = process.env.GITHUB_EVENT_NAME;
 		const eventAction = (github.context.payload as { action?: string }).action;
+		if (eventName === 'pull_request_review_comment') {
+			if (parseArgs(argv).action === 'pr-review') await runFollowup();
+			return;
+		}
 		const validation = validateReviewEvent(eventName, eventAction);
 		if (!validation.supported) {
 			core.warning(
