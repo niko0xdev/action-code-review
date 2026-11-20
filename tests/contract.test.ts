@@ -21,7 +21,14 @@ interface ActionYml {
 
 function loadAction(relativePath: string): ActionYml {
 	const raw = readFileSync(resolve(repoRoot, relativePath), 'utf8');
-	return parseDocument(raw).toJS() as ActionYml;
+	const document = parseDocument(raw);
+	// A duplicated key makes GitHub refuse to load the action, so it fails
+	// here instead of in a consumer's workflow.
+	expect(
+		document.errors.map((error) => error.message),
+		`${relativePath} has a YAML error`
+	).toEqual([]);
+	return document.toJS() as ActionYml;
 }
 
 // The frozen V1 contract (docs/v1-interface-contract.md). Any diff between
