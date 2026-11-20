@@ -194,6 +194,15 @@ pnpm lint          # biome
 pnpm build         # pinned ncc (devDependency) → pr-*/dist/index.js; CI diffs the result
 ```
 
+## Pre-merge checks (opt-in)
+
+Input `pre-merge-checks` (default `off`; see `src/review/pre-merge-checks.ts`).
+The merge rules of the repository live in `.github/review-checks.md` at the base
+commit, one rule per line. They are judged against the change in a separate
+call without tools, so the rules never enter the findings pass. In `error` mode
+a failing rule that names a file and a line becomes a blocking finding; in
+`warning` mode it is only reported.
+
 ## Incremental review (opt-in)
 
 Input `incremental-review` (default `'false'`; see `src/review/ledger.ts`).

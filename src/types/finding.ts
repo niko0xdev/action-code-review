@@ -115,6 +115,26 @@ export interface ReviewLedgerState {
 	incremental: boolean;
 }
 
+/** The modes the pre-merge checks input accepts. */
+export const PRE_MERGE_CHECK_MODES = ['off', 'warning', 'error'] as const;
+
+/** How a failing merge rule is judged. */
+export type PreMergeCheckMode = (typeof PRE_MERGE_CHECK_MODES)[number];
+
+/** The verdict for one merge rule. */
+export interface PreMergeCheckResult {
+	/** Position of the rule in the file, from 1. */
+	index: number;
+	/** The rule as written. */
+	rule: string;
+	verdict: 'pass' | 'fail' | 'unclear';
+	reason: string;
+	/** The file the rule is about, when the model could name one. */
+	path?: string;
+	/** The line the rule is about, when the model could name one. */
+	line?: number;
+}
+
 export interface ReviewResult {
 	/** Findings that survived validation, sorted by severity then confidence. */
 	findings: Finding[];
@@ -142,6 +162,11 @@ export interface ReviewResult {
 	usage?: ReviewUsageMetrics;
 	/** State carried to the next run, when the incremental review is on. */
 	ledger?: ReviewLedgerState;
+	/** The merge rules of the repository and how the change judged them. */
+	preMergeChecks?: {
+		mode: PreMergeCheckMode;
+		results: PreMergeCheckResult[];
+	};
 	/**
 	 * Real outcome of the auto-approval attempt, recorded by the publisher.
 	 * Absent means the publisher never got far enough to decide.

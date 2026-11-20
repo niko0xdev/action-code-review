@@ -86,6 +86,10 @@ inputs:
     description: 'Opt-in: add a collapsed, copyable "Prompt for your coding agent" block to each inline finding comment. The text is redacted, has links removed, and is framed as a report rather than commands.'
     required: false
     default: 'false'
+  pre-merge-checks:
+    description: 'Opt-in: judge the merge rules of .github/review-checks.md (read at the base commit) against the change. off | warning | error. In error mode a failing rule that names a file and line becomes a blocking finding; warning mode only reports it.'
+    required: false
+    default: 'off'
   incremental-review:
     description: 'Opt-in: keep a ledger of the open findings in the summary comment, and on a new push review only the files that changed since the last reviewed head (plus the files that still carry open findings). The summary then reports what is new, still open, fixed, and regressed.'
     required: false
@@ -242,6 +246,7 @@ runs:
         INPUT_REPOSITORY-INSTRUCTIONS: ${{ inputs.repository-instructions }}
         INPUT_SECRET-SCAN: ${{ inputs.secret-scan }}
         INPUT_FIX-PROMPTS: ${{ inputs.fix-prompts }}
+        INPUT_PRE-MERGE-CHECKS: ${{ inputs.pre-merge-checks }}
         INPUT_INCREMENTAL-REVIEW: ${{ inputs.incremental-review }}
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_SECURITY-PROFILE: ${{ inputs.security-profile }}

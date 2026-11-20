@@ -6,6 +6,7 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 
 ### Added
 
+- Opt-in `pre-merge-checks` input (`off | warning | error`): the merge rules of the repository are read from `.github/review-checks.md` at the base commit, one rule per line, and judged against the change in a separate tool-free call. The verdicts appear in the summary and in `review-report` as `preMergeChecks`. In `error` mode a failing rule that names a file and a line becomes a blocking finding; `warning` mode only reports it. A pull request cannot change the rules it is judged by, and a failure to judge them only warns.
 - Opt-in `incremental-review` input: the review keeps a ledger of the open findings in the summary comment. On a new push it re-reviews only the files that changed since the last reviewed head, plus the files that still carry open findings, and the summary reports what is new, still open, fixed, and regressed. The ledger is stored as a base64 payload in the hidden marker of the sticky summary comment, and the counts are reported in `review-report` as `ledger`. A force-push, an unknown commit, or a failed comparison falls back to a full review.
 
 ### Fixed

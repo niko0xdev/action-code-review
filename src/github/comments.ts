@@ -11,6 +11,8 @@ import type {
 	ApprovalOutcome,
 	Finding,
 	LinkedIssueAssessment,
+	PreMergeCheckMode,
+	PreMergeCheckResult,
 	ReviewDiagnostics,
 	ReviewLedgerState,
 	RiskLevel,
@@ -200,6 +202,10 @@ type SummaryResult = {
 	linkedIssues?: LinkedIssueAssessment[];
 	approval?: ApprovalOutcome;
 	ledger?: ReviewLedgerState;
+	preMergeChecks?: {
+		mode: PreMergeCheckMode;
+		results: PreMergeCheckResult[];
+	};
 };
 
 function hasBlockingFindings(

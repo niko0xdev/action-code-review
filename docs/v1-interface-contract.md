@@ -253,6 +253,17 @@ it as a report rather than commands, and it is fenced so it cannot close the
 block. The marker and the finding identity are unchanged, and the publisher reads
 the last marker in a comment, so duplicate suppression keeps working.
 
+`pre-merge-checks` is opt-in and takes `off` (the default), `warning`, or
+`error`. When it is not `off`, the merge rules of the repository are read from
+`.github/review-checks.md` at the base commit, one rule per line, with at most
+20 rules; a line that starts with `#` is a comment. The rules are judged
+against the change in a separate call without tools, and the verdicts appear in
+the summary and in `review-report` as `preMergeChecks`. In `error` mode a
+failing rule that names a file and a line becomes a blocking finding; in
+`warning` mode the failure is only reported. Because the file is read at the
+base commit, a pull request cannot change the rules it is judged by, and a
+failure to read or judge the rules only warns.
+
 `incremental-review` is opt-in. When `'true'`, the action keeps a ledger of the
 findings of the last run in the sticky summary comment, as a base64 payload in
 the hidden marker `ai-review-ledger`. On the next run it asks GitHub which files
