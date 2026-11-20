@@ -39137,11 +39137,12 @@ const HEADING = '### Change flow (generated)';
 /** A participant name Mermaid can use as-is. */
 const SAFE_ID = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /**
- * Words Mermaid gives a meaning. A participant named after one of them
- * renders as an error, so such a name is rewritten too.
+ * Words Mermaid gives a meaning, in lower case: its sequence lexer is
+ * case-insensitive, so `End` breaks a diagram as surely as `end`. A
+ * participant named after one of them is rewritten too.
  */
 const RESERVED = new Set([
-    'sequenceDiagram',
+    'sequencediagram',
     'autonumber',
     'participant',
     'actor',
@@ -39156,7 +39157,13 @@ const RESERVED = new Set([
     'rect',
     'box',
     'critical',
+    'option',
     'break',
+    'par_over',
+    'title',
+    'off',
+    'properties',
+    'details',
     'activate',
     'deactivate',
     'create',
@@ -39165,7 +39172,7 @@ const RESERVED = new Set([
     'links',
     'click',
     'class',
-    'classDef',
+    'classdef',
     'state',
     'callback',
     'href',
@@ -39178,12 +39185,18 @@ const RESERVED = new Set([
 /**
  * Text Mermaid accepts as a message: no HTML, entities, directives, statement
  * separators, or fences. A comparison such as `size < 64 KiB` is allowed; only
- * a tag-like `<` is rejected.
+ * a tag-like `<` is rejected. `&` must not start an entity: HTML decodes
+ * `&lt` even without the semicolon.
  */
-const FORBIDDEN_TEXT = /%%|;|`|\\|:\/\/|www\.|javascript:|data:[\w.+-]+\/|[\p{Cc}\p{Cf}]|<[A-Za-z/!]|&(?:[a-zA-Z]{2,10}|#\d{1,6});|@\{/iu;
+const FORBIDDEN_TEXT = /%%|;|`|\\|:\/\/|www\.|javascript:|data:[\w.+-]+\/|[\p{Cc}\p{Cf}]|<[A-Za-z/!]|&[A-Za-z#]|@\{/iu;
+/**
+ * Mermaid's lexer reads a bare `#` as the start of a comment and drops the
+ * rest of the line, so it is written as the documented entity code `#35;`.
+ */
+const escapeText = (text) => text.replace(/#/g, '#35;');
 const MESSAGE = /^([A-Za-z_][A-Za-z0-9_.-]*?)\s*(--?>>?)\s*([+-]?)\s*([A-Za-z_][A-Za-z0-9_.-]*?)\s*:\s*(.*)$/;
 const PARTICIPANT = /^(participant|actor)\s+([A-Za-z_][A-Za-z0-9_.-]*)(?:\s+as\s+(.*))?$/i;
-const NOTE = /^Note\s+(over|left of|right of)\s+([A-Za-z_][A-Za-z0-9_.-]*)(?:\s*,\s*([A-Za-z_][A-Za-z0-9_.-]*))?\s*:\s*(.*)$/i;
+const NOTE = /^Note\s+(over|left\s+of|right\s+of)\s+([A-Za-z_][A-Za-z0-9_.-]*)(?:\s*,\s*([A-Za-z_][A-Za-z0-9_.-]*))?\s*:\s*(.*)$/i;
 const BLOCK_OPEN = /^(alt|opt|loop)(?:\s+(.*))?$/i;
 const BLOCK_ELSE = /^else(?:\s+(.*))?$/i;
 function textProblem(text) {
@@ -39227,10 +39240,9 @@ function parseLine(line) {
         const problem = textProblem(text);
         if (problem)
             return { error: `the note text ${problem}` };
-        const kind = placement.toLowerCase();
         return {
             kind: 'note',
-            placement: kind === 'over' ? 'over' : kind === 'left of' ? 'left' : 'right',
+            placement: placement.toLowerCase().replace(/\s+/, ' '),
             ids: second ? [first, second] : [first],
             text: text.trim() || undefined,
         };
@@ -39268,19 +39280,32 @@ function parseLine(line) {
 function parseDiagram(lines) {
     const statements = [];
     const stack = [];
-    for (const [index, line] of lines.entries()) {
+    // Mermaid throws when `-` deactivates a participant that is not active.
+    const active = new Map();
+    for (const { text: line, number } of lines) {
         const parsed = parseLine(line);
         if ('error' in parsed)
-            return { error: `line ${index + 2} (${line}) ${parsed.error}` };
+            return { error: `line ${number} (${line}) ${parsed.error}` };
         if (parsed.kind === 'end') {
             if (stack.pop() === undefined)
                 return {
-                    error: `line ${index + 2} closes a block that was never opened`,
+                    error: `line ${number} closes a block that was never opened`,
                 };
         }
         else if (parsed.kind === 'else') {
             if (stack.at(-1) !== 'alt')
-                return { error: `line ${index + 2} uses else outside an alt block` };
+                return { error: `line ${number} uses else outside an alt block` };
+        }
+        else if (parsed.kind === 'message' && parsed.activation === '+') {
+            active.set(parsed.to, (active.get(parsed.to) ?? 0) + 1);
+        }
+        else if (parsed.kind === 'message' && parsed.activation === '-') {
+            const count = active.get(parsed.from) ?? 0;
+            if (count < 1)
+                return {
+                    error: `line ${number} deactivates ${parsed.from}, which is not active`,
+                };
+            active.set(parsed.from, count - 1);
         }
         else if (parsed.kind === 'open') {
             stack.push(parsed.keyword);
@@ -39305,7 +39330,7 @@ function render(statements) {
         const existing = alias.get(id);
         if (existing)
             return existing;
-        const safe = SAFE_ID.test(id) && !RESERVED.has(id);
+        const safe = SAFE_ID.test(id) && !RESERVED.has(id.toLowerCase());
         const name = safe ? id : `P${aliasCount + 1}`;
         if (!safe)
             aliasCount += 1;
@@ -39333,24 +39358,24 @@ function render(statements) {
                 break;
             case 'participant': {
                 const name = nameOf(statement.id);
-                const label = statement.label ?? statement.id;
+                const label = escapeText(statement.label ?? statement.id);
                 body.push(`${indent()}${statement.actor ? 'actor' : 'participant'} ${name} as ${label}`);
                 break;
             }
             case 'message':
-                body.push(`${indent()}${nameOf(statement.from)}${statement.arrow}${statement.activation}${nameOf(statement.to)}${statement.text ? `: ${statement.text}` : ''}`);
+                body.push(`${indent()}${nameOf(statement.from)}${statement.arrow}${statement.activation}${nameOf(statement.to)}${statement.text ? `: ${escapeText(statement.text)}` : ''}`);
                 break;
             case 'note': {
                 const names = statement.ids.map(nameOf).join(', ');
-                body.push(`${indent()}Note ${statement.placement} ${names}${statement.text ? `: ${statement.text}` : ''}`);
+                body.push(`${indent()}Note ${statement.placement} ${names}${statement.text ? `: ${escapeText(statement.text)}` : ''}`);
                 break;
             }
             case 'open':
-                body.push(`${indent()}${statement.keyword}${statement.label ? ` ${statement.label}` : ''}`);
+                body.push(`${indent()}${statement.keyword}${statement.label ? ` ${escapeText(statement.label)}` : ''}`);
                 depth.value += 1;
                 break;
             case 'else':
-                body.push(`${'    '.repeat(depth.value)}else${statement.label ? ` ${statement.label}` : ''}`);
+                body.push(`${'    '.repeat(depth.value)}else${statement.label ? ` ${escapeText(statement.label)}` : ''}`);
                 break;
             case 'end':
                 depth.value = Math.max(depth.value - 1, 0);
@@ -39365,7 +39390,7 @@ function render(statements) {
         if (!name || name === id)
             continue;
         const known = declared.get(id);
-        declarations.push(`    participant ${name} as ${known?.label ?? id}`);
+        declarations.push(`    participant ${name} as ${escapeText(known?.label ?? id)}`);
     }
     lines.push(...declarations);
     lines.push(...body);
@@ -39387,13 +39412,14 @@ function describeSequenceDiagram(raw) {
         return {
             error: `the diagram is longer than ${MAX_CHARS} characters`,
         };
+    // Line numbers in errors count every line of the diagram, blank ones too.
     const lines = text
         .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean);
+        .map((line, index) => ({ text: line.trim(), number: index + 1 }))
+        .filter((line) => line.text);
     if (lines.length > MAX_LINES)
         return { error: `the diagram has more than ${MAX_LINES} lines` };
-    if (lines[0] !== 'sequenceDiagram')
+    if (lines[0].text !== 'sequenceDiagram')
         return { error: 'the first line is not sequenceDiagram' };
     const parsed = parseDiagram(lines.slice(1));
     if ('error' in parsed)
@@ -41485,7 +41511,7 @@ function createSystemPrompt(customInstructions, templateContent, diagram = false
         'Do not include markdown code fences in your response.',
     ];
     if (diagram) {
-        prompt.push('Also return a "diagram" field: a short Mermaid sequenceDiagram (plain text starting with "sequenceDiagram", at most 30 lines, no code fences) showing the main runtime interaction this change adds or modifies.', 'Use only participant or actor declarations, "A->>B: text" and "A-->>B: text" messages, "Note over A: text", alt/else/opt/loop/end blocks, and autonumber; no HTML, links, click or init directives, comments, backticks, semicolons, or URLs.', 'Return an empty string when the change has no meaningful interaction flow, and never repeat the diagram in the description.');
+        prompt.push('Also return a "diagram" field: a short Mermaid sequenceDiagram (plain text starting with "sequenceDiagram", at most 30 lines, no code fences) showing the main runtime interaction this change adds or modifies.', 'Allowed statements, one per line: "participant P as label", "actor P as label", "A->>B: text", "A-->>B: text", "A->B: text", "A-->B: text", "A->>+B: text" (activates B), "B-->>-A: text" (deactivates B, only after it was activated), "Note over A: text", "Note over A, B: text", "Note left of A: text", "Note right of A: text", "alt label", "else label", "opt label", "loop label", "end", and "autonumber".', 'Participant names match [A-Za-z_][A-Za-z0-9_]* and are not Mermaid keywords such as end, alt, opt, loop, note, or title; put a name with dots, hyphens, or spaces in the label of a participant P as label declaration.', 'Text and labels must not contain a semicolon, a backtick, a backslash, %%, a < followed by a letter or slash, an & followed by a letter or #, a URL, or HTML; never use click, link, links, or %%{init}%% directives or comments.', 'Return an empty string when the change has no meaningful interaction flow, and never repeat the diagram in the description.');
     }
     if (templateContent) {
         prompt.push('Use the following pull request template as the base for the description.', 'Fill in the template sections with appropriate content based on the code changes.', 'Preserve the template structure and formatting, only fill in the content sections.', `Template:\n${templateContent}`);

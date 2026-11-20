@@ -147,12 +147,16 @@ description under `### Change flow (generated)`.
 ```
 
 The diagram is untrusted model output. It is published only when it passes a
-strict line grammar (participant or actor declarations, `A->>B: text` and
-`A-->>B: text` messages, `Note over|left of|right of`, `alt`/`else`/`opt`/`loop`/`end`
-blocks, and `autonumber`), with at most 30 lines and 2,000 characters, and no
-HTML, entities, comments, `click`, `link`, or `%%{init}` directives, backticks,
-semicolons, or URLs. Anything else is dropped with a log line and the run
-continues. Secrets are redacted as in the rest of the description. The diagram
+strict line grammar (participant or actor declarations, `->>`, `-->>`, `->`, and
+`-->` messages with optional `+`/`-` activation suffixes, `Note over|left of|right of`,
+`alt`/`else`/`opt`/`loop`/`end` blocks, and `autonumber`), with at most 30 lines
+and 2,000 characters, and no HTML, entities, comments, `click`, `link`, or
+`%%{init}` directives, backticks, semicolons, or URLs. A deactivation (`-`) must
+follow a matching activation (`+`), as Mermaid requires. Participant names with
+dots or hyphens, or that match a Mermaid keyword in any case, are rewritten to
+aliases with the original name as the label, and `#` is written as the entity
+`#35;` because Mermaid otherwise reads it as a comment. Anything else is dropped
+with a log line naming the diagram line and the reason, and the run continues. Secrets are redacted as in the rest of the description. The diagram
 adds output tokens, so consider raising `max-tokens` when it is enabled.
 
 ## How It Works

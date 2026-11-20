@@ -28,6 +28,16 @@ describe('pr-content prompts', () => {
 	it('asks for a constrained diagram field only when enabled', () => {
 		const prompt = createSystemPrompt('Keep concise', 'Template', true);
 		expect(prompt).toContain('"diagram"');
+		for (const rule of [
+			'A->>+B: text',
+			'B-->>-A: text',
+			'Note left of A: text',
+			'[A-Za-z_][A-Za-z0-9_]*',
+			'participant P as label',
+			'< followed by a letter',
+			'%%',
+		])
+			expect(prompt).toContain(rule);
 		expect(prompt).toContain('sequenceDiagram');
 		expect(prompt).toContain('Keep concise');
 		expect(prompt.startsWith(createSystemPrompt().slice(0, 200))).toBe(true);

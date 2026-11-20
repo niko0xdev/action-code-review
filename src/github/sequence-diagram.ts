@@ -14,11 +14,12 @@ const HEADING = '### Change flow (generated)';
 /** A participant name Mermaid can use as-is. */
 const SAFE_ID = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /**
- * Words Mermaid gives a meaning. A participant named after one of them
- * renders as an error, so such a name is rewritten too.
+ * Words Mermaid gives a meaning, in lower case: its sequence lexer is
+ * case-insensitive, so `End` breaks a diagram as surely as `end`. A
+ * participant named after one of them is rewritten too.
  */
 const RESERVED = new Set([
-	'sequenceDiagram',
+	'sequencediagram',
 	'autonumber',
 	'participant',
 	'actor',
@@ -33,7 +34,13 @@ const RESERVED = new Set([
 	'rect',
 	'box',
 	'critical',
+	'option',
 	'break',
+	'par_over',
+	'title',
+	'off',
+	'properties',
+	'details',
 	'activate',
 	'deactivate',
 	'create',
@@ -42,7 +49,7 @@ const RESERVED = new Set([
 	'links',
 	'click',
 	'class',
-	'classDef',
+	'classdef',
 	'state',
 	'callback',
 	'href',
@@ -56,10 +63,17 @@ const RESERVED = new Set([
 /**
  * Text Mermaid accepts as a message: no HTML, entities, directives, statement
  * separators, or fences. A comparison such as `size < 64 KiB` is allowed; only
- * a tag-like `<` is rejected.
+ * a tag-like `<` is rejected. `&` must not start an entity: HTML decodes
+ * `&lt` even without the semicolon.
  */
 const FORBIDDEN_TEXT =
-	/%%|;|`|\\|:\/\/|www\.|javascript:|data:[\w.+-]+\/|[\p{Cc}\p{Cf}]|<[A-Za-z/!]|&(?:[a-zA-Z]{2,10}|#\d{1,6});|@\{/iu;
+	/%%|;|`|\\|:\/\/|www\.|javascript:|data:[\w.+-]+\/|[\p{Cc}\p{Cf}]|<[A-Za-z/!]|&[A-Za-z#]|@\{/iu;
+
+/**
+ * Mermaid's lexer reads a bare `#` as the start of a comment and drops the
+ * rest of the line, so it is written as the documented entity code `#35;`.
+ */
+const escapeText = (text: string): string => text.replace(/#/g, '#35;');
 
 type Statement =
 	| { kind: 'header' }
@@ -80,7 +94,7 @@ type Statement =
 	  }
 	| {
 			kind: 'note';
-			placement: 'over' | 'left' | 'right';
+			placement: 'over' | 'left of' | 'right of';
 			ids: string[];
 			text?: string;
 	  }
@@ -99,7 +113,7 @@ const MESSAGE =
 const PARTICIPANT =
 	/^(participant|actor)\s+([A-Za-z_][A-Za-z0-9_.-]*)(?:\s+as\s+(.*))?$/i;
 const NOTE =
-	/^Note\s+(over|left of|right of)\s+([A-Za-z_][A-Za-z0-9_.-]*)(?:\s*,\s*([A-Za-z_][A-Za-z0-9_.-]*))?\s*:\s*(.*)$/i;
+	/^Note\s+(over|left\s+of|right\s+of)\s+([A-Za-z_][A-Za-z0-9_.-]*)(?:\s*,\s*([A-Za-z_][A-Za-z0-9_.-]*))?\s*:\s*(.*)$/i;
 const BLOCK_OPEN = /^(alt|opt|loop)(?:\s+(.*))?$/i;
 const BLOCK_ELSE = /^else(?:\s+(.*))?$/i;
 
@@ -142,11 +156,12 @@ function parseLine(line: string): Statement | ParseFailure {
 		const [, placement, first, second, text] = note;
 		const problem = textProblem(text);
 		if (problem) return { error: `the note text ${problem}` };
-		const kind = placement.toLowerCase();
 		return {
 			kind: 'note',
-			placement:
-				kind === 'over' ? 'over' : kind === 'left of' ? 'left' : 'right',
+			placement: placement.toLowerCase().replace(/\s+/, ' ') as
+				| 'over'
+				| 'left of'
+				| 'right of',
 			ids: second ? [first, second] : [first],
 			text: text.trim() || undefined,
 		};
@@ -178,21 +193,34 @@ function parseLine(line: string): Statement | ParseFailure {
  * Parse a diagram into statements. Block structure is checked here: `else`
  * only inside `alt`, and every block closed.
  */
-function parseDiagram(lines: string[]): ParseResult {
+function parseDiagram(
+	lines: Array<{ text: string; number: number }>
+): ParseResult {
 	const statements: Statement[] = [];
 	const stack: Array<'alt' | 'opt' | 'loop'> = [];
-	for (const [index, line] of lines.entries()) {
+	// Mermaid throws when `-` deactivates a participant that is not active.
+	const active = new Map<string, number>();
+	for (const { text: line, number } of lines) {
 		const parsed = parseLine(line);
 		if ('error' in parsed)
-			return { error: `line ${index + 2} (${line}) ${parsed.error}` };
+			return { error: `line ${number} (${line}) ${parsed.error}` };
 		if (parsed.kind === 'end') {
 			if (stack.pop() === undefined)
 				return {
-					error: `line ${index + 2} closes a block that was never opened`,
+					error: `line ${number} closes a block that was never opened`,
 				};
 		} else if (parsed.kind === 'else') {
 			if (stack.at(-1) !== 'alt')
-				return { error: `line ${index + 2} uses else outside an alt block` };
+				return { error: `line ${number} uses else outside an alt block` };
+		} else if (parsed.kind === 'message' && parsed.activation === '+') {
+			active.set(parsed.to, (active.get(parsed.to) ?? 0) + 1);
+		} else if (parsed.kind === 'message' && parsed.activation === '-') {
+			const count = active.get(parsed.from) ?? 0;
+			if (count < 1)
+				return {
+					error: `line ${number} deactivates ${parsed.from}, which is not active`,
+				};
+			active.set(parsed.from, count - 1);
 		} else if (parsed.kind === 'open') {
 			stack.push(parsed.keyword);
 		}
@@ -215,7 +243,7 @@ function render(statements: Statement[]): string {
 	const nameOf = (id: string): string => {
 		const existing = alias.get(id);
 		if (existing) return existing;
-		const safe = SAFE_ID.test(id) && !RESERVED.has(id);
+		const safe = SAFE_ID.test(id) && !RESERVED.has(id.toLowerCase());
 		const name = safe ? id : `P${aliasCount + 1}`;
 		if (!safe) aliasCount += 1;
 		alias.set(id, name);
@@ -242,7 +270,7 @@ function render(statements: Statement[]): string {
 				break;
 			case 'participant': {
 				const name = nameOf(statement.id);
-				const label = statement.label ?? statement.id;
+				const label = escapeText(statement.label ?? statement.id);
 				body.push(
 					`${indent()}${statement.actor ? 'actor' : 'participant'} ${name} as ${label}`
 				);
@@ -250,25 +278,25 @@ function render(statements: Statement[]): string {
 			}
 			case 'message':
 				body.push(
-					`${indent()}${nameOf(statement.from)}${statement.arrow}${statement.activation}${nameOf(statement.to)}${statement.text ? `: ${statement.text}` : ''}`
+					`${indent()}${nameOf(statement.from)}${statement.arrow}${statement.activation}${nameOf(statement.to)}${statement.text ? `: ${escapeText(statement.text)}` : ''}`
 				);
 				break;
 			case 'note': {
 				const names = statement.ids.map(nameOf).join(', ');
 				body.push(
-					`${indent()}Note ${statement.placement} ${names}${statement.text ? `: ${statement.text}` : ''}`
+					`${indent()}Note ${statement.placement} ${names}${statement.text ? `: ${escapeText(statement.text)}` : ''}`
 				);
 				break;
 			}
 			case 'open':
 				body.push(
-					`${indent()}${statement.keyword}${statement.label ? ` ${statement.label}` : ''}`
+					`${indent()}${statement.keyword}${statement.label ? ` ${escapeText(statement.label)}` : ''}`
 				);
 				depth.value += 1;
 				break;
 			case 'else':
 				body.push(
-					`${'    '.repeat(depth.value)}else${statement.label ? ` ${statement.label}` : ''}`
+					`${'    '.repeat(depth.value)}else${statement.label ? ` ${escapeText(statement.label)}` : ''}`
 				);
 				break;
 			case 'end':
@@ -283,7 +311,9 @@ function render(statements: Statement[]): string {
 		const name = alias.get(id);
 		if (!name || name === id) continue;
 		const known = declared.get(id);
-		declarations.push(`    participant ${name} as ${known?.label ?? id}`);
+		declarations.push(
+			`    participant ${name} as ${escapeText(known?.label ?? id)}`
+		);
 	}
 	lines.push(...declarations);
 	lines.push(...body);
@@ -312,13 +342,14 @@ export function describeSequenceDiagram(raw: string): SequenceDiagramCheck {
 		return {
 			error: `the diagram is longer than ${MAX_CHARS} characters`,
 		};
+	// Line numbers in errors count every line of the diagram, blank ones too.
 	const lines = text
 		.split('\n')
-		.map((line) => line.trim())
-		.filter(Boolean);
+		.map((line, index) => ({ text: line.trim(), number: index + 1 }))
+		.filter((line) => line.text);
 	if (lines.length > MAX_LINES)
 		return { error: `the diagram has more than ${MAX_LINES} lines` };
-	if (lines[0] !== 'sequenceDiagram')
+	if (lines[0].text !== 'sequenceDiagram')
 		return { error: 'the first line is not sequenceDiagram' };
 	const parsed = parseDiagram(lines.slice(1));
 	if ('error' in parsed) return { error: parsed.error };
