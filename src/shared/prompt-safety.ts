@@ -16,15 +16,29 @@ function isHidden(code: number): boolean {
 		(code >= 0x202a && code <= 0x202e) ||
 		(code >= 0x2066 && code <= 0x2069) ||
 		(code >= 0x200b && code <= 0x200d) ||
+		code === 0x200e ||
+		code === 0x200f ||
+		code === 0x061c ||
 		code === 0x2060 ||
 		code === 0xfeff
 	);
 }
 
-/** Write every hidden character as `\uXXXX`; other text is untouched. */
-function escapeHidden(text: string): string {
+/**
+ * Write every hidden character as `\uXXXX`; other text is untouched. A
+ * Unicode tag character (U+E0000 to U+E007F) is invisible to people but read
+ * by models, so it is written as its UTF-16 surrogate pair, which keeps the
+ * output valid JSON (JSON has no `\u{...}` form).
+ */
+export function escapeHidden(text: string): string {
 	return Array.from(text, (ch) => {
-		const code = ch.charCodeAt(0);
+		const code = ch.codePointAt(0) ?? 0;
+		if (code >= 0xe0000 && code <= 0xe007f) {
+			const offset = code - 0xe0000;
+			const high = 0xd800 + (offset >> 10);
+			const low = 0xdc00 + (offset & 0x3ff);
+			return `\\u${high.toString(16).padStart(4, '0')}\\u${low.toString(16).padStart(4, '0')}`;
+		}
 		return isHidden(code) ? `\\u${code.toString(16).padStart(4, '0')}` : ch;
 	}).join('');
 }

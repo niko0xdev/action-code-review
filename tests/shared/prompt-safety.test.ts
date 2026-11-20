@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	escapeControlChars,
+	escapeHidden,
 	fenceFor,
 	fenced,
 	redactForPrompt,
@@ -37,6 +38,18 @@ describe('escapeControlChars', () => {
 			);
 		}
 		expect(escapeControlChars('a\u202eb')).toBe('a\\u202eb');
+	});
+
+	it('escapes the left-to-right and right-to-left marks', () => {
+		expect(escapeControlChars('a\u200eb')).toBe('a\\u200eb');
+		expect(escapeControlChars('a\u200fb')).toBe('a\\u200fb');
+		expect(escapeControlChars('a\u061cb')).toBe('a\\u061cb');
+	});
+
+	it('writes a Unicode tag character as a JSON-compatible escape', () => {
+		const escaped = escapeHidden('a\u{E0020}b');
+		expect(escaped).toBe('a\\ud800\\udc20b');
+		expect(() => JSON.parse(`"${escaped}"`)).not.toThrow();
 	});
 
 	it('leaves ordinary text, including non-Latin scripts and emoji, alone', () => {

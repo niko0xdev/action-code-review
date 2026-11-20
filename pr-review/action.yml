@@ -78,8 +78,6 @@ inputs:
     description: 'Opt-in: add a collapsed, copyable "Prompt for your coding agent" block to each inline finding comment. The text is redacted, has links removed, and is framed as a report rather than commands.'
     required: false
     default: 'false'
-    required: false
-    default: 'false'
   mode:
     description: 'Execution mode: auto | review | security | agent'
     required: false

@@ -123,3 +123,122 @@ describe('secret-scan input', () => {
 		expect(mapPrReviewInputs({ 'secret-scan': 'true' }).secretScan).toBe(true);
 	});
 });
+
+describe('secret pre-pass review findings (20/11/2026)', () => {
+	const gh = `ghp_${'A1b2C3d4'.repeat(5)}`;
+	// A value that looks random: no placeholder word, no repeated block.
+	const randomKey = `sk-proj-${'x7Kq2Lm9Pw4Rb8Tn1Vz3Cd6Hf0Js5Gy1Ea'}`;
+	const randomToken = `ghp_${'x7Kq2Lm9Pw4Rb8Tn1Vz3Cd6Hf0Js5Gy1Ea'}`;
+	const added = (lines: string[]) =>
+		`@@ -1,0 +1,${lines.length} @@\n${lines.map((l) => `+${l}`).join('\n')}`;
+
+	it('keeps a model finding on a line beyond the ten-finding cap', () => {
+		const secrets = scanReviewSecrets([
+			file(
+				'keys.env',
+				added(Array.from({ length: 12 }, (_, i) => `K${i}=${gh}`))
+			),
+		]);
+		const model: Finding = {
+			...secrets[11],
+			ruleId: undefined,
+			title: 'Hard-coded token',
+		};
+		const r = result([model]);
+		mergeSecretFindings(r, secrets);
+		expect(r.findings.some((f) => f.line === 12)).toBe(true);
+		expect(r.diagnostics?.secretScanFindings).toBe(10);
+	});
+
+	it('keeps the higher severity when it replaces a model finding', () => {
+		const slack = `xoxb-${'1'.repeat(11)}-${'2'.repeat(11)}-abc`;
+		const [secret] = scanReviewSecrets([
+			file('a.ts', added([`t = "${slack}"`])),
+		]);
+		expect(secret.severity).toBe('high');
+		const r = result([{ ...secret, severity: 'critical', ruleId: undefined }]);
+		mergeSecretFindings(r, [secret]);
+		expect(r.findings).toHaveLength(1);
+		expect(r.findings[0].severity).toBe('critical');
+	});
+
+	it('does not flag documentation examples, kebab-case names, or allow-listed lines', () => {
+		const findings = scanReviewSecrets([
+			file(
+				'notes.md',
+				added([
+					'AKIAIOSFODNN7EXAMPLE',
+					'"name": "sk-react-loading-spinner-component"',
+					'.sk-folding-cube-rotate-angle-delay { }',
+					'"-----BEGIN PRIVATE KEY-----" // secret-scan: allow',
+					`token = "${gh}" # pragma: allowlist secret`,
+				])
+			),
+		]);
+		expect(findings).toEqual([]);
+	});
+
+	it('does not let an allow pragma silence a real-looking credential', () => {
+		const findings = scanReviewSecrets([
+			file('a.ts', added([`const k = "${randomKey}"; // secret-scan: allow`])),
+		]);
+		expect(findings.map((f) => f.ruleId)).toEqual([
+			'secret-scan/sec-rule-openai-key',
+		]);
+	});
+
+	it('does not let an allow pragma silence a real-looking token', () => {
+		const findings = scanReviewSecrets([
+			file(
+				'a.ts',
+				added([`const t = "${randomToken}"; // secret-scan: allow`])
+			),
+		]);
+		expect(findings.map((f) => f.ruleId)).toEqual([
+			'secret-scan/sec-rule-gh-token',
+		]);
+	});
+
+	it('does not flag a private key header without a body', () => {
+		const findings = scanReviewSecrets([
+			file('a.ts', added(['"-----BEGIN PRIVATE KEY-----"'])),
+		]);
+		expect(findings).toEqual([]);
+	});
+
+	it('flags a private key with a body', () => {
+		const findings = scanReviewSecrets([
+			file(
+				'a.ts',
+				added([
+					'"-----BEGIN PRIVATE KEY-----"',
+					'"MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ"',
+				])
+			),
+		]);
+		expect(findings.map((f) => f.ruleId)).toEqual([
+			'secret-scan/sec-rule-private-key',
+		]);
+	});
+
+	it('still flags real-looking keys', () => {
+		const findings = scanReviewSecrets([
+			file(
+				'a.ts',
+				added([
+					'const k = "sk-proj-1234567890abcdef1234567890abcdef";',
+					'AKIAZ7Q2X4C6V8B0N1M3',
+				])
+			),
+		]);
+		expect(findings.map((f) => f.ruleId)).toEqual([
+			'secret-scan/sec-rule-openai-key',
+			'secret-scan/sec-rule-aws-key',
+		]);
+	});
+
+	it('takes the rule id from the scanner, whatever the file name', () => {
+		const [secret] = scanReviewSecrets([file('token', added([`x=${gh}`]))]);
+		expect(secret.ruleId).toBe('secret-scan/sec-rule-gh-token');
+	});
+});
