@@ -12,6 +12,9 @@ const state = vi.hoisted(() => ({
 	securityResult: {} as Record<string, unknown>,
 	cleanup: vi.fn(async () => {}),
 	publishReview: vi.fn(async () => {}),
+	createCheck: vi.fn(async (_args: Record<string, unknown>) => ({
+		data: { id: 1 },
+	})),
 	runReview: vi.fn(),
 	runSecurityWorkflow: vi.fn(),
 	publishSecurityReview: vi.fn(async () => {}),
@@ -31,6 +34,7 @@ vi.mock('@actions/github', () => ({
 	},
 	getOctokit: vi.fn(() => ({
 		rest: {
+			checks: { create: state.createCheck },
 			repos: {
 				getContent: vi.fn(async () => {
 					throw new Error('no template');
@@ -170,6 +174,7 @@ describe('main: top-level flows', () => {
 		state.pr = prContext();
 		state.runReview.mockReset().mockResolvedValue(cleanResult());
 		state.publishReview.mockClear();
+		state.createCheck.mockClear();
 		state.cleanup.mockClear();
 		state.applyVerify = undefined;
 		state.runSecurityWorkflow.mockReset();
@@ -240,6 +245,66 @@ describe('main: top-level flows', () => {
 			'skipped: draft pull request'
 		);
 		expect(state.runReview).not.toHaveBeenCalled();
+	});
+
+	it('reports a neutral check for a skipped draft when check-run is on', async () => {
+		process.env.AI_REVIEW_SKIP_DRAFTS = 'true';
+		inputs['check-run'] = 'true';
+		state.pr = prContext({
+			pullRequest: { ...prContext().pullRequest, draft: true },
+		});
+		await main(['pr-review']);
+		expect(state.createCheck).toHaveBeenCalledTimes(1);
+		expect(state.createCheck.mock.calls[0]?.[0]).toMatchObject({
+			name: 'AI Code Review',
+			head_sha: 'head-sha',
+			status: 'completed',
+			conclusion: 'neutral',
+			output: { title: expect.stringContaining('draft') },
+		});
+	});
+
+	it('reports a neutral check for an empty selection when check-run is on', async () => {
+		inputs['check-run'] = 'true';
+		state.pr = prContext({
+			diff: { files: [{ filename: 'src/a.ts', status: 'modified' }] },
+		});
+		await main(['pr-review']);
+		expect(state.createCheck).toHaveBeenCalledTimes(1);
+		expect(state.createCheck.mock.calls[0]?.[0]).toMatchObject({
+			head_sha: 'head-sha',
+			conclusion: 'neutral',
+			output: { title: expect.stringContaining('no files') },
+		});
+	});
+
+	it('creates no check on a skip path when check-run is off', async () => {
+		process.env.AI_REVIEW_SKIP_DRAFTS = 'true';
+		state.pr = prContext({
+			pullRequest: { ...prContext().pullRequest, draft: true },
+		});
+		await main(['pr-review']);
+		expect(state.createCheck).not.toHaveBeenCalled();
+	});
+
+	it("passes the step's incompleteness and fail setting to the publisher", async () => {
+		inputs['check-run'] = 'true';
+		// One selected file, none reviewed: incomplete by the step's own rule.
+		state.runReview.mockResolvedValue(cleanResult({ filesReviewed: [] }));
+		await main(['pr-review']);
+		expect(state.publishReview.mock.calls[0]?.[1]).toMatchObject({
+			checkRun: true,
+			incomplete: true,
+			failOnIncomplete: true,
+		});
+
+		process.env.AI_REVIEW_FAIL_ON_INCOMPLETE = 'false';
+		state.publishReview.mockClear();
+		await main(['pr-review']);
+		expect(state.publishReview.mock.calls[0]?.[1]).toMatchObject({
+			incomplete: true,
+			failOnIncomplete: false,
+		});
 	});
 
 	it('reports an empty selection as skipped', async () => {

@@ -8,6 +8,10 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 
 - The repository history was rewritten on 20/11/2026 to remove third-party tool co-author trailers from commit messages and to consolidate authorship. The code is unchanged: every commit has the same tree, only commit messages and the author and committer fields differ. See [docs/releases/v3.1.0.md](docs/releases/v3.1.0.md) for the details and what a consumer must do.
 
+### Fixed
+
+- The opt-in `check-run` check is now created before the summary comment, so a failed summary post can no longer leave a required check unreported. A head that moved, or could not be rechecked, during the review now reports its neutral `Skipped:` check on the reviewed head instead of the newer one, where it could replace the newer run's failing check. A failed annotation batch after the check was created is reported as partially published.
+
 ### Added
 
 - `pr-content` can append a short Mermaid sequence diagram of the main changed flow to the PR description under `### Change flow (generated)`. It is opt-in through the `AI_PR_CONTENT_DIAGRAM=true` environment variable (no new input), uses the existing single model call, and is published only after a grammar check and secret redaction. The grammar accepts the punctuation a real description uses (a number sign, an ampersand, a comparison, an activation suffix), participant names Mermaid cannot parse are rewritten to safe aliases, and a rejected diagram is reported with the offending line instead of being dropped silently.
