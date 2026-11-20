@@ -194,6 +194,25 @@ pnpm lint          # biome
 pnpm build         # pinned ncc (devDependency) → pr-*/dist/index.js; CI diffs the result
 ```
 
+## Pre-merge checks (opt-in)
+
+Input `pre-merge-checks` (default `off`; see `src/review/pre-merge-checks.ts`).
+The merge rules of the repository live in `.github/review-checks.md` at the base
+commit, one rule per line. They are judged against the change in a separate
+call without tools, so the rules never enter the findings pass. In `error` mode
+a failing rule that names a file and a line becomes a blocking finding; in
+`warning` mode it is only reported.
+
+## Incremental review (opt-in)
+
+Input `incremental-review` (default `'false'`; see `src/review/ledger.ts`).
+The action stores the findings of the last run in the sticky summary comment
+and, on a new push, re-reviews only the files that changed since the last
+reviewed head, plus the files that still carry open findings. The summary
+reports what is new, still open, fixed, and regressed; `review-report` carries
+the same counts. The comparison uses GitHub's compare endpoint, so a force-push
+or an unknown commit falls back to a full review.
+
 ## Scorecard context (opt-in)
 
 Input `scorecard-context` (default `'false'`; see `src/context/scorecard.ts`). When

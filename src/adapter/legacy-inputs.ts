@@ -6,6 +6,11 @@
 
 import { normalizeBaseUrl } from '../llm/config.js';
 import {
+	PRE_MERGE_CHECK_MODES,
+	type PreMergeCheckMode,
+} from '../types/finding.js';
+
+import {
 	SECURITY_SKILLS_MODES,
 	type SecuritySkillsMode,
 } from '../security/skills/auto-select.js';
@@ -37,6 +42,8 @@ export interface PrReviewEngineOptions {
 	repositoryInstructions: boolean;
 	secretScan: boolean;
 	fixPrompts: boolean;
+	incrementalReview: boolean;
+	preMergeChecks: PreMergeCheckMode;
 }
 
 export interface PrContentEngineOptions {
@@ -104,6 +111,8 @@ export const PR_REVIEW_DEFAULTS = {
 	repositoryInstructions: 'false',
 	secretScan: 'false',
 	fixPrompts: 'false',
+	incrementalReview: 'false',
+	preMergeChecks: 'off',
 } as const;
 
 const PR_CONTENT_DEFAULTS = {
@@ -319,6 +328,16 @@ function mapPrReview(inputs: LegacyInputs): PrReviewEngineOptions {
 		),
 		secretScan: bool(get(inputs, 'secret-scan'), PR_REVIEW_DEFAULTS.secretScan),
 		fixPrompts: bool(get(inputs, 'fix-prompts'), PR_REVIEW_DEFAULTS.fixPrompts),
+		incrementalReview: bool(
+			get(inputs, 'incremental-review'),
+			PR_REVIEW_DEFAULTS.incrementalReview
+		),
+		preMergeChecks: parseEnum(
+			get(inputs, 'pre-merge-checks'),
+			PRE_MERGE_CHECK_MODES,
+			PR_REVIEW_DEFAULTS.preMergeChecks,
+			'pre-merge-checks'
+		),
 	};
 }
 

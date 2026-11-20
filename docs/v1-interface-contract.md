@@ -253,6 +253,30 @@ it as a report rather than commands, and it is fenced so it cannot close the
 block. The marker and the finding identity are unchanged, and the publisher reads
 the last marker in a comment, so duplicate suppression keeps working.
 
+`pre-merge-checks` is opt-in and takes `off` (the default), `warning`, or
+`error`. When it is not `off`, the merge rules of the repository are read from
+`.github/review-checks.md` at the base commit, one rule per line, with at most
+20 rules; a line that starts with `#` is a comment. The rules are judged
+against the change in a separate call without tools, and the verdicts appear in
+the summary and in `review-report` as `preMergeChecks`. In `error` mode a
+failing rule that names a file and a line becomes a blocking finding; in
+`warning` mode the failure is only reported. Because the file is read at the
+base commit, a pull request cannot change the rules it is judged by, and a
+failure to read or judge the rules only warns.
+
+`incremental-review` is opt-in. When `'true'`, the action keeps a ledger of the
+findings of the last run in the sticky summary comment, as a base64 payload in
+the hidden marker `ai-review-ledger`. On the next run it asks GitHub which files
+changed since the head the ledger was produced from, and re-reviews only those
+files plus the files that still carry open findings. The summary then reports how
+many findings are new, still open, fixed, and regressed, and `review-report`
+carries the same counts under `ledger`. A finding is recognised across runs by
+its path, its category, and its rule (the rule identifier the model supplies,
+or the first words of its title), so a reworded finding or one that moved to
+another line is the same finding. A force-push, an unknown commit, or a failed
+comparison falls back to a full review, and a finding whose file was not
+reviewed again stays open rather than being reported as fixed.
+
 `security-skills` is a new optional input (additive; the default `'all'` leaves
 the review prompt byte-identical). `'auto'` keeps only the curated security skills
 for risk domains the existing classifier flags in the changed files, always keeps

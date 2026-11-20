@@ -69,6 +69,14 @@ export function toPublisherOctokit(
 				title: requiredString(args, 'title'),
 				body: requiredString(args, 'body'),
 			}),
+		// The compare endpoint takes a base and a head commit, not a pull
+		// request number.
+		compareCommits: (args: Record<string, unknown>) =>
+			client.rest.repos.compareCommitsWithBasehead({
+				owner: requiredString(args, 'owner'),
+				repo: requiredString(args, 'repo'),
+				basehead: requiredString(args, 'basehead'),
+			}),
 		listFiles: (args: Record<string, unknown>) =>
 			client.rest.pulls.listFiles({
 				...repositoryArgs(args),

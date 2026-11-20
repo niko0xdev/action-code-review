@@ -95,6 +95,48 @@ export interface LinkedIssueAssessment {
 	reasoning: string;
 }
 
+/**
+ * What the ledger knows about the findings of a run: the head it was produced
+ * from, the payload stored in the summary comment, and how the findings
+ * changed since the previous run.
+ */
+export interface ReviewLedgerState {
+	/** Head commit the ledger was produced from. */
+	head: string;
+	/** Base64 payload stored in the sticky summary comment. */
+	payload: string;
+	/** Findings the previous run did not know about. */
+	new: number;
+	/** Findings that are still open. */
+	stillOpen: number;
+	/** Findings that the previous run had open and this run no longer has. */
+	fixed: number;
+	/** Findings that had been fixed and are open again. */
+	regressed: number;
+	/** True when only the changed files were reviewed again. */
+	incremental: boolean;
+}
+
+/** The modes the pre-merge checks input accepts. */
+export const PRE_MERGE_CHECK_MODES = ['off', 'warning', 'error'] as const;
+
+/** How a failing merge rule is judged. */
+export type PreMergeCheckMode = (typeof PRE_MERGE_CHECK_MODES)[number];
+
+/** The verdict for one merge rule. */
+export interface PreMergeCheckResult {
+	/** Position of the rule in the file, from 1. */
+	index: number;
+	/** The rule as written. */
+	rule: string;
+	verdict: 'pass' | 'fail' | 'unclear';
+	reason: string;
+	/** The file the rule is about, when the model could name one. */
+	path?: string;
+	/** The line the rule is about, when the model could name one. */
+	line?: number;
+}
+
 export interface ReviewResult {
 	/** Findings that survived validation, sorted by severity then confidence. */
 	findings: Finding[];
@@ -120,6 +162,13 @@ export interface ReviewResult {
 	reviewStatus?: 'complete' | 'incomplete' | 'failed' | 'stale';
 	/** Provider-reported Pi usage aggregated across review-group processes. */
 	usage?: ReviewUsageMetrics;
+	/** State carried to the next run, when the incremental review is on. */
+	ledger?: ReviewLedgerState;
+	/** The merge rules of the repository and how the change judged them. */
+	preMergeChecks?: {
+		mode: PreMergeCheckMode;
+		results: PreMergeCheckResult[];
+	};
 	/**
 	 * Real outcome of the auto-approval attempt, recorded by the publisher.
 	 * Absent means the publisher never got far enough to decide.
