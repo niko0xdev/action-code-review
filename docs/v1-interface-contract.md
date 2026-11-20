@@ -99,6 +99,7 @@ Additive input (not part of the frozen V1 surface; added after V1, optional, def
 | Input | Required | Default |
 |-------|----------|---------|
 | `review-effort` | false | `'auto'` |
+| `linked-issue` | false | `'false'` |
 | `scorecard-context` | false | `'false'` |
 | `check-run` | false | `'false'` |
 | `security-skills` | false | `'all'` |
@@ -123,6 +124,7 @@ prevents auto-approval when its cap leaves paths unreviewed.
 Invalid effort values warn and fall back to `balanced`, as do non-positive file
 caps. The effective preset is visible in the summary and in
 `review-report.diagnostics.reviewEffort`.
+`linked-issue` (default `'false'`) reads GitHub's GraphQL closing references when the review analyses selected files. It assesses up to three same-repository issues from the first three references in a separate, tool-free call to the configured provider, using capped issue text and selected patches. The PR summary and optional `review-report.linkedIssues` array show the issue number, title, verdict, and reasoning. Assessments never create findings, block a pull request, or affect auto-approval. If the query fails, including for insufficient token permissions, the action warns and omits the assessment.
 
 `scorecard-context` is opt-in. When `'true'` and the repository is public, the
 review fetches the repository's published OSSF Scorecard once from

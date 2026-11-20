@@ -1,5 +1,7 @@
 # Action Code Review — Security Threat Model
 
+Linked issue titles and bodies are untrusted, capped, redacted, and fenced in a separate tool-free prompt; they are never supplied to the findings pass.
+
 ## 1. Executive Summary
 
 `action-code-review` executes automated code and security reviews inside GitHub Actions workflows. Because it inspects code authored by external contributors and pull request submitters, the action itself sits on a security boundary and must defend against malicious input.

@@ -1,6 +1,7 @@
 import { commentIdentityBody, normalizeCommentId } from '../review/dedupe.js';
 import { sanitiseVerifyReason } from '../review/verify.js';
 import { redactSecrets } from '../security/redaction/redactor.js';
+import { proseEscape } from '../security/reporters/audit-reporter.js';
 import {
 	escapeControlChars,
 	escapeHidden,
@@ -9,6 +10,7 @@ import {
 import type {
 	ApprovalOutcome,
 	Finding,
+	LinkedIssueAssessment,
 	ReviewDiagnostics,
 	RiskLevel,
 	RuleCoverage,
@@ -194,6 +196,7 @@ type SummaryResult = {
 	diagnostics?: ReviewDiagnostics;
 	ruleCoverage?: RuleCoverage;
 	reviewStatus?: 'complete' | 'incomplete' | 'failed' | 'stale';
+	linkedIssues?: LinkedIssueAssessment[];
 	approval?: ApprovalOutcome;
 };
 
@@ -453,6 +456,17 @@ export function buildSummaryBody(result: SummaryResult): string {
 		describeApproval(result.approval),
 		`**Severity counts:** Critical: ${result.counts.critical} · High: ${result.counts.high} · Medium: ${result.counts.medium} · Low: ${result.counts.low}`,
 	];
+	if (result.linkedIssues?.length) {
+		lines.push(
+			'',
+			'## Linked issues',
+			'',
+			...result.linkedIssues.map(
+				(issue) =>
+					`- #${issue.number} ${proseEscape(issue.title)}: **${issue.verdict}** – ${proseEscape(issue.reasoning)}`
+			)
+		);
+	}
 	if (result.summary) lines.push('', redactSecrets(result.summary));
 	lines.push(
 		'',

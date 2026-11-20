@@ -120,6 +120,7 @@ export interface ReviewReport {
 	coverage: ReviewReportCoverage;
 	findings: ReviewReportFinding[];
 	/** Prompt supply accounting, distinct from evidence of source inspection. */
+	linkedIssues?: ReviewResult['linkedIssues'];
 	contextCoverage?: ReviewResult['contextCoverage'];
 	usage: ReviewReportUsage;
 	diagnostics?: ReviewDiagnostics;
@@ -235,6 +236,8 @@ export function buildReviewReport(input: BuildReviewReportInput): ReviewReport {
 		findings: result.findings.map(copyFinding),
 		usage: buildUsage(result),
 	};
+	if (result.linkedIssues?.length)
+		report.linkedIssues = result.linkedIssues.map((issue) => ({ ...issue }));
 	if (result.contextCoverage)
 		report.contextCoverage = {
 			suppliedPaths: [...result.contextCoverage.suppliedPaths],

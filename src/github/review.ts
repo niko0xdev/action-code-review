@@ -416,6 +416,7 @@ export async function publishReview(
 		diagnostics: result.diagnostics,
 		ruleCoverage: result.ruleCoverage,
 		reviewStatus: result.reviewStatus,
+		linkedIssues: result.linkedIssues,
 		approval: result.approval,
 	})}${alreadyCommentedNote}\n\n${marker}`;
 	if (params.stickySummary) {
