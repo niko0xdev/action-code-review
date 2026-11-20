@@ -324,7 +324,7 @@ describe('main: top-level flows', () => {
 		['auto', '', 2, 'lite', false],
 		['auto', '1', 1, 'balanced', false],
 		['lite', '', 3, 'lite', false],
-		['deep', '1', 5, 'deep', true],
+		['deep', '1', 5, 'deep', false],
 		['deep', '0', 5, 'balanced', false],
 		['invalid', '', 5, 'balanced', false],
 	] as const)(
@@ -489,6 +489,37 @@ describe('main: top-level flows', () => {
 		const sentPrompt = () =>
 			(state.complete.mock.calls[0]?.[0] as Array<{ content: string }>)[0]
 				.content;
+
+		it.each(['balanced', 'deep'])(
+			'keeps the review complete under %s without explicit verification',
+			async (effort) => {
+				inputs['review-effort'] = effort;
+				const reviewed = { ...withFindings(), reviewStatus: 'complete' };
+				state.runReview.mockResolvedValue(reviewed);
+				state.complete.mockRejectedValue(new Error('Verifier timed out'));
+				await main(['pr-review']);
+				expect(state.complete).not.toHaveBeenCalled();
+				const report = setOutput.mock.calls.find(
+					([key]) => key === 'review-report'
+				);
+				expect(JSON.parse(String(report?.[1])).status).toBe('complete');
+				expect(reviewed.findings).toHaveLength(2);
+				expect(setFailed).not.toHaveBeenCalled();
+			}
+		);
+
+		it('omits verifier evidence above the configured context budget', async () => {
+			inputs['max-context-chars'] = '5000';
+			process.env.AI_REVIEW_VERIFY_PASS = 'true';
+			const fixture = prContext();
+			fixture.diff.files[0].patch = `@@ -1 +1 @@\n-${'x'.repeat(6000)}\n+oversized-evidence`;
+			state.pr = fixture;
+			state.runReview.mockResolvedValue(withFindings());
+			state.complete.mockImplementation(approveAll);
+			await main(['pr-review']);
+			expect(sentPrompt()).toContain('High finding title');
+			expect(sentPrompt()).not.toContain('oversized-evidence');
+		});
 
 		it('marks the review incomplete and fails the step when the verify pass throws', async () => {
 			process.env.AI_REVIEW_VERIFY_PASS = 'true';

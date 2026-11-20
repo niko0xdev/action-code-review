@@ -336,5 +336,8 @@ and verification are all off. Otherwise it uses `balanced`. This never widens
 the scope or drops enabled optional work under `auto`. Explicit `lite` applies
 a three-file ceiling and skips those optional steps. Explicit `deep` bypasses
 only the input file cap, keeps the environment ceiling and context budgets,
-and defaults verification on. The resolved preset is carried in diagnostics
+and never enables verification implicitly. The opt-in verifier bounds patch
+evidence by both `max-context-chars` and its 24,000-character ceiling. Wider
+scope can surface more findings, and unreviewed paths prevent auto-approval.
+The resolved preset is carried in diagnostics
 to the PR summary, job summary, and JSON report.

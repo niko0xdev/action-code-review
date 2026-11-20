@@ -39782,7 +39782,8 @@ function riskFromFindings(findings) {
 function sourceEvidence(candidates, context) {
     const paths = new Set(candidates.map((candidate) => candidate.path));
     const files = (context.changedFiles ?? []).filter((file) => paths.has(file.filename) && file.patch);
-    const supplied = new Set((0,harness/* allocateReviewDiff */.PN)(files, 24_000).suppliedPaths);
+    const maxChars = Math.min(context.maxContextChars ?? 24_000, 24_000);
+    const supplied = new Set((0,harness/* allocateReviewDiff */.PN)(files, maxChars).suppliedPaths);
     return files
         .filter((file) => supplied.has(file.filename))
         .map((file, index) => ({
@@ -39991,6 +39992,7 @@ async function applyVerifyPass(result, args) {
             body: args.body,
             filenames: result.filesReviewed,
             changedFiles: args.changedFiles,
+            maxContextChars: args.maxContextChars,
             baseSha: args.baseSha,
             headSha: args.headSha,
         },
@@ -44431,9 +44433,7 @@ async function runPrReviewAction() {
     }
     const skipOptional = reviewEffort === 'lite';
     const securitySkills = skipOptional ? 'all' : legacyOptions.securitySkills;
-    const enableVerify = !skipOptional &&
-        (verifySetting === 'true' ||
-            (reviewEffort === 'deep' && verifySetting === undefined));
+    const enableVerify = !skipOptional && verifySetting === 'true';
     reviewContext.diff.files = prioritizeFiles(candidates, reviewEffort === 'deep'
         ? envLimits.maxFiles
         : skipOptional
@@ -44674,6 +44674,7 @@ async function runPrReviewAction() {
                     title: reviewContext.pullRequest.title,
                     body: reviewContext.pullRequest.body,
                     changedFiles: reviewContext.diff.files,
+                    maxContextChars: legacyOptions.maxContextChars,
                     baseSha: reviewContext.pullRequest.baseSha,
                     headSha: reviewContext.pullRequest.headSha,
                     verify: async (prompt, maxOutputTokens) => (await verifyProvider.complete([{ role: 'user', content: prompt }], { temperature: 0, maxOutputTokens })).content,

@@ -214,10 +214,7 @@ export async function runPrReviewAction(): Promise<void> {
 	}
 	const skipOptional = reviewEffort === 'lite';
 	const securitySkills = skipOptional ? 'all' : legacyOptions.securitySkills;
-	const enableVerify =
-		!skipOptional &&
-		(verifySetting === 'true' ||
-			(reviewEffort === 'deep' && verifySetting === undefined));
+	const enableVerify = !skipOptional && verifySetting === 'true';
 	reviewContext.diff.files = prioritizeFiles(
 		candidates,
 		reviewEffort === 'deep'
@@ -528,6 +525,7 @@ export async function runPrReviewAction(): Promise<void> {
 					title: reviewContext.pullRequest.title,
 					body: reviewContext.pullRequest.body,
 					changedFiles: reviewContext.diff.files,
+					maxContextChars: legacyOptions.maxContextChars,
 					baseSha: reviewContext.pullRequest.baseSha,
 					headSha: reviewContext.pullRequest.headSha,
 					verify: async (prompt: string, maxOutputTokens: number) =>

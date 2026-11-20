@@ -115,8 +115,11 @@ the scope or drops enabled optional work. Explicit `lite` caps review at three
 files (largest changes first, subject to lower caps), skips those optional
 steps, and retains the standard security skills and any enabled secret scan.
 `deep` ignores the `max-files` input, keeps all other budgets including the
-`AI_REVIEW_MAX_FILES` ceiling and `max-context-chars`, and defaults verification
-on for high and critical findings unless `AI_REVIEW_VERIFY_PASS` is set.
+`AI_REVIEW_MAX_FILES` ceiling and `max-context-chars`. Verification remains
+opt-in via `AI_REVIEW_VERIFY_PASS=true` and caps patch evidence at the smaller
+of `max-context-chars` and 24,000 characters. Changing the preset can change
+the review decision: `deep` can surface findings in more files, and `lite`
+prevents auto-approval when its cap leaves paths unreviewed.
 Invalid effort values warn and fall back to `balanced`, as do non-positive file
 caps. The effective preset is visible in the summary and in
 `review-report.diagnostics.reviewEffort`.
