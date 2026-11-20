@@ -243424,6 +243424,7 @@ var registry = __nccwpck_require__(5672);
 
 
 
+
 /**
  * Judge the merge rules of the repository against the change. The rules come
  * from the base commit, the judgement runs in a separate tool-free call, and
