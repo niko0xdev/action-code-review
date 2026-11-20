@@ -214,16 +214,23 @@ repository) logs one `[scorecard]` line and the review continues without it.
 
 ## Check run (opt-in)
 
-Input `check-run` (default `'false'`; see `publishCheckRun` in `src/github/review.ts`).
-When `'true'`, `publishReview` creates one completed `AI Code Review` check run on
-the reviewed head after the summary comment is posted, and never when publishing is
-skipped as stale. The conclusion is `failure` for a blocking review (blocking finding
-with `block-on-issues: 'true'`) or an incomplete or failed one (the same rule as
-`reviewFailed`), `neutral` for non-blocking findings, and `success` with none.
-Findings become redacted, length-capped annotations; GitHub takes at most 50 per
-request, so the rest follow in `checks.update` batches of 50. The Checks calls are
-mapped explicitly in `src/runners/octokit.ts`. Needs `checks: write`; any Checks API
-error logs one `[check-run]` warning and the review outcome is unchanged.
+Input `check-run` (default `'false'`; see `publishCheckRun` and `publishSkipCheckRun`
+in `src/github/review.ts`). When `'true'`, `publishReview` creates one completed
+`AI Code Review` check run on the reviewed head after the review and before the
+summary comment, so a failed summary post cannot leave it unreported. The conclusion
+follows the review event (`failure` only when `REQUEST_CHANGES` was warranted:
+blocking finding, `block-on-issues: 'true'`, and write permission) and the step's
+own incompleteness rule (`failure`, or `neutral` with
+`AI_REVIEW_FAIL_ON_INCOMPLETE=false`); otherwise `neutral` for non-blocking findings
+and `success` with none. A draft, an empty selection, a moved head, and a failed head
+recheck each report a neutral `Skipped:` check on the reviewed head, never on a newer
+head, where it would replace the newer run's check. Findings become redacted,
+length-capped annotations; GitHub takes at most 50 per request, so the rest follow
+in `checks.update` batches of 50. The Checks calls are mapped explicitly in
+`src/runners/octokit.ts`. Needs `checks: write` (fork pull requests have a read-only
+token); any Checks API error logs one `[check-run]` warning worded by status,
+including when annotations were only partially published, and the review outcome is
+unchanged.
 
 ## Optional configuration (spec §8)
 

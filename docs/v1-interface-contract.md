@@ -118,35 +118,36 @@ read (local git objects first, the contents API for shallow checkouts); without 
 base commit nothing is read. Each file keeps the 50 KiB cap, the total is capped
 at 64 KiB, each file is fenced, and the paths used are reported in
 `review-report` as `diagnostics.repositoryInstructions`.
-`check-run` is opt-in. When `'true'`, after the review is published (never when
-publishing is skipped because the head moved) the action creates one completed
-check run named `AI Code Review` on the reviewed head commit, so teams can require
-it in branch protection. Its conclusion mirrors the review decision: `failure`
-when a blocking finding exists and `block-on-issues` is `'true'`, or when the
-review is incomplete or failed; `neutral` when only non-blocking findings exist;
-`success` when there are no findings. Each finding becomes an annotation
-`check-run` is opt-in. When `'true'`, after the review is published the action
-creates one completed check run named `AI Code Review` on the reviewed head
-commit, so teams can require it in branch protection. Its conclusion mirrors
-the review decision exactly: `failure` when the review submitted
-`REQUEST_CHANGES` (a blocking finding, `block-on-issues` `'true'`, and write
-permission), `neutral` when only non-blocking findings exist, `success` when
-there are no findings, and `neutral` for an incomplete review when
-`AI_REVIEW_FAIL_ON_INCOMPLETE=false` (the step only warns in that case, so the
-check must not fail the branch). A run that reviews nothing still reports a
-completed, neutral check, so a required check is never left unreported: a draft,
-an empty file selection, and a head that moved during the review each produce
-one with a `Skipped:` title, the last on the head that is current. Each finding becomes an annotation
-(`failure` for critical and high, `warning` for medium, `notice` for low) with a
-redacted, length-capped title and message; the first 50 go with the create
-request and the rest follow in `checks.update` batches of 50. The output summary
-is compact Markdown capped at 20,000 characters, and every model-supplied value
-in it is redacted before it is escaped, so a quoted credential cannot survive
-as an HTML entity. The workflow needs `checks: write`; any Checks API error
-(403, 404, 422, or other) only logs a warning, worded by what the status means,
-and never fails, blocks, or changes the review. A pull request from a fork has a
-read-only token and cannot create a check, so the check is reported as missing
-on fork pull requests.
+
+`check-run` is opt-in. When `'true'`, the action creates one completed check run
+named `AI Code Review` on the reviewed head commit, so teams can require it in
+branch protection. It is created after the review itself and before the summary
+comment, so a failure to post the summary cannot leave it unreported. Its
+conclusion mirrors the review decision exactly: `failure` when the review
+submitted `REQUEST_CHANGES` (a blocking finding, `block-on-issues` `'true'`, and
+write permission), `neutral` when only non-blocking findings exist, `success`
+when there are no findings, and, for an incomplete review (the step's own rule,
+which also counts selected files that were not analysed), `failure`, or
+`neutral` when `AI_REVIEW_FAIL_ON_INCOMPLETE=false` because the step then only
+warns. The title follows the conclusion. A run that reviews nothing still
+reports a completed, neutral check with a `Skipped:` title, so a required check
+is never left unreported: a draft, an empty file selection, a head that moved
+during the review, and a head that could not be rechecked each produce one. All
+of them, the moved head included, go on the reviewed head, never on a newer
+one: a late neutral check there would replace the newer run's check of the same
+name, a failing one included. Each finding becomes an annotation (`failure` for
+critical and high, `warning` for medium, `notice` for low) with a redacted,
+length-capped title and message; the first 50 go with the create request and the
+rest follow in `checks.update` batches of 50. The output summary is compact
+Markdown capped at 20,000 characters, and every model-supplied value in it is
+redacted before it is escaped, so a quoted credential cannot survive as an HTML
+entity. The workflow needs `checks: write`; any Checks API error (403, 404, 422,
+or other) only logs a warning, worded by what the status means, and never fails,
+blocks, or changes the review. When the check was created but a later
+annotation batch failed, the warning says the annotations were partially
+published. A pull request from a fork has a read-only token and cannot create a
+check (warning only), so the check is reported as missing on fork pull requests.
+
 `secret-scan` is opt-in. When `'true'`, the deterministic secret scanner used by
 `mode: security` runs over the added lines of every changed file with a patch,
 independent of `exclude-patterns`, after the main review and any verify pass.

@@ -366,20 +366,68 @@ describe('opt-in check run', () => {
 		expect(warn).toHaveBeenCalledWith(expect.stringContaining('checks: write'));
 	});
 
-	it('reports the stale skip instead of leaving the head unreported', async () => {
+	it('reports a neutral check on the reviewed head when the head recheck fails', async () => {
 		const { client, createCheck } = fakeClient([]);
-		client.rest.pulls.get = vi.fn(async () => ({
-			data: { head: { sha: 'newer-head' } },
-		}));
+		client.rest.pulls.get = vi.fn(async () => {
+			throw new Error('boom');
+		});
+		const spy = vi
+			.spyOn(await import('@actions/core'), 'warning')
+			.mockImplementation(() => {});
 		await publishReview(
 			toPublisherOctokit(client as never),
 			checkParams([finding])
 		);
+		spy.mockRestore();
 		expect(createCheck).toHaveBeenCalledTimes(1);
 		expect(createCheck.mock.calls[0][0]).toMatchObject({
-			head_sha: 'newer-head',
+			head_sha: 'head',
 			conclusion: 'neutral',
 		});
+	});
+
+	it('still creates the check when posting the summary comment throws', async () => {
+		const { client, createCheck } = fakeClient([]);
+		client.rest.issues.createComment = vi.fn(async () => {
+			throw new Error('summary post failed');
+		});
+		await expect(
+			publishReview(toPublisherOctokit(client as never), checkParams([finding]))
+		).rejects.toThrow('summary post failed');
+		expect(createCheck).toHaveBeenCalledTimes(1);
+		expect(createCheck.mock.calls[0][0]).toMatchObject({
+			conclusion: 'failure',
+		});
+	});
+
+	it('says the annotations were partially published when a later update fails', async () => {
+		const { client, createCheck, updateCheck } = fakeClient([]);
+		updateCheck.mockRejectedValueOnce(
+			Object.assign(new Error('Validation Failed'), { status: 422 })
+		);
+		const many = Array.from({ length: 60 }, (_, i) => ({
+			...finding,
+			line: i + 1,
+			title: `Finding ${i + 1}`,
+		}));
+		const warn = vi.fn();
+		const coreMod = await import('@actions/core');
+		const spy = vi.spyOn(coreMod, 'warning').mockImplementation(warn);
+		try {
+			await publishReview(
+				toPublisherOctokit(client as never),
+				checkParams(many)
+			);
+		} finally {
+			spy.mockRestore();
+		}
+		expect(createCheck).toHaveBeenCalledTimes(1);
+		expect(warn).toHaveBeenCalledWith(
+			expect.stringContaining('annotations partially published')
+		);
+		expect(warn).toHaveBeenCalledWith(
+			expect.stringContaining('GitHub rejected the request')
+		);
 	});
 
 	it('redacts a quoted secret assignment in a finding title', async () => {
@@ -434,7 +482,7 @@ describe('opt-in check run', () => {
 		expect(output(createCheck.mock.calls[0]).title).toContain('incomplete');
 	});
 
-	it('reports a neutral check on the current head when the head changed', async () => {
+	it('reports a neutral check on the reviewed head when the head changed', async () => {
 		const { client, createCheck } = fakeClient([]);
 		client.rest.pulls.get = vi.fn(async () => ({
 			data: { head: { sha: 'newer-head' } },
@@ -444,8 +492,10 @@ describe('opt-in check run', () => {
 			checkParams([finding])
 		);
 		expect(createCheck).toHaveBeenCalledTimes(1);
+		// The reviewed head, never the new one: a late neutral check on the new
+		// head would replace the newer run's failing check of the same name.
 		expect(createCheck.mock.calls[0][0]).toMatchObject({
-			head_sha: 'newer-head',
+			head_sha: 'head',
 			conclusion: 'neutral',
 			status: 'completed',
 		});

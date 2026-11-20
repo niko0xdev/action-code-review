@@ -40674,13 +40674,14 @@ async function publishReview(octokit, params) {
             if (current.data.head.sha !== headSha) {
                 result.reviewStatus = 'stale';
                 core.warning(`[review] PR head changed during review (${headSha} -> ${current.data.head.sha}); skipped publishing stale findings.`);
-                // A required check must never hang: report the skip on the head
-                // that is now current instead of leaving it unreported.
+                // A required check must never hang: report the skip on the reviewed
+                // head. Never on the new head: this late neutral check would replace
+                // the newer run's check of the same name, failing one included.
                 if (params.checkRun)
                     await publishSkipCheckRun(octokit, {
                         owner,
                         repo,
-                        headSha: current.data.head.sha,
+                        headSha,
                         reason: 'the pull request head changed during the review',
                     });
                 return;
@@ -40689,6 +40690,13 @@ async function publishReview(octokit, params) {
         catch (error) {
             core.warning(`[review] Could not recheck PR head; refusing to publish: ${redactDetail(error)}`);
             result.reviewStatus = 'stale';
+            if (params.checkRun)
+                await publishSkipCheckRun(octokit, {
+                    owner,
+                    repo,
+                    headSha,
+                    reason: 'the pull request head could not be rechecked',
+                });
             return;
         }
     }
@@ -40807,6 +40815,13 @@ async function publishReview(octokit, params) {
         hasWrite,
         hasBlockingFinding,
     });
+    // Before the summary comment, so a failure to post it cannot leave a
+    // required check unreported.
+    if (params.checkRun) {
+        await publishCheckRun(octokit, params, validFindings, {
+            blocking: shouldBlock,
+        });
+    }
     const alreadyCommented = validFindings.length - findingsToPublish.length;
     const alreadyCommentedNote = alreadyCommented > 0
         ? `\n\n> ${alreadyCommented} finding(s) already commented on earlier runs; not posted again.`
@@ -40855,11 +40870,6 @@ async function publishReview(octokit, params) {
             repo,
             issue_number: prNumber,
             body: summaryBody,
-        });
-    }
-    if (params.checkRun) {
-        await publishCheckRun(octokit, params, validFindings, {
-            blocking: shouldBlock,
         });
     }
 }
@@ -40937,11 +40947,12 @@ async function publishCheckRun(octokit, params, findings, state) {
         title: cap((0,redactor/* redactSecrets */.f)(`[${finding.severity.toUpperCase()}] ${finding.title}`), 255),
         message: cap((0,redactor/* redactSecrets */.f)(finding.description || finding.title), 2000),
     }));
+    let created;
+    const checks = octokit.rest.checks;
     try {
-        const checks = octokit.rest.checks;
         if (!checks)
             throw new Error('Checks API is not available');
-        const created = await checks.create({
+        created = await checks.create({
             owner,
             repo,
             name: CHECK_RUN_NAME,
@@ -40954,11 +40965,15 @@ async function publishCheckRun(octokit, params, findings, state) {
                 annotations: annotations.slice(0, ANNOTATIONS_PER_REQUEST),
             },
         });
+    }
+    catch (error) {
+        core.warning(checkRunWarning(error, 'publish'));
+        return;
+    }
+    try {
         for (let start = ANNOTATIONS_PER_REQUEST; start < annotations.length; start += ANNOTATIONS_PER_REQUEST) {
-            if (!checks.update) {
-                core.warning('[check-run] The check run was created but the remaining annotations could not be published: checks.update is not available.');
-                return;
-            }
+            if (!checks.update)
+                throw new Error('checks.update is not available');
             await checks.update({
                 owner,
                 repo,
@@ -40972,13 +40987,13 @@ async function publishCheckRun(octokit, params, findings, state) {
         }
     }
     catch (error) {
-        core.warning(checkRunWarning(error, 'publish'));
+        core.warning(checkRunWarning(error, 'finish', 'Check run created with its conclusion, annotations partially published (a later batch failed)'));
     }
 }
 /** A Checks API failure, worded by what the status actually means. */
-function checkRunWarning(error, phase) {
+function checkRunWarning(error, phase, note) {
     const status = error?.status;
-    const detail = redactDetail(error);
+    const detail = `${redactDetail(error)}${note ? `. ${note}` : ''}`;
     if (status === 403 || status === 404)
         return `[check-run] Could not ${phase} the "${CHECK_RUN_NAME}" check run: ${detail}. Grant \`checks: write\` in the workflow permissions; a pull request from a fork has a read-only token and cannot create checks. The review itself is unaffected.`;
     if (status === 422)
