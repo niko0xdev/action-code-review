@@ -57,12 +57,24 @@ const CATEGORY_LABEL: Record<string, string> = {
  */
 const LINK_PATTERNS = [
 	/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi,
-	/\b(?:javascript|vbscript|data|file):\S*/gi,
+	/\b(?:javascript|vbscript):\S*/gi,
+	// A real data URI, not prose such as "data: rows".
+	/\bdata:[a-z][a-z0-9.+-]*\/[^\s]*/gi,
+	/\bfile:\/\/\S*/gi,
 	/\bwww\.\S+/gi,
-	/\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S*/gi,
+	// A bare host with a path, but not a file name such as "config.json/x".
+	/\b(?:[a-z0-9-]+\.)+(?!json|js|ts|tsx|jsx|md|mdx|yml|yaml|toml|txt|css|html|xml|sql|sh|py|rb|go|rs|java|kt|swift|php|cs|cpp|h|hpp|vue|svelte|lock)([a-z]{2,24})\/\S*/gi,
 ];
 /** Per-field cap, so the block cannot push a comment past GitHub's size limit. */
 const MAX_PROMPT_FIELD_CHARS = 2000;
+/**
+ * GitHub rejects a comment body over 65,536 characters, so the assembled body
+ * keeps a margin below it. The prose fields are cut first, then the optional
+ * prompt, and only then the rest of the body.
+ */
+const MAX_COMMENT_CHARS = 60_000;
+/** Per-field cap in the main comment body. */
+const MAX_BODY_FIELD_CHARS = 8_000;
 
 /**
  * A collapsed, copyable prompt for the reader's coding agent. The text is
@@ -116,14 +128,20 @@ export function buildFindingBody(
 	const withheld =
 		!!finding.replacement &&
 		redactSecrets(finding.replacement) !== finding.replacement;
+	const cap = (value: string) =>
+		value.length > MAX_BODY_FIELD_CHARS
+			? `${value.slice(0, MAX_BODY_FIELD_CHARS)}…`
+			: value;
 	const safeFinding = {
 		...finding,
-		title: mdSafe(redactSecrets(finding.title)),
-		description: mdSafe(redactSecrets(finding.description)),
-		impact: mdSafe(redactSecrets(finding.impact)),
+		title: cap(mdSafe(redactSecrets(finding.title))),
+		description: cap(mdSafe(redactSecrets(finding.description))),
+		impact: cap(mdSafe(redactSecrets(finding.impact))),
 		suggestion:
 			[
-				finding.suggestion ? mdSafe(redactSecrets(finding.suggestion)) : '',
+				finding.suggestion
+					? cap(mdSafe(redactSecrets(finding.suggestion)))
+					: '',
 				withheld
 					? '_A suggested code change was withheld because it contained a secret-like value._'
 					: '',
@@ -135,8 +153,15 @@ export function buildFindingBody(
 		replacement: withheld ? undefined : finding.replacement,
 	};
 	const body = commentIdentityBody(safeFinding);
-	const fixPrompt = options.fixPrompt ? `\n\n${buildFixPrompt(finding)}` : '';
-	return `${body}${fixPrompt}\n\n<!-- ai-review-id:${normalizeCommentId(finding)} -->`;
+	const marker = `<!-- ai-review-id:${normalizeCommentId(finding)} -->`;
+	const prompt = options.fixPrompt ? `\n\n${buildFixPrompt(finding)}` : '';
+	// The marker always ends the comment, and the whole body stays inside the
+	// limit: the prompt is dropped first, then the prose is cut.
+	const withPrompt = `${body}${prompt}\n\n${marker}`;
+	if (withPrompt.length <= MAX_COMMENT_CHARS) return withPrompt;
+	const withoutPrompt = `${body}\n\n${marker}`;
+	if (withoutPrompt.length <= MAX_COMMENT_CHARS) return withoutPrompt;
+	return `${body.slice(0, MAX_COMMENT_CHARS - marker.length - 4)}\n\n${marker}`;
 }
 
 const RISK_LABEL: Record<RiskLevel, string> = {

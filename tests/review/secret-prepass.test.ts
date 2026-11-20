@@ -126,6 +126,9 @@ describe('secret-scan input', () => {
 
 describe('secret pre-pass review findings (20/11/2026)', () => {
 	const gh = `ghp_${'A1b2C3d4'.repeat(5)}`;
+	// A value that looks random: no placeholder word, no repeated block.
+	const randomKey = `sk-proj-${'x7Kq2Lm9Pw4Rb8Tn1Vz3Cd6Hf0Js5Gy1Ea'}`;
+	const randomToken = `ghp_${'x7Kq2Lm9Pw4Rb8Tn1Vz3Cd6Hf0Js5Gy1Ea'}`;
 	const added = (lines: string[]) =>
 		`@@ -1,0 +1,${lines.length} @@\n${lines.map((l) => `+${l}`).join('\n')}`;
 
@@ -173,6 +176,49 @@ describe('secret pre-pass review findings (20/11/2026)', () => {
 			),
 		]);
 		expect(findings).toEqual([]);
+	});
+
+	it('does not let an allow pragma silence a real-looking credential', () => {
+		const findings = scanReviewSecrets([
+			file('a.ts', added([`const k = "${randomKey}"; // secret-scan: allow`])),
+		]);
+		expect(findings.map((f) => f.ruleId)).toEqual([
+			'secret-scan/sec-rule-openai-key',
+		]);
+	});
+
+	it('does not let an allow pragma silence a real-looking token', () => {
+		const findings = scanReviewSecrets([
+			file(
+				'a.ts',
+				added([`const t = "${randomToken}"; // secret-scan: allow`])
+			),
+		]);
+		expect(findings.map((f) => f.ruleId)).toEqual([
+			'secret-scan/sec-rule-gh-token',
+		]);
+	});
+
+	it('does not flag a private key header without a body', () => {
+		const findings = scanReviewSecrets([
+			file('a.ts', added(['"-----BEGIN PRIVATE KEY-----"'])),
+		]);
+		expect(findings).toEqual([]);
+	});
+
+	it('flags a private key with a body', () => {
+		const findings = scanReviewSecrets([
+			file(
+				'a.ts',
+				added([
+					'"-----BEGIN PRIVATE KEY-----"',
+					'"MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ"',
+				])
+			),
+		]);
+		expect(findings.map((f) => f.ruleId)).toEqual([
+			'secret-scan/sec-rule-private-key',
+		]);
 	});
 
 	it('still flags real-looking keys', () => {

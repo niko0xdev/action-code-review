@@ -26,10 +26,13 @@ const SECRET_RULES: SecretRule[] = [
 			/(?<![A-Za-z0-9_-])sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,80}/g,
 		severity: 'critical',
 		cwe: 'CWE-798',
-		// Real keys carry a long random run with digits; kebab-case names such
-		// as `sk-react-loading-spinner` do not.
+		// Real keys carry a long run that looks random (a digit, or mixed
+		// case); a kebab-case name such as `sk-react-loading-spinner` has no
+		// such run, and a lower-case word is not a credential.
 		accept: (match) =>
-			(match.match(/[A-Za-z0-9]{16,}/g) ?? []).some((run) => /\d/.test(run)),
+			(match.match(/[A-Za-z0-9]{16,}/g) ?? []).some(
+				(run) => /\d/.test(run) || (/[a-z]/.test(run) && /[A-Z]/.test(run))
+			),
 	},
 	{
 		id: 'sec-rule-aws-key',
@@ -38,8 +41,8 @@ const SECRET_RULES: SecretRule[] = [
 			/(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}/g,
 		severity: 'critical',
 		cwe: 'CWE-798',
-		// AWS documentation keys end in EXAMPLE (`AKIAIOSFODNN7EXAMPLE`).
-		accept: (match) => !match.endsWith('EXAMPLE'),
+		// The published AWS documentation ids, and only those.
+		accept: (match) => !AWS_EXAMPLE_KEYS.has(match),
 	},
 	{
 		id: 'sec-rule-private-key',
@@ -58,17 +61,54 @@ const SECRET_RULES: SecretRule[] = [
 ];
 
 /**
- * An added line carrying either marker is skipped: `secret-scan: allow`, or the
- * detect-secrets convention `pragma: allowlist secret`. Use it for fixtures and
- * documented placeholders.
+ * The AWS documentation key ids, which are published examples rather than
+ * credentials.
+ */
+const AWS_EXAMPLE_KEYS = new Set([
+	'AKIAIOSFODNN7EXAMPLE',
+	'AKIAI44QH8DHBEXAMPLE',
+	'ASIAIOSFODNN7EXAMPLE',
+	'ABIAIOSFODNN7EXAMPLE',
+	'ACCAIOSFODNN7EXAMPLE',
+]);
+
+/**
+ * An added line carrying either marker may silence a match: `secret-scan:
+ * allow`, or the detect-secrets convention `pragma: allowlist secret`.
+ *
+ * The marker sits on a line the pull request author controls, so it may only
+ * silence a value that cannot be a real credential: one that names an example,
+ * repeats a character, or repeats a short block (a hand-written test value).
+ * A real credential is none of those, so it is still reported.
  */
 const ALLOW_PRAGMA =
 	/secret-scan:[ \t]*allow\b|pragma:[ \t]*allowlist[ \t]+secret\b/i;
 
-function ruleMatches(rule: SecretRule, text: string): boolean {
-	rule.pattern.lastIndex = 0;
-	for (const match of text.matchAll(rule.pattern)) {
-		if (!rule.accept || rule.accept(match[0])) return true;
+const PLACEHOLDER_WORD =
+	/example|placeholder|dummy|fake|notreal|not-real|changeme|redacted|sample/i;
+const PLACEHOLDER_RUN = /([A-Za-z0-9])\1{7,}/;
+
+/** True when the value cannot be a real credential. */
+export function isPlaceholderValue(value: string): boolean {
+	if (PLACEHOLDER_WORD.test(value)) return true;
+	if (PLACEHOLDER_RUN.test(value)) return true;
+	// A short block written twice, as in `A1b2C3d4A1b2C3d4`.
+	const seen = new Set<string>();
+	for (let i = 0; i + 4 <= value.length; i++) {
+		const block = value.slice(i, i + 4);
+		if (seen.has(block)) return true;
+		seen.add(block);
+	}
+	return false;
+}
+
+/** A private key header is only a credential when key material follows it. */
+function hasKeyBody(lines: string[], index: number): boolean {
+	for (let i = index + 1; i < lines.length; i++) {
+		const line = lines[i].trim();
+		if (!line || !line.startsWith('+')) continue;
+		const body = line.slice(1).replace(/^["']|["'],?$/g, '');
+		if (/^[A-Za-z0-9+/]{32,}={0,2}$/.test(body)) return true;
 	}
 	return false;
 }
@@ -86,7 +126,7 @@ export function scanSecretsInDiff(
 		const lines = file.patch.split('\n');
 		let currentLine = 1;
 
-		for (const rawLine of lines) {
+		for (const [index, rawLine] of lines.entries()) {
 			// In unified diff: @@ -a,b +c,d @@
 			const hunkMatch = rawLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
 			if (hunkMatch) {
@@ -98,10 +138,15 @@ export function scanSecretsInDiff(
 			if (rawLine.startsWith('+') && !rawLine.startsWith('+++')) {
 				const addedContent = rawLine.slice(1);
 
-				for (const rule of ALLOW_PRAGMA.test(addedContent)
-					? []
-					: SECRET_RULES) {
-					if (ruleMatches(rule, addedContent)) {
+				const allowPragma = ALLOW_PRAGMA.test(addedContent);
+				for (const rule of SECRET_RULES) {
+					rule.pattern.lastIndex = 0;
+					for (const match of addedContent.matchAll(rule.pattern)) {
+						const value = match[0];
+						if (rule.accept && !rule.accept(value)) continue;
+						if (allowPragma && isPlaceholderValue(value)) continue;
+						if (rule.id === 'sec-rule-private-key' && !hasKeyBody(lines, index))
+							continue;
 						const finding: SecurityFinding = {
 							id: `${rule.id}-${file.filename}-${currentLine}`,
 							fingerprint: computeFindingFingerprint({

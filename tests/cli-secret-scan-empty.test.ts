@@ -44,6 +44,8 @@ describe('main: secret scan on a docs-only pull request', () => {
 		vi.spyOn(core, 'notice').mockImplementation(() => {});
 		vi.spyOn(core, 'warning').mockImplementation(() => {});
 		vi.spyOn(core, 'info').mockImplementation(() => {});
+		vi.spyOn(core.summary, 'addRaw').mockReturnValue(core.summary);
+		vi.spyOn(core.summary, 'write').mockResolvedValue(core.summary);
 	});
 	afterEach(() => {
 		vi.restoreAllMocks();

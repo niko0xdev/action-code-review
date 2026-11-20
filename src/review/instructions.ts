@@ -40,6 +40,13 @@ export interface RepositoryInstructions {
 
 /** Most `**` segments a glob may use; more could make matching costly. */
 const MAX_GLOBSTARS = 2;
+/**
+ * Most wildcards a glob may use in total, and its longest length. Overlapping
+ * wildcards make a failing match expensive, so a pattern beyond these bounds
+ * is skipped rather than compiled.
+ */
+const MAX_GLOB_WILDCARDS = 8;
+const MAX_GLOB_LENGTH = 200;
 
 /** Split on commas outside `{...}` brace sets. */
 function splitTopLevel(value: string): string[] {
@@ -100,6 +107,30 @@ interface ScopedFile {
 	excluded: boolean;
 }
 
+/**
+ * Remove a trailing comment that is not inside a quoted string, so a quoted
+ * glob in a comment is never read as a rule.
+ */
+function stripComment(value: string): string {
+	let quote = '';
+	for (let i = 0; i < value.length; i++) {
+		const char = value[i];
+		if (quote) {
+			if (char === quote) quote = '';
+			continue;
+		}
+		if (char === '"' || char === "'") {
+			quote = char;
+			continue;
+		}
+		if (char === '#') return value.slice(0, i).trim();
+	}
+	return value.trim();
+}
+
+/** A value made only of quoted strings, optionally comma separated. */
+const QUOTED_ONLY = /^(?:"[^"]*"|'[^']*')(?:\s*,\s*(?:"[^"]*"|'[^']*'))*$/;
+
 /** Normalise one `applyTo` entry: quotes, a leading `./` or `/`. */
 function cleanGlob(raw: string): string {
 	return raw
@@ -118,15 +149,21 @@ function parseApplyTo(lines: string[], index: number): string[] {
 		for (let i = index + 1; i < lines.length; i++) {
 			const item = /^\s*-\s*(.+)$/.exec(lines[i]);
 			if (!item) break;
-			raw.push(item[1].replace(/\s+#.*$/, ''));
+			raw.push(stripComment(item[1]));
 		}
 	} else if (rest.startsWith('[')) {
-		raw = splitTopLevel(rest.replace(/^\[|\][^\]]*$/g, ''));
+		raw = splitTopLevel(stripComment(rest).replace(/^\[|\][^\]]*$/g, ''));
 	} else {
-		const quoted = [...rest.matchAll(/"([^"]*)"|'([^']*)'/g)].map(
-			(m) => m[1] ?? m[2]
-		);
-		raw = quoted.length > 0 ? quoted : [rest.replace(/\s+#.*$/, '')];
+		const withoutComment = stripComment(rest);
+		// Quoted strings are only read as separate globs when the value is
+		// nothing but quoted strings; a quoted glob inside a comment is not a
+		// rule.
+		const quoted = QUOTED_ONLY.test(withoutComment)
+			? [...withoutComment.matchAll(/"([^"]*)"|'([^']*)'/g)].map(
+					(m) => m[1] ?? m[2]
+				)
+			: [];
+		raw = quoted.length > 0 ? quoted : [withoutComment];
 	}
 	return raw.flatMap(splitTopLevel).map(cleanGlob).filter(Boolean);
 }
@@ -140,11 +177,17 @@ function parseScoped(text: string): ScopedFile {
 	const lines = match[1].split(/\r?\n/);
 	const index = lines.findIndex((line) => /^applyTo:/.test(line));
 	const exclude = lines.find((line) => /^excludeAgent:/.test(line)) ?? '';
+	// The value is compared exactly: a comment that mentions another agent
+	// must not exclude this file.
+	const excluded =
+		/^excludeAgent:[ \t]*["']?([A-Za-z0-9_-]+)["']?[ \t]*$/.exec(
+			exclude.trim()
+		)?.[1] === 'code-review';
 	return {
 		body: source.slice(match[0].length),
 		declared: index >= 0,
 		applyTo: index >= 0 ? parseApplyTo(lines, index) : [],
-		excluded: /\bcode-review\b/.test(exclude),
+		excluded,
 	};
 }
 
@@ -214,7 +257,12 @@ export async function loadRepositoryInstructions(
 	const empty = { text: '', files: [] };
 	const baseSha = opts.baseSha;
 	if (!baseSha || !/^[0-9a-f]{40,64}$/i.test(baseSha)) return empty;
-	const scoped = (await listScoped(opts, baseSha))
+	const listed = await listScoped(opts, baseSha);
+	if (listed.length > MAX_LISTED_FILES)
+		core.warning(
+			`[review] more than ${MAX_LISTED_FILES} instruction files exist; only the first ${MAX_LISTED_FILES} were considered`
+		);
+	const scoped = listed
 		.slice(0, MAX_LISTED_FILES)
 		.map((name) => `${SCOPED_DIR}/${name}`);
 	const blocks: string[] = [];
@@ -229,11 +277,21 @@ export async function loadRepositoryInstructions(
 			continue;
 		}
 		if (base.kind !== 'content') continue;
+		// `excludeAgent: code-review` keeps a file out of the review, whether
+		// it is one of the fixed files or a scoped one.
+		if (parseScoped(base.text).excluded) continue;
 		let body = base.text.replace(/^\uFEFF/, '');
 		if (path.startsWith(`${SCOPED_DIR}/`)) {
 			const parsed = parseScoped(body);
 			if (parsed.excluded) continue;
 			const globs = parsed.applyTo.filter((glob) => {
+				const wildcards = (glob.match(/[*?]/g) ?? []).length;
+				if (wildcards > MAX_GLOB_WILDCARDS || glob.length > MAX_GLOB_LENGTH) {
+					core.warning(
+						`[review] instruction file ${path}: applyTo glob "${glob}" is too complex – ignored`
+					);
+					return false;
+				}
 				if ((glob.match(/\*\*/g) ?? []).length <= MAX_GLOBSTARS) return true;
 				core.warning(
 					`[review] instruction file ${path}: applyTo glob "${glob}" uses more than ${MAX_GLOBSTARS} ** segments – ignored`
@@ -249,13 +307,6 @@ export async function loadRepositoryInstructions(
 			const patterns = globs.map(globToRegExp);
 			if (!opts.changedPaths.some((p) => patterns.some((g) => g.test(p))))
 				continue;
-			if (matchedScoped >= MAX_SCOPED_FILES) {
-				core.warning(
-					`[review] more than ${MAX_SCOPED_FILES} instruction files match this change; ${path} and later ones are ignored`
-				);
-				break;
-			}
-			matchedScoped += 1;
 			body = parsed.body;
 		}
 		body = body.trim();
@@ -266,6 +317,16 @@ export async function loadRepositoryInstructions(
 				`[review] instruction file ${path} exceeds the remaining instruction budget – ignored`
 			);
 			continue;
+		}
+		// The quota counts the blocks that actually enter the prompt.
+		if (path.startsWith(`${SCOPED_DIR}/`)) {
+			if (matchedScoped >= MAX_SCOPED_FILES) {
+				core.warning(
+					`[review] more than ${MAX_SCOPED_FILES} instruction files match this change; ${path} and later ones are ignored`
+				);
+				break;
+			}
+			matchedScoped += 1;
 		}
 		used += block.length + 2;
 		seen.add(body);

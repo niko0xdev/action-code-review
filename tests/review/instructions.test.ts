@@ -256,6 +256,51 @@ describe('repository instructions review findings (20/11/2026)', () => {
 		expect(core.warning).toHaveBeenCalled();
 	});
 
+	it('does not read a quoted glob from a comment as a rule', async () => {
+		scoped(
+			'comment',
+			'---\napplyTo: "**/*.ts" # also applies to "**/*.py"\n---\nTypeScript rules'
+		);
+		const out = await load(['src/app.py']);
+		expect(out.files).toEqual([]);
+	});
+
+	it('still applies the declared glob when a comment mentions another', async () => {
+		scoped(
+			'comment2',
+			'---\napplyTo: "**/*.ts" # also applies to "**/*.py"\n---\nTypeScript rules'
+		);
+		const out = await load(['src/app.ts']);
+		expect(out.files).toEqual([
+			'.github/instructions/comment2.instructions.md',
+		]);
+	});
+
+	it('honours excludeAgent on a fixed file as well', async () => {
+		write(
+			'.github/copilot-instructions.md',
+			'---\nexcludeAgent: "code-review"\n---\nnot for code review'
+		);
+		const out = await load(['a.ts']);
+		expect(out.files).not.toContain('.github/copilot-instructions.md');
+	});
+
+	it('does not exclude a file because a comment mentions another agent', async () => {
+		scoped(
+			'mention',
+			'---\napplyTo: "**"\nexcludeAgent: "code-review" # also cloud-agent\n---\nrules'
+		);
+		const out = await load(['a.ts']);
+		expect(out.files).toContain('.github/instructions/mention.instructions.md');
+	});
+
+	it('skips a glob with too many wildcards', async () => {
+		scoped('many', '---\napplyTo: "*a*a*a*a*a*a*a*a*a*b"\n---\nrules');
+		const out = await load(['x.ts']);
+		expect(out.files).toEqual([]);
+		expect(core.warning).toHaveBeenCalled();
+	});
+
 	it('uses identical instruction text only once', async () => {
 		write('AGENTS.md', 'Shared rules.');
 		write('.github/copilot-instructions.md', 'Shared rules.');

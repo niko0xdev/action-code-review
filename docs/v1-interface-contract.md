@@ -154,7 +154,10 @@ match a changed path (at most 20 matching files, from the first 200 listed).
 list, or a YAML block list; globs support `**`, `*`, `?`, and one level of
 `{a,b}`, a leading `./` or `/` is ignored, and a glob with more than two `**`
 segments is skipped with a warning, as is a file whose `applyTo` yields no glob.
-A file with `excludeAgent: "code-review"` is skipped. Only the copies at the pull
+A file with `excludeAgent: "code-review"` is skipped, fixed files included, and
+the value is compared exactly. A quoted glob inside a comment is not a rule,
+and a glob with more than eight wildcards or more than 200 characters is
+skipped with a warning, so matching cannot blow up. Only the copies at the pull
 request base commit are read (local git objects first, the contents API for
 shallow checkouts), and a symlink is ignored on both paths; without a base commit
 nothing is read. Identical texts are used once, each file keeps the 50 KiB cap,
@@ -203,11 +206,17 @@ number added is reported as `diagnostics.secretScanFindings`. Secret findings ar
 added after the `min-severity` filter, so a high-severity match (a Slack token)
 is published and blocks even with the default `min-severity: critical`. The scan
 also runs when the file filters leave nothing for the model to review: a
-docs-only pull request with a credential is still published and blocked. AWS
-documentation keys ending in `EXAMPLE` and `sk-` names without a long random run
-containing a digit are not reported, and an added line containing
-`secret-scan: allow` or `pragma: allowlist secret` is skipped, in normal reviews
-and in `mode: security` alike.
+docs-only pull request with a credential is still published and blocked. That
+path publishes the report and the job summary as well, and it publishes even
+when nothing matched, so a block from an earlier secret-only run is withdrawn
+once the credential is gone. The published AWS documentation key ids and
+kebab-case `sk-` names are not reported, and an added line containing
+`secret-scan: allow` or `pragma: allowlist secret` skips a match in normal
+reviews and in `mode: security` alike, but only when the matched value cannot
+be a real credential (it names an example, repeats a character, or repeats a
+short block). The marker sits on a line the pull request author controls, so it
+never silences a plausible credential. A private key header without key
+material is not reported either.
 
 `fix-prompts` is opt-in. When `'true'`, each inline finding comment gets a
 collapsed `<details>` block, "Prompt for your coding agent", placed before the

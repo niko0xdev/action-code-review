@@ -235,10 +235,10 @@ export async function runPrReviewAction(): Promise<void> {
 		else core.notice(emptyMessage);
 		// The secret scan is independent of the file filters, so a docs-only or
 		// fully excluded pull request is still scanned and blocked on a match.
-		const secrets = legacyOptions.secretScan
-			? scanReviewSecrets(allPrFiles)
-			: [];
-		if (secrets.length > 0) {
+		// The result is published even when nothing matched, so an earlier
+		// secret-only block is withdrawn once the credential is gone.
+		if (legacyOptions.secretScan) {
+			const secrets = scanReviewSecrets(allPrFiles);
 			const result: ReviewResult = {
 				findings: [],
 				summary:
@@ -249,12 +249,53 @@ export async function runPrReviewAction(): Promise<void> {
 				reviewStatus: 'complete',
 			};
 			mergeSecretFindings(result, secrets);
-			await publishReview(octokit, {
-				...publishBase,
-				result,
-				filesExcluded: filesTotal,
-				filesSelected: 0,
-			});
+			const filesExcluded = Math.max(filesTotal - 0, 0);
+			await withReviewReportOutput(
+				async () => {
+					await publishReview(octokit, {
+						...publishBase,
+						result,
+						filesExcluded,
+						filesSelected: 0,
+						// Nothing was reviewed by the model, so no file was.
+						filesUnreviewed: filtered.length,
+					});
+					trackPhase('publish', 'secret scan published', {
+						enabled: trackEnabled,
+					});
+				},
+				() =>
+					serializeReviewReport(
+						buildReviewReport({
+							result,
+							filesTotal,
+							filesExcluded,
+							fileCoverage: buildFileCoverage({
+								files: allPrFiles,
+								filteredPaths: filtered,
+								selectedPaths: [],
+								reviewedPaths: [],
+								failedGroups: 0,
+							}),
+						})
+					),
+				(serialized) => core.setOutput('review-report', serialized)
+			);
+			await core.summary
+				.addRaw(
+					buildJobSummary({
+						model: llmConfig.model,
+						durationMs: performance.now() - reviewStarted,
+						filesReviewed: [],
+						filesTotal,
+						filesExcluded,
+						filesSelected: 0,
+						result,
+						toolFindings: [],
+						diagnostics: result.diagnostics,
+					})
+				)
+				.write();
 			core.setOutput(
 				'review-summary',
 				`secret scan only: ${result.findings.length} credential finding(s); no files were selected for review`

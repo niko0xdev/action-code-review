@@ -36587,19 +36587,27 @@ function isHidden(code) {
         (code >= 0x202a && code <= 0x202e) ||
         (code >= 0x2066 && code <= 0x2069) ||
         (code >= 0x200b && code <= 0x200d) ||
+        code === 0x200e ||
+        code === 0x200f ||
+        code === 0x061c ||
         code === 0x2060 ||
         code === 0xfeff);
 }
 /**
- * Write every hidden character as `\uXXXX` (`\u{XXXXX}` for Unicode tag
- * characters, U+E0000 to U+E007F, which are invisible to people but read by
- * models); other text is untouched.
+ * Write every hidden character as `\uXXXX`; other text is untouched. A
+ * Unicode tag character (U+E0000 to U+E007F) is invisible to people but read
+ * by models, so it is written as its UTF-16 surrogate pair, which keeps the
+ * output valid JSON (JSON has no `\u{...}` form).
  */
 function escapeHidden(text) {
     return Array.from(text, (ch) => {
         const code = ch.codePointAt(0) ?? 0;
-        if (code >= 0xe0000 && code <= 0xe007f)
-            return `\\u{${code.toString(16)}}`;
+        if (code >= 0xe0000 && code <= 0xe007f) {
+            const offset = code - 0xe0000;
+            const high = 0xd800 + (offset >> 10);
+            const low = 0xdc00 + (offset & 0x3ff);
+            return `\\u${high.toString(16).padStart(4, '0')}\\u${low.toString(16).padStart(4, '0')}`;
+        }
         return isHidden(code) ? `\\u${code.toString(16).padStart(4, '0')}` : ch;
     }).join('');
 }
@@ -40269,12 +40277,24 @@ const CATEGORY_LABEL = {
  */
 const LINK_PATTERNS = [
     /\b[a-z][a-z0-9+.-]*:\/\/\S+/gi,
-    /\b(?:javascript|vbscript|data|file):\S*/gi,
+    /\b(?:javascript|vbscript):\S*/gi,
+    // A real data URI, not prose such as "data: rows".
+    /\bdata:[a-z][a-z0-9.+-]*\/[^\s]*/gi,
+    /\bfile:\/\/\S*/gi,
     /\bwww\.\S+/gi,
-    /\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S*/gi,
+    // A bare host with a path, but not a file name such as "config.json/x".
+    /\b(?:[a-z0-9-]+\.)+(?!json|js|ts|tsx|jsx|md|mdx|yml|yaml|toml|txt|css|html|xml|sql|sh|py|rb|go|rs|java|kt|swift|php|cs|cpp|h|hpp|vue|svelte|lock)([a-z]{2,24})\/\S*/gi,
 ];
 /** Per-field cap, so the block cannot push a comment past GitHub's size limit. */
 const MAX_PROMPT_FIELD_CHARS = 2000;
+/**
+ * GitHub rejects a comment body over 65,536 characters, so the assembled body
+ * keeps a margin below it. The prose fields are cut first, then the optional
+ * prompt, and only then the rest of the body.
+ */
+const MAX_COMMENT_CHARS = 60_000;
+/** Per-field cap in the main comment body. */
+const MAX_BODY_FIELD_CHARS = 8_000;
 /**
  * A collapsed, copyable prompt for the reader's coding agent. The text is
  * model output, so it is redacted, stripped of links, introduced as a report
@@ -40318,13 +40338,18 @@ function buildFindingBody(finding, options = {}) {
     // would change is withheld rather than committed with a placeholder in it.
     const withheld = !!finding.replacement &&
         (0,redactor/* redactSecrets */.f)(finding.replacement) !== finding.replacement;
+    const cap = (value) => value.length > MAX_BODY_FIELD_CHARS
+        ? `${value.slice(0, MAX_BODY_FIELD_CHARS)}…`
+        : value;
     const safeFinding = {
         ...finding,
-        title: mdSafe((0,redactor/* redactSecrets */.f)(finding.title)),
-        description: mdSafe((0,redactor/* redactSecrets */.f)(finding.description)),
-        impact: mdSafe((0,redactor/* redactSecrets */.f)(finding.impact)),
+        title: cap(mdSafe((0,redactor/* redactSecrets */.f)(finding.title))),
+        description: cap(mdSafe((0,redactor/* redactSecrets */.f)(finding.description))),
+        impact: cap(mdSafe((0,redactor/* redactSecrets */.f)(finding.impact))),
         suggestion: [
-            finding.suggestion ? mdSafe((0,redactor/* redactSecrets */.f)(finding.suggestion)) : '',
+            finding.suggestion
+                ? cap(mdSafe((0,redactor/* redactSecrets */.f)(finding.suggestion)))
+                : '',
             withheld
                 ? '_A suggested code change was withheld because it contained a secret-like value._'
                 : '',
@@ -40336,8 +40361,17 @@ function buildFindingBody(finding, options = {}) {
         replacement: withheld ? undefined : finding.replacement,
     };
     const body = commentIdentityBody(safeFinding);
-    const fixPrompt = options.fixPrompt ? `\n\n${buildFixPrompt(finding)}` : '';
-    return `${body}${fixPrompt}\n\n<!-- ai-review-id:${dedupe_normalizeCommentId(finding)} -->`;
+    const marker = `<!-- ai-review-id:${dedupe_normalizeCommentId(finding)} -->`;
+    const prompt = options.fixPrompt ? `\n\n${buildFixPrompt(finding)}` : '';
+    // The marker always ends the comment, and the whole body stays inside the
+    // limit: the prompt is dropped first, then the prose is cut.
+    const withPrompt = `${body}${prompt}\n\n${marker}`;
+    if (withPrompt.length <= MAX_COMMENT_CHARS)
+        return withPrompt;
+    const withoutPrompt = `${body}\n\n${marker}`;
+    if (withoutPrompt.length <= MAX_COMMENT_CHARS)
+        return withoutPrompt;
+    return `${body.slice(0, MAX_COMMENT_CHARS - marker.length - 4)}\n\n${marker}`;
 }
 const RISK_LABEL = {
     critical: 'Critical',
@@ -42991,6 +43025,13 @@ const MAX_LISTED_FILES = 200;
 const MAX_TOTAL_CHARS = 64 * 1024;
 /** Most `**` segments a glob may use; more could make matching costly. */
 const MAX_GLOBSTARS = 2;
+/**
+ * Most wildcards a glob may use in total, and its longest length. Overlapping
+ * wildcards make a failing match expensive, so a pattern beyond these bounds
+ * is skipped rather than compiled.
+ */
+const MAX_GLOB_WILDCARDS = 8;
+const MAX_GLOB_LENGTH = 200;
 /** Split on commas outside `{...}` brace sets. */
 function splitTopLevel(value) {
     const parts = [];
@@ -43049,6 +43090,30 @@ function globBody(glob) {
 function globToRegExp(glob) {
     return new RegExp(`^${globBody(glob)}$`);
 }
+/**
+ * Remove a trailing comment that is not inside a quoted string, so a quoted
+ * glob in a comment is never read as a rule.
+ */
+function stripComment(value) {
+    let quote = '';
+    for (let i = 0; i < value.length; i++) {
+        const char = value[i];
+        if (quote) {
+            if (char === quote)
+                quote = '';
+            continue;
+        }
+        if (char === '"' || char === "'") {
+            quote = char;
+            continue;
+        }
+        if (char === '#')
+            return value.slice(0, i).trim();
+    }
+    return value.trim();
+}
+/** A value made only of quoted strings, optionally comma separated. */
+const QUOTED_ONLY = /^(?:"[^"]*"|'[^']*')(?:\s*,\s*(?:"[^"]*"|'[^']*'))*$/;
 /** Normalise one `applyTo` entry: quotes, a leading `./` or `/`. */
 function cleanGlob(raw) {
     return raw
@@ -43067,15 +43132,21 @@ function parseApplyTo(lines, index) {
             const item = /^\s*-\s*(.+)$/.exec(lines[i]);
             if (!item)
                 break;
-            raw.push(item[1].replace(/\s+#.*$/, ''));
+            raw.push(stripComment(item[1]));
         }
     }
     else if (rest.startsWith('[')) {
-        raw = splitTopLevel(rest.replace(/^\[|\][^\]]*$/g, ''));
+        raw = splitTopLevel(stripComment(rest).replace(/^\[|\][^\]]*$/g, ''));
     }
     else {
-        const quoted = [...rest.matchAll(/"([^"]*)"|'([^']*)'/g)].map((m) => m[1] ?? m[2]);
-        raw = quoted.length > 0 ? quoted : [rest.replace(/\s+#.*$/, '')];
+        const withoutComment = stripComment(rest);
+        // Quoted strings are only read as separate globs when the value is
+        // nothing but quoted strings; a quoted glob inside a comment is not a
+        // rule.
+        const quoted = QUOTED_ONLY.test(withoutComment)
+            ? [...withoutComment.matchAll(/"([^"]*)"|'([^']*)'/g)].map((m) => m[1] ?? m[2])
+            : [];
+        raw = quoted.length > 0 ? quoted : [withoutComment];
     }
     return raw.flatMap(splitTopLevel).map(cleanGlob).filter(Boolean);
 }
@@ -43088,11 +43159,14 @@ function parseScoped(text) {
     const lines = match[1].split(/\r?\n/);
     const index = lines.findIndex((line) => /^applyTo:/.test(line));
     const exclude = lines.find((line) => /^excludeAgent:/.test(line)) ?? '';
+    // The value is compared exactly: a comment that mentions another agent
+    // must not exclude this file.
+    const excluded = /^excludeAgent:[ \t]*["']?([A-Za-z0-9_-]+)["']?[ \t]*$/.exec(exclude.trim())?.[1] === 'code-review';
     return {
         body: source.slice(match[0].length),
         declared: index >= 0,
         applyTo: index >= 0 ? parseApplyTo(lines, index) : [],
-        excluded: /\bcode-review\b/.test(exclude),
+        excluded,
     };
 }
 async function readBase(opts, baseSha, rel) {
@@ -43150,7 +43224,10 @@ async function loadRepositoryInstructions(opts) {
     const baseSha = opts.baseSha;
     if (!baseSha || !/^[0-9a-f]{40,64}$/i.test(baseSha))
         return empty;
-    const scoped = (await listScoped(opts, baseSha))
+    const listed = await listScoped(opts, baseSha);
+    if (listed.length > MAX_LISTED_FILES)
+        core.warning(`[review] more than ${MAX_LISTED_FILES} instruction files exist; only the first ${MAX_LISTED_FILES} were considered`);
+    const scoped = listed
         .slice(0, MAX_LISTED_FILES)
         .map((name) => `${SCOPED_DIR}/${name}`);
     const blocks = [];
@@ -43166,12 +43243,21 @@ async function loadRepositoryInstructions(opts) {
         }
         if (base.kind !== 'content')
             continue;
+        // `excludeAgent: code-review` keeps a file out of the review, whether
+        // it is one of the fixed files or a scoped one.
+        if (parseScoped(base.text).excluded)
+            continue;
         let body = base.text.replace(/^\uFEFF/, '');
         if (path.startsWith(`${SCOPED_DIR}/`)) {
             const parsed = parseScoped(body);
             if (parsed.excluded)
                 continue;
             const globs = parsed.applyTo.filter((glob) => {
+                const wildcards = (glob.match(/[*?]/g) ?? []).length;
+                if (wildcards > MAX_GLOB_WILDCARDS || glob.length > MAX_GLOB_LENGTH) {
+                    core.warning(`[review] instruction file ${path}: applyTo glob "${glob}" is too complex – ignored`);
+                    return false;
+                }
                 if ((glob.match(/\*\*/g) ?? []).length <= MAX_GLOBSTARS)
                     return true;
                 core.warning(`[review] instruction file ${path}: applyTo glob "${glob}" uses more than ${MAX_GLOBSTARS} ** segments – ignored`);
@@ -43184,11 +43270,6 @@ async function loadRepositoryInstructions(opts) {
             const patterns = globs.map(globToRegExp);
             if (!opts.changedPaths.some((p) => patterns.some((g) => g.test(p))))
                 continue;
-            if (matchedScoped >= MAX_SCOPED_FILES) {
-                core.warning(`[review] more than ${MAX_SCOPED_FILES} instruction files match this change; ${path} and later ones are ignored`);
-                break;
-            }
-            matchedScoped += 1;
             body = parsed.body;
         }
         body = body.trim();
@@ -43198,6 +43279,14 @@ async function loadRepositoryInstructions(opts) {
         if (used + block.length > MAX_TOTAL_CHARS) {
             core.warning(`[review] instruction file ${path} exceeds the remaining instruction budget – ignored`);
             continue;
+        }
+        // The quota counts the blocks that actually enter the prompt.
+        if (path.startsWith(`${SCOPED_DIR}/`)) {
+            if (matchedScoped >= MAX_SCOPED_FILES) {
+                core.warning(`[review] more than ${MAX_SCOPED_FILES} instruction files match this change; ${path} and later ones are ignored`);
+                break;
+            }
+            matchedScoped += 1;
         }
         used += block.length + 2;
         seen.add(body);
@@ -43944,9 +44033,10 @@ const SECRET_RULES = [
         pattern: /(?<![A-Za-z0-9_-])sk-(?:proj-|svcacct-|admin-)?[a-zA-Z0-9_-]{20,80}/g,
         severity: 'critical',
         cwe: 'CWE-798',
-        // Real keys carry a long random run with digits; kebab-case names such
-        // as `sk-react-loading-spinner` do not.
-        accept: (match) => (match.match(/[A-Za-z0-9]{16,}/g) ?? []).some((run) => /\d/.test(run)),
+        // Real keys carry a long run that looks random (a digit, or mixed
+        // case); a kebab-case name such as `sk-react-loading-spinner` has no
+        // such run, and a lower-case word is not a credential.
+        accept: (match) => (match.match(/[A-Za-z0-9]{16,}/g) ?? []).some((run) => /\d/.test(run) || (/[a-z]/.test(run) && /[A-Z]/.test(run))),
     },
     {
         id: 'sec-rule-aws-key',
@@ -43954,8 +44044,8 @@ const SECRET_RULES = [
         pattern: /(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}/g,
         severity: 'critical',
         cwe: 'CWE-798',
-        // AWS documentation keys end in EXAMPLE (`AKIAIOSFODNN7EXAMPLE`).
-        accept: (match) => !match.endsWith('EXAMPLE'),
+        // The published AWS documentation ids, and only those.
+        accept: (match) => !AWS_EXAMPLE_KEYS.has(match),
     },
     {
         id: 'sec-rule-private-key',
@@ -43973,15 +44063,52 @@ const SECRET_RULES = [
     },
 ];
 /**
- * An added line carrying either marker is skipped: `secret-scan: allow`, or the
- * detect-secrets convention `pragma: allowlist secret`. Use it for fixtures and
- * documented placeholders.
+ * The AWS documentation key ids, which are published examples rather than
+ * credentials.
+ */
+const AWS_EXAMPLE_KEYS = new Set([
+    'AKIAIOSFODNN7EXAMPLE',
+    'AKIAI44QH8DHBEXAMPLE',
+    'ASIAIOSFODNN7EXAMPLE',
+    'ABIAIOSFODNN7EXAMPLE',
+    'ACCAIOSFODNN7EXAMPLE',
+]);
+/**
+ * An added line carrying either marker may silence a match: `secret-scan:
+ * allow`, or the detect-secrets convention `pragma: allowlist secret`.
+ *
+ * The marker sits on a line the pull request author controls, so it may only
+ * silence a value that cannot be a real credential: one that names an example,
+ * repeats a character, or repeats a short block (a hand-written test value).
+ * A real credential is none of those, so it is still reported.
  */
 const ALLOW_PRAGMA = /secret-scan:[ \t]*allow\b|pragma:[ \t]*allowlist[ \t]+secret\b/i;
-function ruleMatches(rule, text) {
-    rule.pattern.lastIndex = 0;
-    for (const match of text.matchAll(rule.pattern)) {
-        if (!rule.accept || rule.accept(match[0]))
+const PLACEHOLDER_WORD = /example|placeholder|dummy|fake|notreal|not-real|changeme|redacted|sample/i;
+const PLACEHOLDER_RUN = /([A-Za-z0-9])\1{7,}/;
+/** True when the value cannot be a real credential. */
+function isPlaceholderValue(value) {
+    if (PLACEHOLDER_WORD.test(value))
+        return true;
+    if (PLACEHOLDER_RUN.test(value))
+        return true;
+    // A short block written twice, as in `A1b2C3d4A1b2C3d4`.
+    const seen = new Set();
+    for (let i = 0; i + 4 <= value.length; i++) {
+        const block = value.slice(i, i + 4);
+        if (seen.has(block))
+            return true;
+        seen.add(block);
+    }
+    return false;
+}
+/** A private key header is only a credential when key material follows it. */
+function hasKeyBody(lines, index) {
+    for (let i = index + 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line || !line.startsWith('+'))
+            continue;
+        const body = line.slice(1).replace(/^["']|["'],?$/g, '');
+        if (/^[A-Za-z0-9+/]{32,}={0,2}$/.test(body))
             return true;
     }
     return false;
@@ -43996,7 +44123,7 @@ function scanSecretsInDiff(changedFiles) {
             continue;
         const lines = file.patch.split('\n');
         let currentLine = 1;
-        for (const rawLine of lines) {
+        for (const [index, rawLine] of lines.entries()) {
             // In unified diff: @@ -a,b +c,d @@
             const hunkMatch = rawLine.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
             if (hunkMatch) {
@@ -44006,10 +44133,17 @@ function scanSecretsInDiff(changedFiles) {
             // Only scan added lines in diff ('+')
             if (rawLine.startsWith('+') && !rawLine.startsWith('+++')) {
                 const addedContent = rawLine.slice(1);
-                for (const rule of ALLOW_PRAGMA.test(addedContent)
-                    ? []
-                    : SECRET_RULES) {
-                    if (ruleMatches(rule, addedContent)) {
+                const allowPragma = ALLOW_PRAGMA.test(addedContent);
+                for (const rule of SECRET_RULES) {
+                    rule.pattern.lastIndex = 0;
+                    for (const match of addedContent.matchAll(rule.pattern)) {
+                        const value = match[0];
+                        if (rule.accept && !rule.accept(value))
+                            continue;
+                        if (allowPragma && isPlaceholderValue(value))
+                            continue;
+                        if (rule.id === 'sec-rule-private-key' && !hasKeyBody(lines, index))
+                            continue;
                         const finding = {
                             id: `${rule.id}-${file.filename}-${currentLine}`,
                             fingerprint: (0,fingerprint/* computeFindingFingerprint */.V)({
@@ -44298,10 +44432,10 @@ async function runPrReviewAction() {
             core.notice(emptyMessage);
         // The secret scan is independent of the file filters, so a docs-only or
         // fully excluded pull request is still scanned and blocked on a match.
-        const secrets = legacyOptions.secretScan
-            ? scanReviewSecrets(allPrFiles)
-            : [];
-        if (secrets.length > 0) {
+        // The result is published even when nothing matched, so an earlier
+        // secret-only block is withdrawn once the credential is gone.
+        if (legacyOptions.secretScan) {
+            const secrets = scanReviewSecrets(allPrFiles);
             const result = {
                 findings: [],
                 summary: 'No files were selected for the model review; only the deterministic secret scan ran.',
@@ -44311,12 +44445,44 @@ async function runPrReviewAction() {
                 reviewStatus: 'complete',
             };
             mergeSecretFindings(result, secrets);
-            await publishReview(octokit, {
-                ...publishBase,
+            const filesExcluded = Math.max(filesTotal - 0, 0);
+            await withReviewReportOutput(async () => {
+                await publishReview(octokit, {
+                    ...publishBase,
+                    result,
+                    filesExcluded,
+                    filesSelected: 0,
+                    // Nothing was reviewed by the model, so no file was.
+                    filesUnreviewed: filtered.length,
+                });
+                trackPhase('publish', 'secret scan published', {
+                    enabled: trackEnabled,
+                });
+            }, () => serializeReviewReport(buildReviewReport({
                 result,
-                filesExcluded: filesTotal,
+                filesTotal,
+                filesExcluded,
+                fileCoverage: buildFileCoverage({
+                    files: allPrFiles,
+                    filteredPaths: filtered,
+                    selectedPaths: [],
+                    reviewedPaths: [],
+                    failedGroups: 0,
+                }),
+            })), (serialized) => core.setOutput('review-report', serialized));
+            await core.summary
+                .addRaw(buildJobSummary({
+                model: llmConfig.model,
+                durationMs: external_node_perf_hooks_.performance.now() - reviewStarted,
+                filesReviewed: [],
+                filesTotal,
+                filesExcluded,
                 filesSelected: 0,
-            });
+                result,
+                toolFindings: [],
+                diagnostics: result.diagnostics,
+            }))
+                .write();
             core.setOutput('review-summary', `secret scan only: ${result.findings.length} credential finding(s); no files were selected for review`);
             return;
         }

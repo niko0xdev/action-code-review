@@ -59,6 +59,34 @@ describe('fix prompt block', () => {
 		expect(body).not.toContain(token);
 	});
 
+	it('keeps the whole comment inside the size limit and the marker last', () => {
+		const huge = 'x'.repeat(30_000);
+		const body = buildFindingBody(
+			{
+				...finding,
+				title: huge,
+				description: huge,
+				impact: huge,
+				suggestion: huge,
+			},
+			{ fixPrompt: true }
+		);
+		expect(body.length).toBeLessThanOrEqual(65_536);
+		expect(body.trimEnd()).toMatch(/<!-- ai-review-id:[a-f0-9]{12} -->$/);
+	});
+
+	it('keeps ordinary prose that mentions a scheme name', () => {
+		const body = buildFindingBody(
+			{
+				...finding,
+				description: 'The rows come back as e.g. data: rows are missing.',
+			},
+			{ fixPrompt: true }
+		);
+		expect(body).toContain('data: rows');
+		expect(body).not.toContain('[link removed] rows');
+	});
+
 	it('threads the option through the review payload', () => {
 		const payload = buildReviewPayload([finding], 'head', { fixPrompts: true });
 		expect(payload.comments[0].body).toContain('Prompt for your coding agent');
