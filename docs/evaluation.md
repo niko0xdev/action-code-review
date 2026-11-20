@@ -304,3 +304,7 @@ tests:
 
 Feed the pass or fail results back through `scoring.ts` to track the same
 metrics over time.
+
+## Offline replay command
+
+Run `pnpm --silent benchmark:replay tests/eval/fixtures/replay/smoke.json` to replay a synthetic clean change through the production finding parser and review runner. Version 1 requires a dataset revision and unique cases with a unified patch for `src/example.ts`, a captured model reply, and adjudicated new-side line numbers in `expected`. Missing or incomplete captures fail the command. The command uses no provider or credentials. ReviewBench, AACR-Bench, and Martian are not yet supported by adapters; this smoke fixture is not a public benchmark score.

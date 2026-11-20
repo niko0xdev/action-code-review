@@ -1,0 +1,12 @@
+{
+	"version": 1,
+	"revision": "synthetic-smoke-v1",
+	"cases": [
+		{
+			"id": "clean-constant",
+			"patch": "@@ -0,0 +1 @@\n+export const size = 1;",
+			"reply": "{\"findings\":[],\"summary\":\"Clean\",\"risk\":\"none\"}",
+			"expected": []
+		}
+	]
+}
