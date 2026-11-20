@@ -17,7 +17,9 @@ export function createSystemPrompt(
 	if (diagram) {
 		prompt.push(
 			'Also return a "diagram" field: a short Mermaid sequenceDiagram (plain text starting with "sequenceDiagram", at most 30 lines, no code fences) showing the main runtime interaction this change adds or modifies.',
-			'Use only participant or actor declarations, "A->>B: text" and "A-->>B: text" messages, "Note over A: text", alt/else/opt/loop/end blocks, and autonumber; no HTML, links, click or init directives, comments, backticks, semicolons, or URLs.',
+			'Allowed statements, one per line: "participant P as label", "actor P as label", "A->>B: text", "A-->>B: text", "A->B: text", "A-->B: text", "A->>+B: text" (activates B), "B-->>-A: text" (deactivates B, only after it was activated), "Note over A: text", "Note over A, B: text", "Note left of A: text", "Note right of A: text", "alt label", "else label", "opt label", "loop label", "end", and "autonumber".',
+			'Participant names match [A-Za-z_][A-Za-z0-9_]* and are not Mermaid keywords such as end, alt, opt, loop, note, or title; put a name with dots, hyphens, or spaces in the label of a participant P as label declaration.',
+			'Text and labels must not contain a semicolon, a backtick, a backslash, %%, a < followed by a letter or slash, an & followed by a letter or #, a URL, or HTML; never use click, link, links, or %%{init}%% directives or comments.',
 			'Return an empty string when the change has no meaningful interaction flow, and never repeat the diagram in the description.'
 		);
 	}

@@ -52,7 +52,8 @@ describe('validateSequenceDiagram', () => {
 			].join('\n')
 		);
 		expect(result).toBeDefined();
-		expect(result).toContain('update PR #171');
+		// Mermaid reads a bare `#` as the start of a comment; the entity keeps it.
+		expect(result).toContain('update PR #35;171');
 		expect(result).toContain('title & body are ready');
 		expect(result).toContain('50% faster');
 		expect(result).toContain('size < 64 KiB');
@@ -77,6 +78,96 @@ describe('validateSequenceDiagram', () => {
 		expect(result).toBeDefined();
 		expect(result).toContain('participant P1 as end');
 		expect(result).toContain('P1->>B: x');
+	});
+
+	it('keeps "of" in left and right note placements', () => {
+		const result = validateSequenceDiagram(
+			['sequenceDiagram', 'Note left of A: x', 'note RIGHT OF B: y'].join('\n')
+		);
+		expect(result).toBe(
+			'sequenceDiagram\n    Note left of A: x\n    Note right of B: y'
+		);
+	});
+
+	it.each(['End', 'OPT', 'Loop', 'option', 'par_over', 'title', 'off'])(
+		'rewrites %s, which the case-insensitive Mermaid lexer reads as a keyword',
+		(name) => {
+			const result = validateSequenceDiagram(
+				['sequenceDiagram', `${name}->>B: x`].join('\n')
+			);
+			expect(result).toContain(`participant P1 as ${name}`);
+			expect(result).toContain('P1->>B: x');
+		}
+	);
+
+	it('encodes # in labels and block text as well as messages', () => {
+		const result = validateSequenceDiagram(
+			[
+				'sequenceDiagram',
+				'participant gh as GitHub #1',
+				'alt PR #2',
+				'gh->>gh: x',
+				'else issue #3',
+				'Note over gh: see #4',
+				'end',
+			].join('\n')
+		);
+		expect(result).toContain('participant gh as GitHub #35;1');
+		expect(result).toContain('alt PR #35;2');
+		expect(result).toContain('else issue #35;3');
+		expect(result).toContain('Note over gh: see #35;4');
+	});
+
+	it('accepts a realistic model answer with activations and blank lines', () => {
+		const check = describeSequenceDiagram(
+			[
+				'```mermaid',
+				'sequenceDiagram',
+				'    autonumber',
+				'    actor Dev as Developer',
+				'    participant gh as GitHub',
+				'    participant pr-content as pr-content action',
+				'',
+				'    Dev->>gh: push to PR #171',
+				'    gh->>+pr-content: pull_request (synchronize)',
+				'    pr-content->>pr-content: build prompt (diff < 2,000 chars/file)',
+				'    alt diagram enabled & valid',
+				'        pr-content-->>gh: title & body + diagram',
+				'    else rejected',
+				'        Note right of pr-content: section omitted (logged)',
+				'    end',
+				'    pr-content-->>-gh: done, 50% fewer edits',
+				'```',
+			].join('\n')
+		);
+		expect(check.error).toBeUndefined();
+		expect(check.diagram).toContain('participant P1 as pr-content action');
+		expect(check.diagram).toContain('gh->>+P1: pull_request (synchronize)');
+		expect(check.diagram).toContain('P1-->>-gh: done, 50% fewer edits');
+	});
+
+	it('rejects a deactivation of a participant that is not active', () => {
+		const check = describeSequenceDiagram(
+			['sequenceDiagram', 'A->>B: hi', '', 'B-->>-A: done'].join('\n')
+		);
+		expect(check.diagram).toBeUndefined();
+		expect(check.error).toContain('line 4');
+		expect(check.error).toContain('not active');
+	});
+
+	it('numbers lines as they appear in the diagram, blank lines included', () => {
+		const check = describeSequenceDiagram(
+			[
+				'```mermaid',
+				'sequenceDiagram',
+				'',
+				'A->>B: hi',
+				'',
+				'A->>B: <b>x</b>',
+				'```',
+			].join('\n')
+		);
+		expect(check.error).toContain('line 5');
 	});
 
 	it('reports the offending line and the reason', () => {
@@ -121,6 +212,11 @@ describe('validateSequenceDiagram', () => {
 		['URL', 'sequenceDiagram\nA->>B: see https://evil.example'],
 		['bare www', 'sequenceDiagram\nA->>B: see www.evil.example'],
 		['javascript scheme', 'sequenceDiagram\nA->>B: javascript:alert(1)'],
+		[
+			'legacy entity without semicolon',
+			'sequenceDiagram\nA->>B: &ltimg src=x&gt',
+		],
+		['numeric entity prefix', 'sequenceDiagram\nA->>B: &#60'],
 		['statement separator', 'sequenceDiagram\nA->>B: hi; click A call x()'],
 		[
 			'mermaid participant metadata',

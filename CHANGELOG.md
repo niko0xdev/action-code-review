@@ -22,6 +22,7 @@ Consumer-facing releases are listed first. Earlier development notes are retaine
 
 ### Fixed
 
+- The `pr-content` sequence diagram now renders in Mermaid in more cases: left and right notes keep `of`, participant names that match a Mermaid keyword in any case (`End`, `OPT`, `title`) are aliased, `#` is written as `#35;` instead of truncating the line as a comment, and a deactivation of a participant that is not active is rejected rather than published as a broken diagram. Text that starts an HTML entity (`&lt`, `&#60`) is rejected, rejection logs give the line number as it appears in the diagram, and the prompt states the exact accepted grammar and banned characters when the switch is on.
 - The secret scanner no longer counts a `\ No newline at end of file` marker as a line, which shifted later matches by one and made the quality gate reject them.
 - Opt-in `fix-prompts` input: each inline finding comment gains a collapsed "Prompt for your coding agent" block with the path, line, problem, impact, and suggested fix. The text is redacted, has links removed, is framed as a report rather than commands, and is fenced so it cannot close the block. Comment identity and duplicate suppression are unchanged.
 
