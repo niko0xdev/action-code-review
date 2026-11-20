@@ -594,3 +594,7 @@ The existing `security_conclusion` JSON output may include an additive `refutati
 ## Optional TypeScript import hints
 
 Set `code-graph: 'true'` to include syntactic relative-import hints between selected TypeScript files. The default is `false`. The action reads regular blobs at the exact PR head from the local Git object store; if that commit is missing, review continues without hints. Hints never displace diff evidence or count towards reviewed-file coverage. This does not resolve packages or infer callers.
+
+## Maintainer follow-ups
+
+`followup-mention` defaults to empty (disabled). To opt in, run the action on `pull_request_review_comment` with type `created`, set an explicit mention such as `@reviewer`, and serialise deliveries per pull request. Do not check out or execute pull request code in this workflow. Use a trusted publisher token that can verify its own login and write pull request comments. Only direct replies from verified human collaborators are considered. Use `@reviewer explain` or `@reviewer suggest-fix`; free-form questions are not sent to the provider. The bounded response uses current diff evidence and no tools; unverifiable or stale requests are skipped.

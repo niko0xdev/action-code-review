@@ -100,6 +100,10 @@ inputs:
     description: 'Opt-in TypeScript import hints from selected files at the checked-out PR head.'
     required: false
     default: 'false'
+  followup-mention:
+    description: 'Opt-in mention for maintainer follow-ups to existing review findings.'
+    required: false
+    default: ''
   incremental-review:
     description: 'Opt-in: keep a ledger of the open findings in the summary comment, and on a new push review only the files that changed since the last reviewed head (plus the files that still carry open findings). The summary then reports what is new, still open, fixed, and regressed.'
     required: false
@@ -219,7 +223,7 @@ runs:
       with:
         node-version: '24'
     - name: Setup harness loop
-      if: inputs.pi-binary-path == ''
+      if: inputs.pi-binary-path == '' && github.event_name != 'pull_request_review_comment'
       shell: bash
       run: |
         if ! command -v pi >/dev/null 2>&1 || ! pi --version 2>/dev/null | grep -Eq '^1\.5\.2([^0-9]|$)'; then
@@ -260,6 +264,7 @@ runs:
         INPUT_REVIEW-FEEDBACK: ${{ inputs.review-feedback }}
         INPUT_SUPPRESS-FEEDBACK-INLINE: ${{ inputs.suppress-feedback-inline }}
         INPUT_CODE-GRAPH: ${{ inputs.code-graph }}
+        INPUT_FOLLOWUP-MENTION: ${{ inputs.followup-mention }}
         INPUT_INCREMENTAL-REVIEW: ${{ inputs.incremental-review }}
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_SECURITY-PROFILE: ${{ inputs.security-profile }}
