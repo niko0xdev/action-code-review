@@ -164,9 +164,22 @@ describe('nextLedger', () => {
 				},
 			],
 		};
-		const next = nextLedger(previous, [], 'new');
+		const carried = nextLedger(
+			previous,
+			diffLedger(previous, [], new Set()),
+			'skipped'
+		);
+		expect(carried.findings).toEqual(previous.findings);
+		const next = nextLedger(
+			carried,
+			diffLedger(carried, [], new Set([finding().path])),
+			'new'
+		);
 		expect(next.head).toBe('new');
 		expect(next.findings.map((f) => f.status)).toEqual(['fixed']);
+		const later = nextLedger(next, diffLedger(next, [], new Set()), 'later');
+		expect(later.findings).toEqual(next.findings);
+		expect(diffLedger(later, [finding()], new Set()).regressed).toHaveLength(1);
 	});
 });
 

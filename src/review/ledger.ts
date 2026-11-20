@@ -237,20 +237,22 @@ export function diffLedger(
  */
 export function nextLedger(
 	previous: ReviewLedger | undefined,
-	current: Finding[],
+	delta: LedgerDelta,
 	head: string
 ): ReviewLedger {
+	const reopened = new Set(delta.regressed.map((finding) => finding.id));
 	const fixed = (previous?.findings ?? []).filter(
-		(finding) =>
-			finding.status === 'open' &&
-			!current.some((entry) => sameFinding(finding, entry))
+		(finding) => finding.status === 'fixed' && !reopened.has(finding.id)
 	);
 	return {
 		v: LEDGER_VERSION,
 		head,
 		findings: [
-			...ledgerEntries(current),
-			...fixed.map((f) => ({ ...f, status: 'fixed' as const })),
+			...delta.new,
+			...delta.stillOpen,
+			...delta.regressed,
+			...fixed,
+			...delta.fixed.map((f) => ({ ...f, status: 'fixed' as const })),
 		],
 	};
 }

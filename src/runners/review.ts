@@ -41,7 +41,6 @@ import {
 	reviewSummaryText,
 } from '../review/execution.js';
 import { loadRepositoryInstructions } from '../review/instructions.js';
-import { assessLinkedIssues } from '../review/linked-issues.js';
 import {
 	type ReviewLedger,
 	decodeLedger,
@@ -49,6 +48,7 @@ import {
 	encodeLedger,
 	nextLedger,
 } from '../review/ledger.js';
+import { assessLinkedIssues } from '../review/linked-issues.js';
 import {
 	type PreMergeCheckMode,
 	buildPreMergeChecksPrompt,
@@ -800,11 +800,11 @@ export async function runPrReviewAction(): Promise<void> {
 			const delta = diffLedger(
 				previousLedger,
 				result.findings,
-				new Set(result.filesReviewed)
+				new Set(result.reviewStatus === 'complete' ? result.filesReviewed : [])
 			);
 			const next = nextLedger(
 				previousLedger,
-				result.findings,
+				delta,
 				reviewContext.pullRequest.headSha
 			);
 			result.ledger = {

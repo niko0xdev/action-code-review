@@ -93,6 +93,8 @@ export interface LinkedIssueAssessment {
 	title: string;
 	verdict: 'satisfied' | 'partially satisfied' | 'not satisfied' | 'unclear';
 	reasoning: string;
+}
+
 /**
  * What the ledger knows about the findings of a run: the head it was produced
  * from, the payload stored in the summary comment, and how the findings
