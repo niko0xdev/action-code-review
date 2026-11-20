@@ -194,6 +194,16 @@ pnpm lint          # biome
 pnpm build         # pinned ncc (devDependency) → pr-*/dist/index.js; CI diffs the result
 ```
 
+## Incremental review (opt-in)
+
+Input `incremental-review` (default `'false'`; see `src/review/ledger.ts`).
+The action stores the findings of the last run in the sticky summary comment
+and, on a new push, re-reviews only the files that changed since the last
+reviewed head, plus the files that still carry open findings. The summary
+reports what is new, still open, fixed, and regressed; `review-report` carries
+the same counts. The comparison uses GitHub's compare endpoint, so a force-push
+or an unknown commit falls back to a full review.
+
 ## Scorecard context (opt-in)
 
 Input `scorecard-context` (default `'false'`; see `src/context/scorecard.ts`). When

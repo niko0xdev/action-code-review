@@ -20,6 +20,14 @@ import {
 } from './comments.js';
 import { hasWritePermission } from './permissions.js';
 
+/** The hidden ledger payload in the sticky summary comment. */
+const LEDGER_MARKER = /<!--\s*ai-review-ledger:([A-Za-z0-9+/=]+)\s*-->/;
+
+/** The payload as it is written into the comment. */
+function ledgerMarker(payload: string): string {
+	return `<!-- ai-review-ledger:${payload} -->`;
+}
+
 export { buildFindingBody, buildSummaryBody } from './comments.js';
 
 function isPermissionError(error: unknown): boolean {
@@ -72,6 +80,12 @@ export interface PublisherOctokit extends OctokitLike {
 			listCommentsForReview?: (
 				args: Record<string, unknown>
 			) => Promise<{ data: ReviewCommentRecord[] }>;
+			compareCommits?: (args: Record<string, unknown>) => Promise<{
+				data: {
+					status?: string;
+					files?: Array<{ filename?: string }>;
+				};
+			}>;
 			listThreads?: (args: {
 				owner: string;
 				repo: string;
@@ -425,6 +439,11 @@ export async function publishReview(
 		summaryBody = `${buildSummaryBody({ ...summaryOptions, linkedIssues: undefined })}${suffix}`;
 	}
 	if (params.stickySummary) {
+		// The ledger travels in the sticky comment, so the next run can read it.
+		const ledgerPayload = result.ledger?.payload;
+		const summaryWithLedger = ledgerPayload
+			? `${summaryBody}\n\n${ledgerMarker(ledgerPayload)}`
+			: summaryBody;
 		const existing = await findStickyComment(
 			octokit,
 			owner,
@@ -437,14 +456,14 @@ export async function publishReview(
 				owner,
 				repo,
 				comment_id: existing,
-				body: summaryBody,
+				body: summaryWithLedger,
 			});
 		} else {
 			await octokit.rest.issues.createComment({
 				owner,
 				repo,
 				issue_number: prNumber,
-				body: summaryBody,
+				body: summaryWithLedger,
 			});
 		}
 	} else {
@@ -882,6 +901,45 @@ async function findStickyComment(
 		}
 	} catch {}
 	return null;
+}
+
+/**
+ * The ledger stored in the sticky summary comment of a previous run, if any.
+ * The comment is only read when it carries this action's marker and is
+ * authored by this token, so another comment cannot steer the review.
+ */
+export async function readStoredLedger(
+	octokit: PublisherOctokit,
+	owner: string,
+	repo: string,
+	prNumber: number
+): Promise<string | undefined> {
+	const listComments = octokit.rest.issues.listComments as
+		| ((args: Record<string, unknown>) => Promise<{ data: unknown }>)
+		| undefined;
+	if (!listComments) return undefined;
+	const marker = stickySummaryMarker(owner, repo, prNumber);
+	try {
+		const comments = await listAll(
+			listComments as (args: Record<string, unknown>) => Promise<{
+				data: Array<{
+					id: number;
+					body?: string | null;
+					user?: { login?: string } | null;
+				}>;
+			}>,
+			{ owner, repo, issue_number: prNumber }
+		);
+		const selfLogin = await resolveSelfLogin(octokit);
+		for (const comment of comments) {
+			if (typeof comment.body !== 'string') continue;
+			if (!comment.body.includes(marker)) continue;
+			if (!isTrustedAuthor(comment.user?.login, selfLogin)) continue;
+			const match = LEDGER_MARKER.exec(comment.body);
+			if (match) return match[1];
+		}
+	} catch {}
+	return undefined;
 }
 
 /**

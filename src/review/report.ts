@@ -131,6 +131,15 @@ export interface ReviewReport {
 	 * settings refused it. Omitted when the publisher never decided.
 	 */
 	approval?: ApprovalOutcome;
+	/** What changed since the previous review, when the ledger is on. */
+	ledger?: {
+		head: string;
+		new: number;
+		stillOpen: number;
+		fixed: number;
+		regressed: number;
+		incremental: boolean;
+	};
 }
 
 export interface BuildReviewReportInput {
@@ -267,6 +276,16 @@ export function buildReviewReport(input: BuildReviewReportInput): ReviewReport {
 		};
 	}
 	if (result.approval) report.approval = { ...result.approval };
+	if (result.ledger) {
+		report.ledger = {
+			head: result.ledger.head,
+			new: result.ledger.new,
+			stillOpen: result.ledger.stillOpen,
+			fixed: result.ledger.fixed,
+			regressed: result.ledger.regressed,
+			incremental: result.ledger.incremental,
+		};
+	}
 	return report;
 }
 

@@ -12,6 +12,7 @@ import type {
 	Finding,
 	LinkedIssueAssessment,
 	ReviewDiagnostics,
+	ReviewLedgerState,
 	RiskLevel,
 	RuleCoverage,
 	ToolFinding,
@@ -198,6 +199,7 @@ type SummaryResult = {
 	reviewStatus?: 'complete' | 'incomplete' | 'failed' | 'stale';
 	linkedIssues?: LinkedIssueAssessment[];
 	approval?: ApprovalOutcome;
+	ledger?: ReviewLedgerState;
 };
 
 function hasBlockingFindings(
@@ -431,12 +433,24 @@ export function buildSummaryBody(result: SummaryResult): string {
 					? '❌ **Changes requested** — critical findings block merge.'
 					: `❌ **Changes requested** — ${findings.filter((finding) => finding.severity !== 'low').length || result.counts.critical + result.counts.high + result.counts.medium} blocking finding(s). Please address before merge.`
 				: describeApprovalDecision(result);
+	const ledger = result.ledger;
+	const ledgerSection = ledger
+		? [
+				'',
+				`**Findings since the last review:** ${ledger.new} new, ${ledger.stillOpen} still open, ${ledger.fixed} fixed, ${ledger.regressed} regressed${
+					ledger.incremental
+						? ' (only the changed files were reviewed again)'
+						: ''
+				}`,
+			]
+		: [];
 	const footer = footerComment(
 		result.model ?? process.env.OPENAI_API_MODEL ?? 'unknown'
 	);
 	const lines = [
 		'# ✨ AI Code Review',
 		'',
+		...ledgerSection,
 		formatDecisionBanner(
 			result.risk,
 			findings,

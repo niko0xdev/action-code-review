@@ -43,6 +43,7 @@ jobs:
           # security-skills: auto      # opt-in, default 'all'; see below
           # repository-instructions: 'true'  # opt-in: AGENTS.md and .github/instructions from the base branch
           # secret-scan: 'true'        # opt-in: deterministic credential scan in every review
+          # incremental-review: 'true'  # opt-in: keep a ledger of open findings and review only what changed
           # fix-prompts: 'true'        # opt-in: copyable prompt for your coding agent per finding
 ```
 

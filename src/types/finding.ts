@@ -93,6 +93,26 @@ export interface LinkedIssueAssessment {
 	title: string;
 	verdict: 'satisfied' | 'partially satisfied' | 'not satisfied' | 'unclear';
 	reasoning: string;
+/**
+ * What the ledger knows about the findings of a run: the head it was produced
+ * from, the payload stored in the summary comment, and how the findings
+ * changed since the previous run.
+ */
+export interface ReviewLedgerState {
+	/** Head commit the ledger was produced from. */
+	head: string;
+	/** Base64 payload stored in the sticky summary comment. */
+	payload: string;
+	/** Findings the previous run did not know about. */
+	new: number;
+	/** Findings that are still open. */
+	stillOpen: number;
+	/** Findings that the previous run had open and this run no longer has. */
+	fixed: number;
+	/** Findings that had been fixed and are open again. */
+	regressed: number;
+	/** True when only the changed files were reviewed again. */
+	incremental: boolean;
 }
 
 export interface ReviewResult {
@@ -120,6 +140,8 @@ export interface ReviewResult {
 	reviewStatus?: 'complete' | 'incomplete' | 'failed' | 'stale';
 	/** Provider-reported Pi usage aggregated across review-group processes. */
 	usage?: ReviewUsageMetrics;
+	/** State carried to the next run, when the incremental review is on. */
+	ledger?: ReviewLedgerState;
 	/**
 	 * Real outcome of the auto-approval attempt, recorded by the publisher.
 	 * Absent means the publisher never got far enough to decide.

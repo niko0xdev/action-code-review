@@ -14,9 +14,11 @@ import { runPrelint } from '../context/prelint.js';
 import { loadScorecardContext } from '../context/scorecard.js';
 import { trackPhase } from '../github/progress.js';
 import {
+	type PublisherOctokit,
 	buildJobSummary,
 	publishReview,
 	publishSkipCheckRun,
+	readStoredLedger,
 } from '../github/review.js';
 import {
 	DEFAULT_MAX_ASSISTANT_BYTES,
@@ -39,6 +41,13 @@ import {
 } from '../review/execution.js';
 import { loadRepositoryInstructions } from '../review/instructions.js';
 import { assessLinkedIssues } from '../review/linked-issues.js';
+import {
+	type ReviewLedger,
+	decodeLedger,
+	diffLedger,
+	encodeLedger,
+	nextLedger,
+} from '../review/ledger.js';
 import type { BaseFileData } from '../review/prompt-file.js';
 import { loadReviewPromptFile } from '../review/prompt-file.js';
 import {
@@ -53,6 +62,7 @@ import {
 } from '../review/secret-prepass.js';
 import { applyVerifyPass, sanitiseVerifyReason } from '../review/verify.js';
 import { classifyPrRisk } from '../security/classifier/risk-classifier.js';
+import { redactSecrets } from '../security/redaction/redactor.js';
 import { selectReviewSecuritySkills } from '../security/skills/auto-select.js';
 import {
 	parseBoundedFloat,
@@ -62,6 +72,44 @@ import {
 import { profilesWithSkills } from '../skills/registry.js';
 import type { ReviewResult, Severity } from '../types/finding.js';
 import { toPublisherOctokit } from './octokit.js';
+
+/**
+ * The files that changed between the last reviewed head and the current one.
+ * Returns undefined when the comparison is not possible (a force-push, an
+ * unknown commit, or a failed request), which makes the caller fall back to a
+ * full review.
+ */
+async function changedPathsSince(
+	octokit: PublisherOctokit,
+	repo: { owner: string; repo: string },
+	baseSha: string,
+	headSha: string
+): Promise<string[] | undefined> {
+	const compare = octokit.rest.pulls.compareCommits;
+	if (!compare) return undefined;
+	if (
+		!/^[0-9a-f]{40,64}$/i.test(baseSha) ||
+		!/^[0-9a-f]{40,64}$/i.test(headSha)
+	)
+		return undefined;
+	try {
+		const { data } = await compare({
+			owner: repo.owner,
+			repo: repo.repo,
+			basehead: `${baseSha}...${headSha}`,
+		});
+		if (data.status !== 'ahead' && data.status !== 'identical')
+			return undefined;
+		return (data.files ?? [])
+			.map((file) => file.filename)
+			.filter((name): name is string => typeof name === 'string');
+	} catch (error) {
+		core.warning(
+			`[ledger] could not compare ${baseSha.slice(0, 8)} with ${headSha.slice(0, 8)}: ${redactSecrets(error instanceof Error ? error.message : String(error)).slice(0, 200)}`
+		);
+		return undefined;
+	}
+}
 
 /**
  * Report a completed, neutral check for a run that reviewed nothing, so a
@@ -151,6 +199,7 @@ export async function runPrReviewAction(): Promise<void> {
 		'check-run': core.getInput('check-run'),
 		'secret-scan': core.getInput('secret-scan'),
 		'fix-prompts': core.getInput('fix-prompts'),
+		'incremental-review': core.getInput('incremental-review'),
 		'security-skills': core.getInput('security-skills'),
 	});
 	const llmConfig = resolveEngineConfig(legacyOptions);
@@ -224,6 +273,40 @@ export async function runPrReviewAction(): Promise<void> {
 				? Math.min(3, maxFiles)
 				: maxFiles
 	);
+	// Incremental review: re-review what changed since the last reviewed head,
+	// plus the files that still carry open findings, so a fix can be seen.
+	let previousLedger: ReviewLedger | undefined;
+	let incremental = false;
+	if (legacyOptions.incrementalReview) {
+		const stored = await readStoredLedger(
+			octokit,
+			repoInfo.owner,
+			repoInfo.repo,
+			prNumber
+		);
+		previousLedger = stored ? decodeLedger(stored) : undefined;
+		if (previousLedger) {
+			const changed = await changedPathsSince(
+				octokit,
+				repoInfo,
+				previousLedger.head,
+				reviewContext.pullRequest.headSha
+			);
+			if (changed) {
+				const open = previousLedger.findings
+					.filter((finding) => finding.status === 'open')
+					.map((finding) => finding.path);
+				const scope = new Set([...changed, ...open]);
+				reviewContext.diff.files = reviewContext.diff.files.filter((file) =>
+					scope.has(file.filename)
+				);
+				incremental = true;
+				core.info(
+					`[ledger] incremental review: ${changed.length} file(s) changed since ${previousLedger.head.slice(0, 8)}, ${open.length} with open findings`
+				);
+			}
+		}
+	}
 	const filesSelected = reviewContext.diff.files.length;
 	// Publication settings shared by the model review and the secret-only path.
 	const publishBase = {
@@ -616,6 +699,27 @@ export async function runPrReviewAction(): Promise<void> {
 			result,
 			filesSelected,
 		});
+		if (legacyOptions.incrementalReview) {
+			const delta = diffLedger(
+				previousLedger,
+				result.findings,
+				new Set(result.filesReviewed)
+			);
+			const next = nextLedger(
+				previousLedger,
+				result.findings,
+				reviewContext.pullRequest.headSha
+			);
+			result.ledger = {
+				head: reviewContext.pullRequest.headSha,
+				payload: encodeLedger(next),
+				new: delta.new.length,
+				stillOpen: delta.stillOpen.length,
+				fixed: delta.fixed.length,
+				regressed: delta.regressed.length,
+				incremental,
+			};
+		}
 		await withReviewReportOutput(
 			async () => {
 				await publishReview(octokit, {
