@@ -61,6 +61,24 @@ describe('describeReviewExecution', () => {
 		});
 		expect(execution.complete).toBe(false);
 	});
+
+	it('treats a missing status as incomplete at full file count', () => {
+		const execution = describeReviewExecution({
+			result: result(),
+			filesSelected: 2,
+		});
+		expect(execution.complete).toBe(false);
+		expect(execution.status).toBe('incomplete');
+	});
+
+	it('never reports an unknown status as a success', () => {
+		const execution = describeReviewExecution({
+			result: result({ reviewStatus: 'unknown' as never }),
+			filesSelected: 2,
+		});
+		expect(execution.complete).toBe(false);
+		expect(execution.status).toBe('incomplete');
+	});
 });
 
 describe('reviewSummaryText', () => {
@@ -130,6 +148,22 @@ describe('incompleteReviewFailure', () => {
 			filesSelected: 3,
 		});
 		expect(message).toContain('status stale');
+	});
+
+	it('returns a failure reason when the status is missing', () => {
+		const message = incompleteReviewFailure({
+			result: result(),
+			filesSelected: 2,
+		});
+		expect(message).toContain('status incomplete');
+	});
+
+	it('returns a failure reason for an unknown status', () => {
+		const message = incompleteReviewFailure({
+			result: result({ reviewStatus: 'unknown' as never }),
+			filesSelected: 2,
+		});
+		expect(message).toContain('status incomplete');
 	});
 });
 
