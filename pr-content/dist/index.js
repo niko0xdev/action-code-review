@@ -241541,9 +241541,21 @@ function buildFileCoverage(input, maxChars = MAX_FILE_COVERAGE_CHARS) {
  * the opt-in raw harness dump.
  */
 
+/**
+ * Normalise the producer-declared status. A missing or unrecognised status is
+ * treated as incomplete, matching `deriveStatus` in the report builder: an
+ * omitted field must never read as a clean review.
+ */
+function normaliseStatus(status) {
+    if (status === 'failed' || status === 'stale' || status === 'incomplete')
+        return status;
+    if (status === 'complete')
+        return 'complete';
+    return 'incomplete';
+}
 function execution_describeReviewExecution(input) {
     const failedGroups = input.result.diagnostics?.failedGroups ?? 0;
-    const status = input.result.reviewStatus ?? 'complete';
+    const status = normaliseStatus(input.result.reviewStatus);
     const filesReviewed = input.result.filesReviewed.length;
     const reportedNotAnalyzed = input.result.diagnostics?.filesNotAnalyzed ?? 0;
     const filesNotAnalyzed = Math.max(reportedNotAnalyzed, input.filesSelected - filesReviewed);
@@ -244081,13 +244093,6 @@ async function runPrReviewAction() {
         // serialized copy; the engine result is not mutated. Emission is
         // best effort: if building or writing the report also fails, the
         // publish error stays primary. See docs/v1-interface-contract.md.
-        // The step's own judgement of incompleteness, computed after the verify
-        // pass has run, so an opt-in check run reports the same outcome as the
-        // step.
-        const incompleteFailure = incompleteReviewFailure({
-            result,
-            filesSelected,
-        });
         if (legacyOptions.preMergeChecks !== 'off') {
             await judgePreMergeChecks(reviewContext, legacyOptions.preMergeChecks, result, llmConfig, legacyOptions.maxContextChars);
         }
@@ -244107,6 +244112,13 @@ async function runPrReviewAction() {
         if (legacyOptions.reviewFeedback) {
             result.feedback = await sampleReviewFeedback(octokit, (query, variables) => client.graphql(query, variables), publishBase);
         }
+        // The publisher sees the analysis-phase verdict: it derives the check
+        // run's conclusion before publication can change the result. A head that
+        // moves during publication is judged afterwards, below.
+        const prePublicationIncomplete = incompleteReviewFailure({
+            result,
+            filesSelected,
+        });
         await withReviewReportOutput(async () => {
             await publishReview(octokit, {
                 ...publishBase,
@@ -244117,7 +244129,7 @@ async function runPrReviewAction() {
                 // cap, no patch, or a default-ignored path. Blocks auto-approval;
                 // list such paths in exclude-patterns to accept them explicitly.
                 filesUnreviewed: Math.max(filtered.length - filesSelected, 0),
-                incomplete: Boolean(incompleteFailure),
+                incomplete: Boolean(prePublicationIncomplete),
                 failOnIncomplete,
             });
             trackPhase('publish', 'review published', { enabled: trackEnabled });
@@ -244154,7 +244166,11 @@ async function runPrReviewAction() {
             if (section)
                 await core.summary.addRaw(section).write();
         }
-        const failure = incompleteFailure;
+        // Recomputed after publishReview settles: a head that moved during the
+        // review marks the result `stale`, and the step must report that rather
+        // than the pre-publication verdict. The report output above is built on
+        // the same post-publication state.
+        const failure = incompleteReviewFailure({ result, filesSelected });
         core.setOutput('review-summary', reviewSummaryText({ result, filesSelected }, failure));
         // A crashed group or an unanalyzed file used to leave the step green
         // while the summary looked like a clean review. Fail the step so the
