@@ -154,6 +154,7 @@ function prContext(overrides: Record<string, unknown> = {}) {
 
 function cleanResult(overrides: Record<string, unknown> = {}) {
 	return {
+		reviewStatus: 'complete',
 		findings: [],
 		summary: 'ok',
 		risk: 'none',
@@ -315,6 +316,55 @@ describe('main: top-level flows', () => {
 			incomplete: true,
 			failOnIncomplete: false,
 		});
+	});
+
+	it('reports a stale publication from the post-publication verdict', async () => {
+		// The publisher marks the result stale when the PR head moved. The
+		// analysis phase had judged it complete, so the publisher must still
+		// receive the pre-publication state.
+		let received: Record<string, unknown> | undefined;
+		state.publishReview.mockImplementationOnce(
+			async (_octokit: unknown, params: Record<string, unknown>) => {
+				received = params;
+				(params.result as { reviewStatus?: string }).reviewStatus = 'stale';
+			}
+		);
+		await main(['pr-review']);
+
+		expect(received).toMatchObject({
+			incomplete: false,
+			failOnIncomplete: true,
+		});
+		const report = setOutput.mock.calls.find(
+			([key]) => key === 'review-report'
+		);
+		expect(JSON.parse(String(report?.[1]))).toMatchObject({ status: 'stale' });
+		expect(setOutput).toHaveBeenCalledWith(
+			'review-summary',
+			'1 files reviewed, 0 issues found (review incomplete)'
+		);
+		expect(setFailed).toHaveBeenCalledWith(
+			expect.stringContaining('Review incomplete (status stale)')
+		);
+	});
+
+	it('only warns when a publication goes stale with AI_REVIEW_FAIL_ON_INCOMPLETE=false', async () => {
+		process.env.AI_REVIEW_FAIL_ON_INCOMPLETE = 'false';
+		state.publishReview.mockImplementationOnce(
+			async (_octokit: unknown, params: Record<string, unknown>) => {
+				(params.result as { reviewStatus?: string }).reviewStatus = 'stale';
+			}
+		);
+		await main(['pr-review']);
+
+		expect(setFailed).not.toHaveBeenCalled();
+		expect(warning).toHaveBeenCalledWith(
+			expect.stringContaining('Review incomplete (status stale)')
+		);
+		expect(setOutput).toHaveBeenCalledWith(
+			'review-summary',
+			expect.stringMatching(/\(review incomplete\)$/)
+		);
 	});
 
 	it('reports an empty selection as skipped', async () => {
@@ -595,7 +645,7 @@ describe('main: top-level flows', () => {
 		);
 		await main(['pr-review']);
 		expect(setFailed).toHaveBeenCalledWith(
-			expect.stringContaining('Review incomplete (1 review group(s) failed')
+			expect.stringContaining('1 review group(s) failed')
 		);
 		expect(state.cleanup).toHaveBeenCalledTimes(1);
 	});

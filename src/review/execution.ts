@@ -42,11 +42,25 @@ export interface ReviewExecution {
 	status: 'complete' | 'incomplete' | 'failed' | 'stale';
 }
 
+/**
+ * Normalise the producer-declared status. A missing or unrecognised status is
+ * treated as incomplete, matching `deriveStatus` in the report builder: an
+ * omitted field must never read as a clean review.
+ */
+function normaliseStatus(
+	status: ReviewResult['reviewStatus']
+): ReviewExecution['status'] {
+	if (status === 'failed' || status === 'stale' || status === 'incomplete')
+		return status;
+	if (status === 'complete') return 'complete';
+	return 'incomplete';
+}
+
 export function describeReviewExecution(
 	input: ReviewExecutionInput
 ): ReviewExecution {
 	const failedGroups = input.result.diagnostics?.failedGroups ?? 0;
-	const status = input.result.reviewStatus ?? 'complete';
+	const status = normaliseStatus(input.result.reviewStatus);
 	const filesReviewed = input.result.filesReviewed.length;
 	const reportedNotAnalyzed = input.result.diagnostics?.filesNotAnalyzed ?? 0;
 	const filesNotAnalyzed = Math.max(

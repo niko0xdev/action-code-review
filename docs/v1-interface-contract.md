@@ -35,9 +35,9 @@ exactly as listed; consumer workflows are unaffected.
 
 | Input | Required | Default |
 |-------|----------|---------|
-| `github-token` | **true** | — |
-| `openai-api-key` | **true** | — |
-| `openai-base-url` | false | — (no default) |
+| `github-token` | **true** | – |
+| `openai-api-key` | **true** | – |
+| `openai-base-url` | false | – (no default) |
 | `openai-model` | false | `'gpt-4'` |
 | `max-tokens` | false | `'1000'` |
 | `include-file-list` | false | `'true'` |
@@ -80,14 +80,14 @@ the behaviour without it.
 
 | Input | Required | Default |
 |-------|----------|---------|
-| `github-token` | **true** | — |
-| `openai-api-key` | **true** | — |
-| `openai-base-url` | false | — (no default) |
+| `github-token` | **true** | – |
+| `openai-api-key` | **true** | – |
+| `openai-base-url` | false | – (no default) |
 | `openai-model` | false | `'gpt-4'` |
 | `review-prompt` | false | `'Focus on correctness, code quality, security, performance, test coverage, and best practices. Provide actionable, line-specific feedback whenever possible.'` |
 | `max-files` | false | `'10'` |
 | `exclude-patterns` | false | `'*.md,*.txt'` |
-| `include-dir` | false | — (no default) |
+| `include-dir` | false | – (no default) |
 | `auto-approve-when-resolved` | false | `'false'` |
 | `min-severity` | false | `'critical'` |
 | `block-on-issues` | false | `'true'` |
@@ -132,89 +132,70 @@ review fetches the repository's published OSSF Scorecard once from
 scores as advisory context. Failures never fail or block a review.
 
 `repository-instructions` is opt-in. When `'true'`, the review rules also
-include `AGENTS.md`, `.github/copilot-instructions.md`, and every
-`.github/instructions/*.instructions.md` (at most 20) whose `applyTo` front-matter
-globs match a changed path. Only the copies at the pull request base commit are
-read (local git objects first, the contents API for shallow checkouts); without a
-base commit nothing is read. Each file keeps the 50 KiB cap, the total is capped
-at 64 KiB, each file is fenced, and the paths used are reported in
-`review-report` as `diagnostics.repositoryInstructions`.
+include the root `AGENTS.md`, `.github/copilot-instructions.md`, and the
+`.github/instructions/*.instructions.md` files whose `applyTo` front-matter
+globs match a changed path (at most 20 matching files, from the first 200
+listed). `applyTo` may be a string, comma-separated or quoted strings, an inline
+`[...]` list, or a YAML block list; globs support `**`, `*`, `?`, and one level
+of `{a,b}`, a leading `./` or `/` is ignored, and a glob with more than two `**`
+segments is skipped with a warning, as is a file whose `applyTo` yields no glob.
+A glob with more than eight wildcards or more than 200 characters is skipped
+with a warning, so matching stays bounded, and a quoted glob inside a comment is
+not a rule. A file with `excludeAgent: "code-review"` is skipped, fixed files
+included, and the value is compared exactly. Only the copies at the pull request
+base commit are read (local git objects first, the contents API for shallow
+checkouts), and a symlink is ignored on both paths; without a base commit
+nothing is read. Nested `AGENTS.md` files are not read. Identical texts are used
+once, each file keeps the 50 KiB cap, the total is capped at 64 KiB, each file
+is fenced, and the paths used are reported in `review-report` as
+`diagnostics.repositoryInstructions`.
 
 `check-run` is opt-in. When `'true'`, the action creates one completed check run
 named `AI Code Review` on the reviewed head commit, so teams can require it in
 branch protection. It is created after the review itself and before the summary
 comment, so a failure to post the summary cannot leave it unreported. Its
-conclusion mirrors the review decision exactly: `failure` when the review
-submitted `REQUEST_CHANGES` (a blocking finding, `block-on-issues` `'true'`, and
-write permission), `neutral` when only non-blocking findings exist, `success`
-when there are no findings, and, for an incomplete review (the step's own rule,
-which also counts selected files that were not analysed), `failure`, or
-`neutral` when `AI_REVIEW_FAIL_ON_INCOMPLETE=false` because the step then only
-warns. The title follows the conclusion. A run that reviews nothing still
-reports a completed, neutral check with a `Skipped:` title, so a required check
-is never left unreported: a draft, an empty file selection, a head that moved
-during the review, and a head that could not be rechecked each produce one. All
-of them, the moved head included, go on the reviewed head, never on a newer
-one: a late neutral check there would replace the newer run's check of the same
-name, a failing one included. Each finding becomes an annotation (`failure` for
-critical and high, `warning` for medium, `notice` for low) with a redacted,
-length-capped title and message; the first 50 go with the create request and the
-rest follow in `checks.update` batches of 50. The output summary is compact
-Markdown capped at 20,000 characters, and every model-supplied value in it is
-redacted before it is escaped, so a quoted credential cannot survive as an HTML
-entity. The workflow needs `checks: write`; any Checks API error (403, 404, 422,
-or other) only logs a warning, worded by what the status means, and never fails,
-blocks, or changes the review. When the check was created but a later
-annotation batch failed, the warning says the annotations were partially
-published. A pull request from a fork has a read-only token and cannot create a
-check (warning only), so the check is reported as missing on fork pull requests.
-include the root `AGENTS.md`, `.github/copilot-instructions.md`, and the
-`.github/instructions/*.instructions.md` files whose `applyTo` front-matter globs
-match a changed path (at most 20 matching files, from the first 200 listed).
-`applyTo` may be a string, comma-separated or quoted strings, an inline `[...]`
-list, or a YAML block list; globs support `**`, `*`, `?`, and one level of
-`{a,b}`, a leading `./` or `/` is ignored, and a glob with more than two `**`
-segments is skipped with a warning, as is a file whose `applyTo` yields no glob.
-A file with `excludeAgent: "code-review"` is skipped, fixed files included, and
-the value is compared exactly. A quoted glob inside a comment is not a rule,
-and a glob with more than eight wildcards or more than 200 characters is
-skipped with a warning, so matching cannot blow up. Only the copies at the pull
-request base commit are read (local git objects first, the contents API for
-shallow checkouts), and a symlink is ignored on both paths; without a base commit
-nothing is read. Identical texts are used once, each file keeps the 50 KiB cap,
-the total is capped at 64 KiB, each file is fenced, and the paths used are
-reported in `review-report` as `diagnostics.repositoryInstructions`. Nested
-`AGENTS.md` files are not read.
+conclusion mirrors the review decision exactly, evaluated in this order:
 
-`check-run` is opt-in. When `'true'`, after the review is published (never when
-publishing is skipped because the head moved) the action creates one completed
-check run named `AI Code Review` on the reviewed head commit, so teams can require
-it in branch protection. Its conclusion mirrors the review decision: `failure`
-when a blocking finding exists and `block-on-issues` is `'true'`, or when the
-review is incomplete or failed; `neutral` when only non-blocking findings exist;
-`success` when there are no findings. Each finding becomes an annotation
-`check-run` is opt-in. When `'true'`, after the review is published the action
-creates one completed check run named `AI Code Review` on the reviewed head
-commit, so teams can require it in branch protection. Its conclusion mirrors
-the review decision exactly: `failure` when the review submitted
-`REQUEST_CHANGES` (a blocking finding, `block-on-issues` `'true'`, and write
-permission), `neutral` when only non-blocking findings exist, `success` when
-there are no findings, and `neutral` for an incomplete review when
-`AI_REVIEW_FAIL_ON_INCOMPLETE=false` (the step only warns in that case, so the
-check must not fail the branch). A run that reviews nothing still reports a
-completed, neutral check, so a required check is never left unreported: a draft,
-an empty file selection, and a head that moved during the review each produce
-one with a `Skipped:` title, the last on the head that is current. Each finding becomes an annotation
-(`failure` for critical and high, `warning` for medium, `notice` for low) with a
-redacted, length-capped title and message; the first 50 go with the create
-request and the rest follow in `checks.update` batches of 50. The output summary
-is compact Markdown capped at 20,000 characters, and every model-supplied value
-in it is redacted before it is escaped, so a quoted credential cannot survive
-as an HTML entity. The workflow needs `checks: write`; any Checks API error
-(403, 404, 422, or other) only logs a warning, worded by what the status means,
-and never fails, blocks, or changes the review. A pull request from a fork has a
-read-only token and cannot create a check, so the check is reported as missing
-on fork pull requests.
+- `failure` for an incomplete review when the step is configured to fail on
+  incompleteness, or when a complete review is blocking: a non-low finding
+  exists, `block-on-issues` is `'true'`, and the token has write permission,
+  the same condition under which the review requests changes.
+- `neutral` for an incomplete review when `AI_REVIEW_FAIL_ON_INCOMPLETE=false`,
+  because the step then only warns and the check must not fail the branch.
+- `neutral` when only non-blocking findings exist. `success` when there are no
+  findings.
+
+The incompleteness rule includes failed review groups, selected files that were
+not analysed, and a truncated file list. It takes precedence over findings
+when determining the check conclusion.
+
+The title follows the conclusion: `Review incomplete`, `<n> finding(s), changes
+requested`, `Review incomplete (the step only warns)`, `<n> finding(s),
+non-blocking`, or `No findings`. The conclusion is derived from the analysis
+verdict passed in before publication, not from anything publishing changes
+afterwards: when the head moved during publication, this check run is never
+created and the `Skipped:` check described next is posted instead, on the
+reviewed head.
+
+A run that reviews nothing still reports a completed, neutral check with a
+`Skipped: <reason>` title, so a required check is never left unreported: a
+draft, an empty file selection, a head that moved during the review, and a head
+that could not be rechecked each produce one. All of them, the moved head
+included, go on the reviewed head, never on a newer one: a late neutral check
+there would replace the newer run's check of the same name, a failing one
+included. Each finding becomes an annotation (`failure` for critical and high,
+`warning` for medium, `notice` for low) with a redacted, length-capped title and
+message; the first 50 go with the create request and the rest follow in
+`checks.update` batches of 50. The output summary is compact Markdown capped at
+20,000 characters, and every model-supplied value in it is redacted before it is
+escaped, so a quoted credential cannot survive as an HTML entity. The workflow
+needs `checks: write`; any Checks API error (403, 404, 422, or other) only logs a
+warning, worded by what the status means, and never fails, blocks, or changes the
+review. When the check was created but a later annotation batch failed, the
+warning says the annotations were partially published. A pull request from a
+fork has a read-only token and cannot create a check (warning only), so the
+check is reported as missing on fork pull requests.
+
 `secret-scan` is opt-in. When `'true'`, the deterministic secret scanner used by
 `mode: security` runs over the added lines of every changed file with a patch,
 independent of `exclude-patterns`, after the main review and any verify pass.
@@ -348,12 +329,16 @@ breaking shape change.
   comment renders the same state, so a clean review is never presented as an
   approval GitHub rejected.
 
-- `status` is derived conservatively: `failedGroups > 0` forces `incomplete`,
-  the builder reports `incomplete` whenever the result carries `filesTruncated`
-  (`coverage.filesTruncated: true`), even if the producer declared `complete`, and an unknown status is reported as `incomplete` rather than
-  assumed clean. An incomplete review never approves, shows the incomplete
-  banner in the sticky summary, and fails the step unless
-  `AI_REVIEW_FAIL_ON_INCOMPLETE=false`.
+- `status` is derived conservatively: `failedGroups > 0`, `filesTruncated`, or
+  omitted context (`contextCoverage.omittedPaths`) forces `incomplete`, the
+  builder reports `incomplete` whenever the result carries `filesTruncated`
+  (`coverage.filesTruncated: true`), even if the producer declared `complete`,
+  and an unknown status is reported as `incomplete` rather than assumed clean.
+  A producer `stale` status is passed through as `stale`. Because the report is
+  built after publication settles, a head that moved during publication is
+  reported here as `stale` even though it was `complete` during analysis. An
+  incomplete or stale review never approves, shows the incomplete banner in the
+  sticky summary, and fails the step unless `AI_REVIEW_FAIL_ON_INCOMPLETE=false`.
   `failed` is reserved and accepted defensively, but the current pipeline never
   emits it (failed groups are reported as `incomplete`).
 - `coverage.filesTotal` counts the PR files returned by the listing before any
@@ -393,8 +378,8 @@ breaking shape change.
   review itself is not `complete`; otherwise it is `complete`. A failed process
   retains any usage and tool starts it emitted before exiting.
 - `usage.durationMs` is the wall-clock span from the earliest started harness
-  process to the latest process exit — not the sum of concurrent process
-  durations — and is `0` when no process started.
+  process to the latest process exit – not the sum of concurrent process
+  durations – and is `0` when no process started.
 - These counters are **not a billing ledger**. An in-flight provider request
   that is killed may never emit a final usage event, so an interrupted run can
   under-report; custom OpenAI-compatible providers may report zero or no
@@ -411,7 +396,7 @@ breaking shape change.
 - The report describes the **analysis** result, so emission is **attempted**
   even if publishing to GitHub fails: the report is built after publication
   settles, so a publish failure does not discard it. This is best effort, not a
-  guarantee — if building or writing the report also fails, the publish error
+  guarantee – if building or writing the report also fails, the publish error
   stays primary and no report is emitted. The action still fails as it did
   before.
 - Content is limited to the validated/capped review result: no prompts, raw
@@ -507,15 +492,25 @@ matching ids are skipped.
 - LLM/API errors while reviewing one file are swallowed per-file
   (logged, no comments from that file); the action continues.
 - A review that did not cover its whole scope (a harness group crashed, a file
-  was never analyzed, or the status is stale/incomplete) fails the step with
+  was never analysed, or the status is stale/incomplete) fails the step with
   `Review incomplete (…)` so a crashed harness can no longer look like a clean
   green run. `AI_REVIEW_FAIL_ON_INCOMPLETE=false` downgrades it to a warning.
+- A **stale** review (the head-moved case) is judged conservatively: publishing
+  rechecks the PR head, and when it changed – or the recheck request failed –
+  the result is marked `stale`, no findings are published, and the step reports
+  `Review incomplete (status stale; …)` exactly like any other incomplete run.
+  It therefore **fails the step by default**, and
+  `AI_REVIEW_FAIL_ON_INCOMPLETE=false` downgrades it to a warning. The step
+  recomputes that judgement after publication settles, so the `review-summary`
+  output (`… (review incomplete)`) and `review-report.status` (`stale`) reflect
+  the post-publication state even though the check-run conclusion was fixed from
+  the pre-publication verdict.
 
 ### Exit codes
 
 GitHub Actions convention: `0` success (including "no findings"),
-`1` failure via `core.setFailed` — including an incomplete review, unless
-`AI_REVIEW_FAIL_ON_INCOMPLETE=false`.
+`1` failure via `core.setFailed` – including an incomplete or stale review,
+unless `AI_REVIEW_FAIL_ON_INCOMPLETE=false`.
 
 ---
 

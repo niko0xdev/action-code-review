@@ -792,13 +792,6 @@ export async function runPrReviewAction(): Promise<void> {
 		// serialized copy; the engine result is not mutated. Emission is
 		// best effort: if building or writing the report also fails, the
 		// publish error stays primary. See docs/v1-interface-contract.md.
-		// The step's own judgement of incompleteness, computed after the verify
-		// pass has run, so an opt-in check run reports the same outcome as the
-		// step.
-		const incompleteFailure = incompleteReviewFailure({
-			result,
-			filesSelected,
-		});
 		if (legacyOptions.preMergeChecks !== 'off') {
 			await judgePreMergeChecks(
 				reviewContext,
@@ -836,6 +829,13 @@ export async function runPrReviewAction(): Promise<void> {
 				publishBase
 			);
 		}
+		// The publisher sees the analysis-phase verdict: it derives the check
+		// run's conclusion before publication can change the result. A head that
+		// moves during publication is judged afterwards, below.
+		const prePublicationIncomplete = incompleteReviewFailure({
+			result,
+			filesSelected,
+		});
 		await withReviewReportOutput(
 			async () => {
 				await publishReview(octokit, {
@@ -847,7 +847,7 @@ export async function runPrReviewAction(): Promise<void> {
 					// cap, no patch, or a default-ignored path. Blocks auto-approval;
 					// list such paths in exclude-patterns to accept them explicitly.
 					filesUnreviewed: Math.max(filtered.length - filesSelected, 0),
-					incomplete: Boolean(incompleteFailure),
+					incomplete: Boolean(prePublicationIncomplete),
 					failOnIncomplete,
 				});
 				trackPhase('publish', 'review published', { enabled: trackEnabled });
@@ -893,7 +893,11 @@ export async function runPrReviewAction(): Promise<void> {
 			const section = buildRawHarnessSection(harness.runs, dumpBudget);
 			if (section) await core.summary.addRaw(section).write();
 		}
-		const failure = incompleteFailure;
+		// Recomputed after publishReview settles: a head that moved during the
+		// review marks the result `stale`, and the step must report that rather
+		// than the pre-publication verdict. The report output above is built on
+		// the same post-publication state.
+		const failure = incompleteReviewFailure({ result, filesSelected });
 		core.setOutput(
 			'review-summary',
 			reviewSummaryText({ result, filesSelected }, failure)
