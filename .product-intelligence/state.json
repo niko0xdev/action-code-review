@@ -9,7 +9,12 @@
   "pr_number": 114,
   "pr_url": "https://github.com/niko0xdev/action-code-review/pull/114",
   "ci_run": "34751056672",
-  "next_validation": ["security confirmation verdict policy", "trusted security execution boundaries", "dependency reachability and supported upgrades", "named canary and tested rollback"],
+  "next_validation": [
+    "security confirmation verdict policy",
+    "trusted security execution boundaries",
+    "dependency reachability and supported upgrades",
+    "named canary and tested rollback"
+  ],
   "tracked_competitors": [
     {
       "name": "alibaba-open-code-review",
@@ -32,7 +37,30 @@
       ]
     }
   ],
-  "tracked_topics": ["GitHub Action consumer contracts", "Pi runtime provenance", "honest review state", "release and rollback readiness", "machine-readable usage and failed-run observability"],
-  "unknowns": ["production adoption", "competitive quality", "canary consumers", "tested rollback", "security confirmation semantics", "alibaba-open-code-review pricing, adoption and UX", "direct demand for machine-readable usage in this repository", "provider usage accuracy and completeness when a process is interrupted"],
-  "previous_research": ["docs/research/code-review-deep-research.md", "docs/research/improvement-roadmap.md", "docs/research/alibaba-open-code-review-2026-09-18.md", "docs/research/cloudflare-security-audit-skill-2026-09-18.md", "docs/research/review-usage-observability-2026-09-18.md"]
+  "tracked_topics": [
+    "GitHub Action consumer contracts",
+    "Pi runtime provenance",
+    "honest review state",
+    "release and rollback readiness",
+    "machine-readable usage and failed-run observability"
+  ],
+  "unknowns": [
+    "production adoption",
+    "competitive quality",
+    "canary consumers",
+    "tested rollback",
+    "security confirmation semantics",
+    "alibaba-open-code-review pricing, adoption and UX",
+    "direct demand for machine-readable usage in this repository",
+    "provider usage accuracy and completeness when a process is interrupted"
+  ],
+  "previous_research": [
+    "docs/research/code-review-deep-research.md",
+    "docs/research/improvement-roadmap.md",
+    "docs/research/alibaba-open-code-review-2026-09-18.md",
+    "docs/research/cloudflare-security-audit-skill-2026-09-18.md",
+    "docs/research/review-usage-observability-2026-09-18.md",
+    "docs/research/weekly-2026-11-23.md"
+  ],
+  "last_weekly_scan": "2026-11-23"
 }
