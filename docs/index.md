@@ -36,6 +36,7 @@ Operational quick reference for a run that looks wrong:
 | [research/2026-09-24-file-level-coverage.md](research/2026-09-24-file-level-coverage.md) | Why `review-report` identifies reviewed and skipped files | Auditing review scope in workflow consumers |
 | [research/audit-branches-2026-09-25.md](research/audit-branches-2026-09-25.md) | Inventory of every open branch, classified as obsolete / merged-equivalent / has-unique-delta, with file-level overlap | Triaging which stale branches to delete vs ship; reproduces with `scripts/audit-branches.sh` |
 | [.claude/skills/weekly-research/SKILL.md](../.claude/skills/weekly-research/SKILL.md) | Maintainer skill and scheduled workflow (`.github/workflows/weekly-research.yml`): weekly three-scout research (GitHub, web, curated lists), report in `docs/research/weekly-YYYY-MM-DD.md`; the skill then plans, implements, tests, and opens a PR | Running or scheduling the weekly tooling scan |
+| [research/weekly-2026-11-23.md](research/weekly-2026-11-23.md) | Automated weekly scan of GitHub, the web, and goodailist.com for code-review tooling | Choosing the next bounded improvement |
 
 ## Historical decisions (folded in, files removed)
 
